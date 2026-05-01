@@ -1353,6 +1353,12 @@ async function toPublicPost(p, viewer) {
   const viewerKey = viewer ? String(viewer.userKey) : "";
   const likedByMe = !!(viewerKey && likes.includes(viewerKey));
   const bookmarkedByMe = !!(viewerKey && bookmarks.includes(viewerKey));
+  const isFollowingAuthor = !!(
+    viewerKey &&
+    authorKey &&
+    authorKey !== viewerKey &&
+    asArray(viewer && viewer.following).map(String).includes(authorKey)
+  );
   const comments = asArray(p.comments);
   const viewCount = Number.isFinite(Number(p.views)) ? Number(p.views) : 0;
   const id = String(p.id);
@@ -1418,6 +1424,7 @@ async function toPublicPost(p, viewer) {
     likedByMe,
     bookmarkedByMe,
     repostedByMe,
+    isFollowingAuthor,
   };
 }
 
@@ -1888,12 +1895,14 @@ app.get("/api/reels", async (req, res) => {
   if (!viewer) return;
   const limitRaw = Number.parseInt(String(req.query.limit || "15"), 10);
   const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(40, limitRaw)) : 15;
+  const cursorRaw = Number.parseInt(String(req.query.cursor || "0"), 10);
+  const cursor = Number.isFinite(cursorRaw) && cursorRaw >= 0 ? cursorRaw : 0;
   const all = await visiblePostsForViewer(viewer);
-  const reels = await Promise.all(all
-    .filter((p) => asArray(p.media).some((m) => String(m.kind) === "video"))
-    .slice(0, limit)
-    .map((p) => toPublicPost(p, viewer)));
-  return res.status(200).json({ ok: true, reels });
+  const candidates = all.filter((p) => asArray(p.media).some((m) => String(m.kind) === "video"));
+  const slice = candidates.slice(cursor, cursor + limit);
+  const reels = await Promise.all(slice.map((p) => toPublicPost(p, viewer)));
+  const nextCursor = cursor + slice.length < candidates.length ? String(cursor + slice.length) : null;
+  return res.status(200).json({ ok: true, reels, nextCursor });
 });
 
 app.get("/api/trends", async (req, res) => {
@@ -2269,7 +2278,7 @@ app.post("/api/posts/:id/comments", async (req, res) => {
   const comment = {
     id: crypto.randomBytes(12).toString("base64url"),
     authorKey: String(viewer.userKey),
-    text,
+    text: filteredText,
     parentId,
     createdAt: new Date().toISOString(),
   };

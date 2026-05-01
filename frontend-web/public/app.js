@@ -60,6 +60,8 @@ let dmPollGeneration = 0;
 let lastDmThreadSignature = "";
 let lastDmInboxSignature = "";
 let aiMode = "chat";
+let reelMutePreference = localStorage.getItem("hysa_reels_muted") !== "false";
+const reelViewedIds = new Set();
 
 const STORY_FILTERS = [
   { key: "normal", label: "Normal" },
@@ -2962,22 +2964,81 @@ async function loadReels() {
     const commentAction = document.createElement("button");
     commentAction.type = "button";
     commentAction.className = "reelActionBtn";
-    commentAction.innerHTML = icon("comment");
+    setIconCountState(commentAction, "comment", reel.commentCount || 0, false);
     const shareAction = document.createElement("button");
     shareAction.type = "button";
     shareAction.className = "reelActionBtn";
-    shareAction.innerHTML = icon("share");
-    const copyAction = document.createElement("button");
-    copyAction.type = "button";
-    copyAction.className = "reelActionBtn";
-    copyAction.innerHTML = icon("bookmark");
+    shareAction.innerHTML = `${icon("share")}<strong>Share</strong>`;
+    const saveAction = document.createElement("button");
+    saveAction.type = "button";
+    saveAction.className = "reelActionBtn";
+    setIconCountState(saveAction, "bookmark", reel.bookmarkCount || 0, reel.bookmarkedByMe);
+    const viewsAction = document.createElement("button");
+    viewsAction.type = "button";
+    viewsAction.className = "reelActionBtn static";
+    setIconCountState(viewsAction, "eye", reel.viewCount || 0, false);
     actions.appendChild(likeAction);
     actions.appendChild(commentAction);
     actions.appendChild(shareAction);
-    actions.appendChild(copyAction);
+    actions.appendChild(saveAction);
+    actions.appendChild(viewsAction);
+    const caption = document.createElement("div");
+    caption.className = "reelCaption collapsed";
+    const author = document.createElement("div");
+    author.className = "reelAuthor";
+    author.appendChild(avatarNode(reel.authorAvatar, reel.author, "sm"));
+    const authorLink = document.createElement("a");
+    authorLink.href = `#u/${encodeURIComponent(reel.authorKey)}`;
+    authorLink.textContent = `@${reel.author || "user"}`;
+    author.appendChild(authorLink);
+    if (reel.verified) author.appendChild(verifiedBadge());
+    if (!isMineKey(reel.authorKey)) {
+      const follow = document.createElement("button");
+      follow.type = "button";
+      follow.className = "reelFollow";
+      follow.textContent = reel.isFollowingAuthor ? t("unfollow") : t("follow");
+      on(follow, "click", async () => {
+        follow.disabled = true;
+        try {
+          const rFollow = await api(`/api/follow/${encodeURIComponent(reel.authorKey)}`, { method: "POST" });
+          reel.isFollowingAuthor = !!rFollow.following;
+          follow.textContent = reel.isFollowingAuthor ? t("unfollow") : t("follow");
+        } catch (err) {
+          showToast(humanizeError(err?.message), true);
+        } finally {
+          follow.disabled = false;
+        }
+      });
+      author.appendChild(follow);
+    }
+    const captionText = richTextNode(reel.text || "");
+    captionText.classList.add("reelText");
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "reelMore";
+    more.textContent = "more";
+    on(more, "click", () => {
+      caption.classList.toggle("collapsed");
+      more.textContent = caption.classList.contains("collapsed") ? "more" : "less";
+    });
+    const sound = document.createElement("button");
+    sound.type = "button";
+    sound.className = "reelSound";
+    sound.textContent = `Sound - ${reel.author || "HYSA"}`;
+    on(sound, "click", () => showToast("Related reels for this sound are coming next."));
+    caption.appendChild(author);
+    caption.appendChild(captionText);
+    caption.appendChild(more);
+    caption.appendChild(sound);
+    const mute = document.createElement("button");
+    mute.type = "button";
+    mute.className = "reelMute";
+    mute.textContent = reelMutePreference ? "Muted" : "Sound";
+    card.appendChild(mute);
     card.appendChild(media);
     card.appendChild(heart);
     card.appendChild(actions);
+    card.appendChild(caption);
     function flashHeart() {
       heart.classList.remove("show");
       void heart.offsetWidth;
@@ -2991,14 +3052,43 @@ async function loadReels() {
       setIconCountState(likeAction, "heart", reel.likeCount || 0, reel.likedByMe);
     }
     if (reelMedia && reelMedia.kind === "video") {
-      media.appendChild(customVideoPlayer(reelMedia.url, {
-        muted: true,
+      const player = customVideoPlayer(reelMedia.url, {
+        muted: reelMutePreference,
         autoplay: true,
         onDoubleTap: () => {
           flashHeart();
           if (!reel.likedByMe) likeReel().catch(() => {});
         },
-      }));
+      });
+      const video = player.querySelector("video");
+      if (video) {
+        video.loop = true;
+        video.preload = "auto";
+        let viewTimer = null;
+        const markView = () => {
+          if (!reel.id || reelViewedIds.has(String(reel.id))) return;
+          window.clearTimeout(viewTimer);
+          viewTimer = window.setTimeout(() => {
+            if (video.paused || reelViewedIds.has(String(reel.id))) return;
+            reelViewedIds.add(String(reel.id));
+            api(`/api/posts/${encodeURIComponent(reel.id)}/view`, { method: "POST", body: "{}" })
+              .then((rView) => {
+                reel.viewCount = rView.viewCount ?? reel.viewCount;
+                setIconCountState(viewsAction, "eye", reel.viewCount || 0, false);
+              })
+              .catch(() => {});
+          }, 1800);
+        };
+        on(video, "playing", markView);
+        on(mute, "click", () => {
+          video.muted = !video.muted;
+          reelMutePreference = video.muted;
+          localStorage.setItem("hysa_reels_muted", String(reelMutePreference));
+          mute.textContent = video.muted ? "Muted" : "Sound";
+          for (const v of el.reelsView.querySelectorAll(".reelCard video")) v.muted = reelMutePreference;
+        });
+      }
+      media.appendChild(player);
     } else if (reelMedia && reelMedia.kind === "image") {
       const img = document.createElement("img");
       img.alt = "";
@@ -3013,25 +3103,19 @@ async function loadReels() {
     });
     on(likeAction, "click", () => likeReel().catch(() => {}));
     on(commentAction, "click", () => {
-      location.hash = `#p/${encodeURIComponent(reel.id)}`;
-      route();
+      openReelComments(reel, commentAction).catch((err) => showToast(humanizeError(err?.message), true));
     });
     on(shareAction, "click", async () => {
-      const url = `${location.origin}/#p/${encodeURIComponent(reel.id)}`;
-      try {
-        if (navigator.share) await navigator.share({ title: "HYSA Reel", url });
-        else if (navigator.clipboard) await navigator.clipboard.writeText(url);
-      } catch {
-        // ignore
-      }
+      shareReel(reel);
     });
-    on(copyAction, "click", async () => {
-      const url = `${location.origin}/#p/${encodeURIComponent(reel.id)}`;
+    on(saveAction, "click", async () => {
       try {
-        if (navigator.clipboard) await navigator.clipboard.writeText(url);
-        showToast(t("linkCopied"));
-      } catch {
-        // ignore
+        const rSave = await api(`/api/posts/${encodeURIComponent(reel.id)}/bookmark`, { method: "POST" });
+        reel.bookmarkedByMe = rSave.bookmarked;
+        reel.bookmarkCount = rSave.bookmarkCount;
+        setIconCountState(saveAction, "bookmark", reel.bookmarkCount || 0, reel.bookmarkedByMe);
+      } catch (err) {
+        showToast(humanizeError(err?.message), true);
       }
     });
     el.reelsView.appendChild(card);
@@ -3039,9 +3123,125 @@ async function loadReels() {
   observeMediaPlayback(el.reelsView);
 }
 
+async function openReelComments(reel, commentAction) {
+  showActionSheet(t("comments"), async (body) => {
+    body.classList.add("reelCommentsSheet");
+    const list = document.createElement("div");
+    list.className = "reelCommentsList";
+    list.textContent = t("loading");
+    const input = document.createElement("textarea");
+    input.className = "sheet-textarea";
+    input.maxLength = 200;
+    input.placeholder = `${t("writeComment")} :)`;
+    const send = sheetButton(t("send"), "primary");
+    body.appendChild(list);
+    body.appendChild(input);
+    body.appendChild(send);
+
+    let replyTo = "";
+    async function load() {
+      const r = await api(`/api/posts/${encodeURIComponent(reel.id)}/comments?limit=80`, { method: "GET" });
+      const comments = Array.isArray(r.comments) ? r.comments : [];
+      list.textContent = "";
+      if (!comments.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.textContent = "No comments yet";
+        list.appendChild(empty);
+      }
+      for (const c of comments) {
+        list.appendChild(commentNode(c, (targetComment) => {
+          replyTo = targetComment.id;
+          input.placeholder = `Reply to @${targetComment.author}`;
+          input.focus();
+        }, null, reel));
+      }
+      reel.commentCount = r.commentCount ?? reel.commentCount;
+      setIconCountState(commentAction, "comment", reel.commentCount || 0, false);
+    }
+
+    on(send, "click", async () => {
+      const textValue = input.value.trim();
+      if (!textValue) return;
+      send.disabled = true;
+      try {
+        const r = await api(`/api/posts/${encodeURIComponent(reel.id)}/comments`, {
+          method: "POST",
+          body: JSON.stringify({ text: textValue, parentId: replyTo || undefined }),
+        });
+        reel.commentCount = r.commentCount ?? (Number(reel.commentCount || 0) + 1);
+        input.value = "";
+        replyTo = "";
+        input.placeholder = `${t("writeComment")} :)`;
+        await load();
+      } catch (err) {
+        showToast(humanizeError(err?.message), true);
+      } finally {
+        send.disabled = false;
+      }
+    });
+
+    await load();
+    window.setTimeout(() => input.focus(), 80);
+  });
+}
+
+function shareReel(reel) {
+  const url = `${location.origin}/#p/${encodeURIComponent(reel.id)}`;
+  showActionSheet("Share reel", (body) => {
+    const native = sheetButton("Share");
+    const copy = sheetButton(t("copyLink"));
+    const dmInput = document.createElement("input");
+    dmInput.type = "text";
+    dmInput.placeholder = "Send to username";
+    const sendDm = sheetButton("Send to DM", "primary");
+
+    on(native, "click", async () => {
+      try {
+        if (navigator.share) await navigator.share({ title: "HYSA Reel", text: reel.text || "", url });
+        else showToast("Native share is not available here.", true);
+      } catch {
+        // ignore
+      }
+    });
+    on(copy, "click", async () => {
+      try {
+        if (navigator.clipboard) await navigator.clipboard.writeText(url);
+        showToast(t("linkCopied"));
+      } catch {
+        showToast(url);
+      }
+    });
+    on(sendDm, "click", async () => {
+      const peer = dmInput.value.trim().replace(/^@/, "").toLowerCase();
+      if (!peer) return dmInput.focus();
+      sendDm.disabled = true;
+      try {
+        await api(`/api/dm/${encodeURIComponent(peer)}`, {
+          method: "POST",
+          body: JSON.stringify({ text: `HYSA Reel: ${url}` }),
+        });
+        hideActionSheet();
+        showToast("Sent to DM.");
+      } catch (err) {
+        showToast(humanizeError(err?.message), true);
+      } finally {
+        sendDm.disabled = false;
+      }
+    });
+
+    body.appendChild(native);
+    body.appendChild(copy);
+    body.appendChild(dmInput);
+    body.appendChild(sendDm);
+  });
+}
+
 async function openProfile(userKeyOrName) {
   activeProfileKey = userKeyOrName;
   activePostId = null;
+  if (el.reelsView) el.reelsView.hidden = true;
+  if (el.feed) el.feed.hidden = false;
   const r = await api(`/api/user/${encodeURIComponent(userKeyOrName)}`, { method: "GET" });
   if (el.trendsBar) el.trendsBar.hidden = true;
   setViewTitle(`${t("profileTitle")} @${r.profile.username}`);
@@ -3067,6 +3267,8 @@ async function openProfile(userKeyOrName) {
 async function openPost(postId) {
   activeProfileKey = null;
   activePostId = postId;
+  if (el.reelsView) el.reelsView.hidden = true;
+  if (el.feed) el.feed.hidden = false;
   clearProfileHeader();
   const r = await api(`/api/posts/${encodeURIComponent(postId)}`, { method: "GET" });
   setViewTitle(t("postViewTitle"));

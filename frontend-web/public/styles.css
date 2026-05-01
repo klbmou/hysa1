@@ -1949,6 +1949,7 @@ select:focus {
   aspect-ratio: 9 / 16;
   overflow: hidden;
   background: #000;
+  touch-action: manipulation;
 }
 
 .reelMedia .proVideo,
@@ -2007,6 +2008,113 @@ select:focus {
 
 .reelActionBtn.active svg {
   fill: currentColor;
+}
+
+.reelActionBtn.static {
+  pointer-events: none;
+}
+
+.reelMute {
+  position: absolute;
+  top: calc(18px + env(safe-area-inset-top));
+  left: 14px;
+  z-index: 4;
+  min-width: 58px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.38);
+  color: #fff;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.reelCaption {
+  position: absolute;
+  left: 14px;
+  right: 82px;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  z-index: 4;
+  display: grid;
+  gap: 8px;
+  color: #fff;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.8);
+}
+
+.reelAuthor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 800;
+}
+
+.reelAuthor a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.reelFollow,
+.reelMore,
+.reelSound {
+  width: fit-content;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.34);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.reelFollow {
+  height: 30px;
+  padding: 0 12px;
+  font-weight: 800;
+}
+
+.reelText {
+  margin: 0;
+  color: #fff;
+  display: block;
+  max-height: 118px;
+  overflow: auto;
+}
+
+.reelCaption.collapsed .reelText {
+  max-height: 46px;
+  overflow: hidden;
+}
+
+.reelMore,
+.reelSound {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.reelCommentsSheet {
+  max-height: min(62vh, 520px);
+}
+
+.reelCommentsList {
+  display: grid;
+  gap: 10px;
+  max-height: min(44vh, 380px);
+  overflow: auto;
+  padding: 2px;
+}
+
+.reelsEmpty {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.72);
+  padding: 24px;
+  text-align: center;
 }
 
 .glassPlayer {
