@@ -12,10 +12,23 @@ CREATE TABLE IF NOT EXISTS users (
   is_private BOOLEAN DEFAULT FALSE,
   is_pending_verification BOOLEAN DEFAULT FALSE,
   verification_request_at TIMESTAMPTZ,
+  email TEXT DEFAULT '',
+  display_name TEXT DEFAULT '',
+  verified BOOLEAN DEFAULT FALSE,
+  role VARCHAR(30) DEFAULT '',
   skills TEXT[] DEFAULT '{}',
   following TEXT[] DEFAULT '{}',
   token TEXT
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(30) DEFAULT '';
+
+UPDATE users
+SET verified = TRUE, role = 'owner'
+WHERE user_key = 'france' OR LOWER(username) = 'france';
 
 -- Posts table
 CREATE TABLE IF NOT EXISTS posts (
@@ -65,6 +78,17 @@ CREATE TABLE IF NOT EXISTS dms (
 ALTER TABLE dms
   ADD COLUMN IF NOT EXISTS reactions JSONB DEFAULT '{}'::jsonb;
 
+-- Story reactions persist independently from story view state.
+CREATE TABLE IF NOT EXISTS story_reactions (
+  id VARCHAR(50) PRIMARY KEY,
+  story_id VARCHAR(50) NOT NULL,
+  reactor_key VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  owner_key VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  emoji TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(story_id, reactor_key, emoji)
+);
+
 -- Reports table
 CREATE TABLE IF NOT EXISTS reports (
   id VARCHAR(50) PRIMARY KEY,
@@ -99,3 +123,5 @@ CREATE INDEX IF NOT EXISTS idx_dms_to ON dms("to");
 CREATE INDEX IF NOT EXISTS idx_dms_created_at ON dms(created_at);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_key ON notifications(user_key);
 CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_story_reactions_story_id ON story_reactions(story_id);
+CREATE INDEX IF NOT EXISTS idx_story_reactions_owner_key ON story_reactions(owner_key);

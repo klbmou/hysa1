@@ -35,7 +35,7 @@ const NODE_ENV = process.env.NODE_ENV || "development";
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB
 const JSON_LIMIT = "50mb";
 const VERIFIED_USERS = new Set(
-  String(process.env.VERIFIED_USERS || "hysa,admin,psx")
+  String(process.env.VERIFIED_USERS || "hysa,admin,psx,france")
     .split(",")
     .map((x) => String(x || "").trim().toLowerCase())
     .filter(Boolean),
@@ -56,6 +56,7 @@ const USE_CLOUDINARY = !!(
   process.env.CLOUDINARY_API_KEY &&
   process.env.CLOUDINARY_API_SECRET
 );
+const OWNER_USER_KEY = "france";
 
 // Enforce production behavior
 if (NODE_ENV === "production") {
@@ -523,6 +524,9 @@ async function pgFindUserByKey(key) {
     isPrivate: row.is_private,
     isPendingVerification: row.is_pending_verification,
     verificationRequestAt: row.verification_request_at,
+    displayName: row.display_name,
+    verified: !!row.verified || row.user_key === OWNER_USER_KEY,
+    role: row.user_key === OWNER_USER_KEY ? "owner" : String(row.role || ""),
   };
   obj.save = async () => {
     await pgPool.query(
@@ -536,7 +540,11 @@ async function pgFindUserByKey(key) {
         verification_request_at = $8,
         skills = $9,
         following = $10,
-        token = $11
+        token = $11,
+        email = $12,
+        display_name = $13,
+        verified = $14,
+        role = $15
       WHERE user_key = $1`,
       [
         obj.user_key || obj.userKey,
@@ -550,6 +558,10 @@ async function pgFindUserByKey(key) {
         obj.skills,
         obj.following,
         obj.token,
+        obj.email || "",
+        obj.display_name || obj.displayName || "",
+        !!(obj.verified || obj.userKey === OWNER_USER_KEY || obj.user_key === OWNER_USER_KEY),
+        (obj.userKey === OWNER_USER_KEY || obj.user_key === OWNER_USER_KEY) ? "owner" : String(obj.role || ""),
       ]
     );
   };
@@ -567,8 +579,8 @@ async function pgCreateUser(user) {
     `INSERT INTO users (
       user_key, username, password, created_at, bio, avatar_url,
       is_private, is_pending_verification, verification_request_at,
-      skills, following, token
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      skills, following, token, email, display_name, verified, role
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
     ON CONFLICT (user_key) DO UPDATE SET
       username = EXCLUDED.username,
       password = EXCLUDED.password,
@@ -576,7 +588,11 @@ async function pgCreateUser(user) {
       avatar_url = EXCLUDED.avatar_url,
       skills = EXCLUDED.skills,
       following = EXCLUDED.following,
-      token = EXCLUDED.token`,
+      token = EXCLUDED.token,
+      email = EXCLUDED.email,
+      display_name = EXCLUDED.display_name,
+      verified = EXCLUDED.verified,
+      role = EXCLUDED.role`,
     [
       user.userKey,
       user.username,
@@ -590,6 +606,10 @@ async function pgCreateUser(user) {
       user.skills || [],
       user.following || [],
       user.token || "",
+      user.email || "",
+      user.displayName || "",
+      !!(user.verified || user.userKey === OWNER_USER_KEY),
+      user.userKey === OWNER_USER_KEY ? "owner" : String(user.role || ""),
     ]
   );
   return pgFindUserByKey(user.userKey);
@@ -886,6 +906,24 @@ async function pgCreateNotification(notification) {
   );
 }
 
+async function pgCreateStoryReaction({ storyId, reactorKey, ownerKey, emoji }) {
+  const id = crypto.randomBytes(12).toString("base64url");
+  await pgPool.query(
+    `INSERT INTO story_reactions (id, story_id, reactor_key, owner_key, emoji, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (story_id, reactor_key, emoji) DO UPDATE SET created_at = EXCLUDED.created_at`,
+    [id, storyId, reactorKey, ownerKey, emoji, new Date().toISOString()]
+  );
+}
+
+async function pgFindStoryReactions(storyId) {
+  const res = await pgPool.query(
+    "SELECT emoji, reactor_key FROM story_reactions WHERE story_id = $1 ORDER BY created_at DESC",
+    [storyId]
+  );
+  return res.rows.map((row) => ({ emoji: row.emoji, reactorKey: row.reactor_key }));
+}
+
 // ============================
 // PG-aware model wrappers
 // ============================
@@ -1134,6 +1172,10 @@ function normalizeUserObject(u, fallbackKey) {
     isPrivate: !!(u && u.isPrivate),
     isPendingVerification: !!(u && u.isPendingVerification),
     verificationRequestAt: String((u && u.verificationRequestAt) || ""),
+    email: String((u && u.email) || ""),
+    displayName: String((u && (u.displayName || u.display_name)) || ""),
+    verified: !!(u && u.verified) || userKey === OWNER_USER_KEY,
+    role: userKey === OWNER_USER_KEY ? "owner" : String((u && u.role) || ""),
     skills: asArray(u && u.skills).map(String).slice(0, 20),
     following: asArray(u && u.following).map(String),
     token: typeof (u && u.token) === "string" ? String(u.token) : "",
@@ -1269,30 +1311,39 @@ async function followerCountFor(userKey) {
 
 function toPublicMe(u) {
   const key = String(u && u.userKey ? u.userKey : normalizeUsername(u && u.username).key);
+  const role = key === OWNER_USER_KEY ? "owner" : String((u && u.role) || "");
   return {
     key,
     userKey: key,
     username: String(u && u.username ? u.username : ""),
+    displayName: String((u && (u.displayName || u.display_name)) || ""),
+    email: String((u && u.email) || ""),
     bio: String((u && u.bio) || ""),
     avatarUrl: publicStoredUrl(u && u.avatarUrl),
     isPrivate: !!(u && u.isPrivate),
     skills: asArray(u && u.skills).map(String),
-    verified: VERIFIED_USERS.has(key),
+    verified: !!(u && u.verified) || VERIFIED_USERS.has(key) || role === "owner",
+    role,
+    createdAt: String((u && (u.createdAt || u.created_at)) || ""),
   };
 }
 
 async function toPublicProfile(target, viewer) {
   const key = String(target.userKey);
   const isFollowing = viewer ? asArray(viewer.following).includes(key) : false;
+  const role = key === OWNER_USER_KEY ? "owner" : String(target.role || "");
   return {
     key,
     userKey: key,
     username: String(target.username || ""),
+    displayName: String((target && (target.displayName || target.display_name)) || ""),
     bio: String(target.bio || ""),
     avatarUrl: publicStoredUrl(target.avatarUrl),
     isPrivate: !!target.isPrivate,
     skills: asArray(target.skills).map(String),
-    verified: VERIFIED_USERS.has(key),
+    verified: !!target.verified || VERIFIED_USERS.has(key) || role === "owner",
+    role,
+    createdAt: String((target && (target.createdAt || target.created_at)) || ""),
     followerCount: await followerCountFor(key),
     followingCount: asArray(target.following).length,
     isFollowing,
@@ -1309,6 +1360,9 @@ async function toPublicStory(s, viewer) {
     authorKey: String(s.authorKey || ""),
     author: String((author && author.username) || s.author || ""),
     authorAvatar: publicStoredUrl(author && author.avatarUrl),
+    authorVerified: !!(author && author.verified) || VERIFIED_USERS.has(String(s.authorKey || "")) || String(s.authorKey || "") === OWNER_USER_KEY,
+    authorRole: String(s.authorKey || "") === OWNER_USER_KEY ? "owner" : String((author && author.role) || ""),
+    authorCreatedAt: String((author && (author.createdAt || author.created_at)) || ""),
     media,
     filter: normalizeStoryFilter(s.filter),
     createdAt: String(s.createdAt || ""),
@@ -1325,6 +1379,9 @@ async function toPublicComment(c) {
     authorKey,
     author: String((authorUser && authorUser.username) || (c && c.author) || ""),
     authorAvatar: publicStoredUrl(authorUser && authorUser.avatarUrl),
+    authorVerified: !!(authorUser && authorUser.verified) || VERIFIED_USERS.has(authorKey) || authorKey === OWNER_USER_KEY,
+    authorRole: authorKey === OWNER_USER_KEY ? "owner" : String((authorUser && authorUser.role) || ""),
+    authorCreatedAt: String((authorUser && (authorUser.createdAt || authorUser.created_at)) || ""),
     text: String((c && c.text) || ""),
     parentId: String((c && c.parentId) || ""),
     createdAt: String((c && c.createdAt) || new Date().toISOString()),
@@ -1348,6 +1405,7 @@ function nestComments(flatComments) {
 async function toPublicPost(p, viewer) {
   const authorKey = String(p.authorKey || normalizeUsername(p.author).key || "");
   const author = await findUserByKey(authorKey);
+  const authorRole = authorKey === OWNER_USER_KEY ? "owner" : String((author && author.role) || "");
   const likes = asArray(p.likes).map(String);
   const bookmarks = asArray(p.bookmarks).map(String);
   const viewerKey = viewer ? String(viewer.userKey) : "";
@@ -1390,7 +1448,9 @@ async function toPublicPost(p, viewer) {
         authorKey: originalAuthorKey,
         author: String((originalAuthor && originalAuthor.username) || original.author || ""),
         authorAvatar: publicStoredUrl(originalAuthor && originalAuthor.avatarUrl),
-        verified: VERIFIED_USERS.has(originalAuthorKey),
+        verified: !!(originalAuthor && originalAuthor.verified) || VERIFIED_USERS.has(originalAuthorKey) || originalAuthorKey === OWNER_USER_KEY,
+        authorRole: originalAuthorKey === OWNER_USER_KEY ? "owner" : String((originalAuthor && originalAuthor.role) || ""),
+        authorCreatedAt: String((originalAuthor && (originalAuthor.createdAt || originalAuthor.created_at)) || ""),
         text: String(original.text || ""),
         media: toPublicMediaList(original.media),
         createdAt: String(original.createdAt || ""),
@@ -1404,7 +1464,9 @@ async function toPublicPost(p, viewer) {
     authorId: String(p.authorId || authorKey),
     author: String((author && author.username) || p.author || ""),
     authorAvatar: publicStoredUrl(author && author.avatarUrl),
-    verified: VERIFIED_USERS.has(authorKey),
+    verified: !!(author && author.verified) || VERIFIED_USERS.has(authorKey) || authorRole === "owner",
+    authorRole,
+    authorCreatedAt: String((author && (author.createdAt || author.created_at)) || ""),
     text: String(p.text || ""),
     content: String(p.text || ""),
     media: toPublicMediaList(p.media),
@@ -1728,9 +1790,7 @@ async function syncDataJson() {
 async function addNotification({ userKey, type, actorKey, postId = "", commentId = "" }) {
   const target = String(userKey || "");
   if (!target || target === String(actorKey || "")) return;
-  const data = readDataFile();
-  data.notifications = asArray(data.notifications);
-  data.notifications.unshift({
+  const notification = {
     id: crypto.randomBytes(12).toString("base64url"),
     userKey: target,
     type: String(type || ""),
@@ -1739,7 +1799,14 @@ async function addNotification({ userKey, type, actorKey, postId = "", commentId
     commentId: String(commentId || ""),
     read: false,
     createdAt: new Date().toISOString(),
-  });
+  };
+  if (USE_POSTGRES) {
+    await pgCreateNotification(notification);
+    return;
+  }
+  const data = readDataFile();
+  data.notifications = asArray(data.notifications);
+  data.notifications.unshift(notification);
   data.notifications = data.notifications.slice(0, 500);
   await writeDataFile(data);
 }
@@ -1961,7 +2028,8 @@ app.get("/api/verification/status", async (req, res) => {
   if (!viewer) return;
   return res.status(200).json({ 
     ok: true, 
-    verified: VERIFIED_USERS.has(String(viewer.userKey)),
+    verified: !!viewer.verified || VERIFIED_USERS.has(String(viewer.userKey)) || String(viewer.userKey) === OWNER_USER_KEY,
+    role: String(viewer.userKey) === OWNER_USER_KEY ? "owner" : String(viewer.role || ""),
     pending: !!viewer.isPendingVerification,
     requestedAt: viewer.verificationRequestAt || ""
   });
@@ -2020,6 +2088,60 @@ app.post("/api/stories/:id/view", async (req, res) => {
     await syncDataJson();
   }
   return res.status(200).json({ ok: true, story: await toPublicStory(story, viewer) });
+});
+
+app.post("/api/stories/:id/reactions", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const id = String(req.params.id || "");
+  const story = await findStoryById(id);
+  if (!story) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (String(story.expiresAt || "") <= new Date().toISOString()) {
+    return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  }
+  const emoji = String((req.body && req.body.emoji) || "").trim().slice(0, 16);
+  if (!emoji) return res.status(400).json({ ok: false, error: "INVALID_REACTION" });
+  const ownerKey = String(story.authorKey || "");
+  const reactorKey = String(viewer.userKey || "");
+  if (ownerKey === reactorKey) return res.status(200).json({ ok: true });
+  if (USE_POSTGRES) {
+    await pgCreateStoryReaction({ storyId: id, reactorKey, ownerKey, emoji });
+  } else {
+    const data = readDataFile();
+    data.storyReactions = asArray(data.storyReactions).filter((item) => !(
+      String(item.storyId) === id && String(item.reactorKey) === reactorKey && String(item.emoji) === emoji
+    ));
+    data.storyReactions.push({ id: crypto.randomBytes(12).toString("base64url"), storyId: id, reactorKey, ownerKey, emoji, createdAt: new Date().toISOString() });
+    await writeDataFile(data);
+  }
+  await addNotification({ userKey: ownerKey, type: "story_reaction", actorKey: reactorKey, commentId: id });
+  await createDMRecord({
+    id: crypto.randomBytes(12).toString("base64url"),
+    from: reactorKey,
+    to: ownerKey,
+    text: `${emoji} reacted to your story`,
+    media: [],
+    createdAt: new Date().toISOString(),
+    readBy: [reactorKey],
+    reactions: {},
+  });
+  await syncDataJson();
+  return res.status(200).json({ ok: true });
+});
+
+app.get("/api/stories/:id/reactions", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const id = String(req.params.id || "");
+  const story = await findStoryById(id);
+  if (!story) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (String(story.authorKey || "") !== String(viewer.userKey || "")) {
+    return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+  }
+  const reactions = USE_POSTGRES
+    ? await pgFindStoryReactions(id)
+    : asArray(readDataFile().storyReactions).filter((item) => String(item.storyId) === id);
+  return res.status(200).json({ ok: true, reactions });
 });
 
 app.get("/api/user/:key", async (req, res) => {
@@ -2285,6 +2407,13 @@ app.post("/api/posts/:id/comments", async (req, res) => {
   post.comments.push(comment);
   await post.save();
   await syncDataJson();
+  await addNotification({
+    userKey: String(post.authorKey),
+    type: parentId ? "comment_reply" : "comment",
+    actorKey: String(viewer.userKey),
+    postId: id,
+    commentId: comment.id,
+  });
   return res.status(200).json({ ok: true, comment: await toPublicComment(comment), commentCount: asArray(post.comments).length });
 });
 
@@ -2312,6 +2441,7 @@ app.post("/api/posts/:id/comments/:commentId/replies", async (req, res) => {
   post.comments.push(comment);
   await post.save();
   await syncDataJson();
+  await addNotification({ userKey: String(post.authorKey), type: "comment_reply", actorKey: String(viewer.userKey), postId: id, commentId: comment.id });
   return res.status(200).json({ ok: true, comment: await toPublicComment(comment), commentCount: asArray(post.comments).length });
 });
 
@@ -2394,11 +2524,27 @@ app.post("/api/profile", async (req, res) => {
   const body = req.body || {};
   const bioCheck = sanitizeBio(body.bio);
   if (!bioCheck.ok) return res.status(400).json({ ok: false, error: bioCheck.error });
+  const usernameRaw = body.username === undefined ? "" : String(body.username || "").trim();
+  if (usernameRaw) {
+    const normalized = normalizeUsername(usernameRaw);
+    if (!normalized.key) return res.status(400).json({ ok: false, error: "INVALID_USERNAME" });
+    const existing = USE_POSTGRES
+      ? (await pgPool.query("SELECT user_key FROM users WHERE LOWER(username) = LOWER($1) AND user_key <> $2 LIMIT 1", [normalized.display, String(viewer.userKey)])).rows[0]
+      : await User.findOne({ username: { $regex: `^${escapeRegex(normalized.display)}$`, $options: "i" }, userKey: { $ne: String(viewer.userKey) } });
+    if (existing) return res.status(409).json({ ok: false, error: "USERNAME_TAKEN" });
+    viewer.username = normalized.display;
+  }
+  const email = String(body.email || viewer.email || "").trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ ok: false, error: "INVALID_EMAIL" });
+  }
 
   const avatarUrl = String(body.avatarUrl || "");
   if (avatarUrl && !isAllowedMediaUrl(avatarUrl)) return res.status(400).json({ ok: false, error: "UPLOAD_INVALID" });
 
   viewer.bio = bioCheck.bio;
+  viewer.email = email;
+  viewer.displayName = String(body.displayName || body.display_name || viewer.displayName || "").trim().slice(0, 80);
   viewer.avatarUrl = avatarUrl;
   viewer.isPrivate = body.isPrivate === true || String(body.isPrivate || "").toLowerCase() === "true";
   viewer.skills = sanitizeSkills(body.skills);
@@ -2455,19 +2601,22 @@ app.get("/api/posts/:id/insights", async (req, res) => {
 app.get("/api/notifications", async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
-  const data = readDataFile();
   const viewerKey = String(viewer.userKey);
-  const list = asArray(data.notifications)
-    .filter((n) => String(n && n.userKey) === viewerKey)
-    .slice(0, 100);
+  const list = USE_POSTGRES
+    ? await pgFindNotificationsByUser(viewerKey)
+    : asArray(readDataFile().notifications).filter((n) => String(n && n.userKey) === viewerKey).slice(0, 100);
   return res.status(200).json({ ok: true, notifications: list });
 });
 
 app.post("/api/notifications/read", async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
-  const data = readDataFile();
   const viewerKey = String(viewer.userKey);
+  if (USE_POSTGRES) {
+    await pgPool.query("UPDATE notifications SET read = TRUE WHERE user_key = $1", [viewerKey]);
+    return res.status(200).json({ ok: true });
+  }
+  const data = readDataFile();
   data.notifications = asArray(data.notifications).map((n) => {
     if (String(n && n.userKey) !== viewerKey) return n;
     return { ...n, read: true };
@@ -2506,12 +2655,23 @@ app.get("/api/search", async (req, res) => {
     return res.status(200).json({ ok: true, results });
   }
 
-  const users = await User.find({
-    $or: [
-      { userKey: { $regex: safeQ, $options: "i" } },
-      { username: { $regex: safeQ, $options: "i" } },
-    ],
-  }).limit(12);
+  const users = USE_POSTGRES
+    ? (await pgPool.query(
+        "SELECT * FROM users WHERE user_key ILIKE $1 OR username ILIKE $1 OR display_name ILIKE $1 LIMIT 12",
+        [`%${q}%`],
+      )).rows.map((row) => ({
+        ...row,
+        userKey: row.user_key,
+        avatarUrl: row.avatar_url,
+        displayName: row.display_name,
+        isPrivate: row.is_private,
+      }))
+    : await User.find({
+        $or: [
+          { userKey: { $regex: safeQ, $options: "i" } },
+          { username: { $regex: safeQ, $options: "i" } },
+        ],
+      }).limit(12);
 
   const results = users
     .filter((u) => u && (String(u.userKey).includes(q) || String(u.username).toLowerCase().includes(q)))
@@ -2519,7 +2679,10 @@ app.get("/api/search", async (req, res) => {
       type: "user",
       key: String(u.userKey),
       username: String(u.username),
-      verified: VERIFIED_USERS.has(String(u.userKey)),
+      displayName: String(u.displayName || u.display_name || ""),
+      verified: !!u.verified || VERIFIED_USERS.has(String(u.userKey)) || String(u.userKey) === OWNER_USER_KEY,
+      role: String(u.userKey) === OWNER_USER_KEY ? "owner" : String(u.role || ""),
+      createdAt: String(u.createdAt || u.created_at || ""),
       isPrivate: !!u.isPrivate,
       skills: asArray(u.skills).map(String),
     }));
@@ -2567,6 +2730,9 @@ app.get("/api/dm/threads", async (req, res) => {
         peerKey,
         peerUsername: String((peer && peer.username) || peerKey),
         peerAvatar: publicStoredUrl(peer && peer.avatarUrl),
+        peerVerified: !!(peer && peer.verified) || VERIFIED_USERS.has(peerKey) || peerKey === OWNER_USER_KEY,
+        peerRole: peerKey === OWNER_USER_KEY ? "owner" : String((peer && peer.role) || ""),
+        peerCreatedAt: String((peer && (peer.createdAt || peer.created_at)) || ""),
         lastMessage: String(msg.text || "") || (asArray(msg.media).length ? `[${String(asArray(msg.media)[0].kind || "media")}]` : ""),
         createdAt: String(msg.createdAt || ""),
         unreadCount,
@@ -2658,6 +2824,7 @@ app.post("/api/dm/:key", async (req, res) => {
   };
   if (USE_POSTGRES) await pgCreateDM(message);
   else await DM.create(message);
+  await addNotification({ userKey: String(peer.userKey), type: "dm", actorKey: String(viewer.userKey) });
   await syncDataJson();
   return res.status(200).json({ ok: true, message: { ...message, mine: true } });
 });
@@ -3018,7 +3185,14 @@ app.get("/api/messages/:userId", async (req, res) => {
 
   return res.status(200).json({
     ok: true,
-    peer: { key: peerKey, username: String(peer.username || ""), avatarUrl: publicStoredUrl(peer.avatarUrl) },
+    peer: {
+      key: peerKey,
+      username: String(peer.username || ""),
+      avatarUrl: publicStoredUrl(peer.avatarUrl),
+      verified: !!peer.verified || VERIFIED_USERS.has(peerKey) || peerKey === OWNER_USER_KEY,
+      role: peerKey === OWNER_USER_KEY ? "owner" : String(peer.role || ""),
+      createdAt: String((peer && (peer.createdAt || peer.created_at)) || ""),
+    },
     messages,
   });
 });

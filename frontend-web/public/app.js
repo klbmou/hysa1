@@ -516,11 +516,77 @@ function iconCountButton(name, count, label, active = false) {
 }
 
 function verifiedBadge() {
-  const b = document.createElement("span");
-  b.className = "verifiedBadge";
-  b.innerHTML = icon("check");
-  b.title = "Verified";
-  return b;
+  return renderUserBadge({ verified: true });
+}
+
+function ownerPopoverText(user) {
+  const created = user && user.createdAt ? new Date(user.createdAt) : null;
+  const memberSince = created && !Number.isNaN(created.getTime()) ? `Member since ${created.getFullYear()}` : "";
+  return {
+    title: user && user.role === "owner" ? "Verified Owner" : "Verified Account",
+    body: user && user.role === "owner"
+      ? "This account belongs to the creator and owner of HYSA."
+      : "This account is verified on HYSA.",
+    meta: user && user.role === "owner" ? (memberSince || "Official HYSA account") : memberSince,
+  };
+}
+
+function closeBadgePopovers() {
+  for (const node of document.querySelectorAll(".ownerBadgePopover")) node.remove();
+}
+
+function showBadgePopover(badge, user) {
+  closeBadgePopovers();
+  const copy = ownerPopoverText(user || {});
+  const pop = document.createElement("div");
+  pop.className = "ownerBadgePopover glass";
+  pop.innerHTML = `<strong></strong><span></span><small></small>`;
+  pop.querySelector("strong").textContent = copy.title;
+  pop.querySelector("span").textContent = copy.body;
+  pop.querySelector("small").textContent = copy.meta || "Official HYSA account";
+  document.body.appendChild(pop);
+  const rect = badge.getBoundingClientRect();
+  const isMobile = window.matchMedia("(max-width: 640px)").matches;
+  if (isMobile) {
+    pop.classList.add("mobile");
+    pop.style.left = "14px";
+    pop.style.right = "14px";
+    pop.style.bottom = `calc(18px + env(safe-area-inset-bottom))`;
+  } else {
+    pop.style.left = `${Math.min(window.innerWidth - 292, Math.max(12, rect.left - 22))}px`;
+    pop.style.top = `${Math.max(12, rect.bottom + 10)}px`;
+  }
+  window.setTimeout(() => {
+    const close = (event) => {
+      if (event.target === badge || pop.contains(event.target)) return;
+      closeBadgePopovers();
+      document.removeEventListener("pointerdown", close);
+    };
+    document.addEventListener("pointerdown", close);
+  }, 0);
+}
+
+function renderUserBadge(user = {}) {
+  const role = String(user.role || user.authorRole || "").toLowerCase();
+  const verified = !!(user.verified || user.authorVerified || role === "owner");
+  if (!verified) return null;
+  const badge = document.createElement("button");
+  badge.type = "button";
+  badge.className = `verifiedBadge ${role === "owner" ? "ownerBadge" : ""}`.trim();
+  badge.innerHTML = role === "owner"
+    ? '<span class="ownerBadgeMark">H</span><span class="ownerBadgeCheck">✓</span>'
+    : icon("check");
+  badge.title = role === "owner" ? "Verified Owner" : "Verified";
+  on(badge, "click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    showBadgePopover(badge, user);
+  });
+  on(badge, "mouseenter", () => {
+    if (!window.matchMedia("(hover: hover)").matches) return;
+    showBadgePopover(badge, user);
+  });
+  return badge;
 }
 
 function pulseTap(node) {
@@ -1028,7 +1094,14 @@ function renderDmThreadList(threads) {
     btn.appendChild(avatarNode(t.peerAvatar, t.peerUsername, "sm"));
     const copy = document.createElement("span");
     copy.className = "dmThreadCopy";
-    copy.innerHTML = `<strong>@${t.peerUsername}</strong><small>${t.lastMessage || "Tap to chat"}</small>`;
+    const name = document.createElement("strong");
+    name.textContent = `@${t.peerUsername}`;
+    const threadBadge = renderUserBadge({ verified: t.peerVerified, role: t.peerRole, createdAt: t.peerCreatedAt });
+    if (threadBadge) name.appendChild(threadBadge);
+    const preview = document.createElement("small");
+    preview.textContent = t.lastMessage || "Tap to chat";
+    copy.appendChild(name);
+    copy.appendChild(preview);
     btn.appendChild(copy);
     if (unread > 0) {
       const badge = document.createElement("span");
@@ -1069,6 +1142,10 @@ function applyDmThreadPayload(payload, { preserveScroll = false } = {}) {
   lastDmThreadSignature = signature;
   activeDmPeerProfile = payload.peer || activeDmPeerProfile || { key: activeDmPeer, username: activeDmPeer, avatarUrl: "" };
   if (el.dmPeer) el.dmPeer.textContent = `@${activeDmPeerProfile.username || activeDmPeer || "dm"}`;
+  if (el.dmPeer) {
+    const dmBadge = renderUserBadge(activeDmPeerProfile);
+    if (dmBadge) el.dmPeer.appendChild(dmBadge);
+  }
   if (el.dmStatus) el.dmStatus.textContent = messages.length ? "Updated just now" : "No messages yet";
   if (el.dmHeaderAvatar) {
     el.dmHeaderAvatar.replaceWith(avatarNode(activeDmPeerProfile.avatarUrl, activeDmPeerProfile.username, "sm"));
@@ -2010,9 +2087,9 @@ function closeStoryViewer() {
 
 async function sendStoryReaction(story, emoji) {
   if (!story || !story.authorKey || isMineKey(story.authorKey)) return;
-  await api(`/api/dm/${encodeURIComponent(story.authorKey)}`, {
+  await api(`/api/stories/${encodeURIComponent(story.id)}/reactions`, {
     method: "POST",
-    body: JSON.stringify({ text: `${emoji} reacted to your story` }),
+    body: JSON.stringify({ emoji }),
   });
 }
 
@@ -2028,6 +2105,8 @@ function renderStoryViewer() {
   const name = document.createElement("strong");
   name.textContent = `@${storyLabel(story)}`;
   el.storyViewerAuthor.appendChild(name);
+  const storyBadge = renderUserBadge({ verified: story.authorVerified, role: story.authorRole, createdAt: story.authorCreatedAt });
+  if (storyBadge) el.storyViewerAuthor.appendChild(storyBadge);
   if (el.storyReplyBtn) el.storyReplyBtn.disabled = isMineKey(story.authorKey);
   if (el.storyReplyInput) {
     el.storyReplyInput.disabled = isMineKey(story.authorKey);
@@ -2175,7 +2254,8 @@ function renderProfileHeader(profile) {
   const handle = document.createElement("span");
   handle.textContent = `@${profile.username}`;
   name.appendChild(handle);
-  if (profile.verified) name.appendChild(verifiedBadge());
+  const profileBadge = renderUserBadge(profile);
+  if (profileBadge) name.appendChild(profileBadge);
   if (profile.isPrivate) {
     const locked = document.createElement("span");
     locked.className = "visBadge";
@@ -2413,6 +2493,8 @@ function commentNode(comment, onReply, onDelete, post) {
   const link = document.createElement("a");
   link.href = `#u/${encodeURIComponent(comment.authorKey)}`;
   link.textContent = `@${comment.author}`;
+  const commentBadge = renderUserBadge({ verified: comment.authorVerified, role: comment.authorRole, createdAt: comment.authorCreatedAt });
+  if (commentBadge) link.appendChild(commentBadge);
   const time = document.createElement("div");
   time.className = "time";
   time.textContent = fmtTime(comment.createdAt);
@@ -2494,7 +2576,8 @@ function quotedPostNode(post) {
   name.href = `#u/${encodeURIComponent(post.authorKey)}`;
   name.textContent = `@${post.author}`;
   top.appendChild(name);
-  if (post.verified) top.appendChild(verifiedBadge());
+  const quotedBadge = renderUserBadge({ verified: post.verified, role: post.authorRole, createdAt: post.authorCreatedAt });
+  if (quotedBadge) top.appendChild(quotedBadge);
   q.appendChild(top);
   if (post.text) q.appendChild(richTextNode(post.text));
   if (Array.isArray(post.media) && post.media.length) {
@@ -2524,7 +2607,8 @@ function postNode(post) {
   const a = document.createElement("a");
   a.href = `#u/${encodeURIComponent(post.authorKey)}`;
   a.textContent = `@${post.author}`;
-  if (post.verified) a.appendChild(verifiedBadge());
+  const postBadge = renderUserBadge({ verified: post.verified, role: post.authorRole, createdAt: post.authorCreatedAt });
+  if (postBadge) a.appendChild(postBadge);
   const time = document.createElement("div");
   time.className = "time";
   // Professional relative time
@@ -2767,16 +2851,7 @@ function postNode(post) {
   shareAction.querySelector("strong").remove();
   on(shareAction, "click", async () => {
     pulseTap(shareAction);
-    const url = `${location.origin}/#p/${encodeURIComponent(post.id)}`;
-    try {
-      if (navigator.share) await navigator.share({ title: "HYSA", text: post.text || "", url });
-      else if (navigator.clipboard) {
-        await navigator.clipboard.writeText(url);
-        showToast(t("linkCopied"));
-      }
-    } catch {
-      // ignore
-    }
+    shareContent({ kind: Array.isArray(post.media) && post.media.some((m) => m.kind === "video") ? "reel" : "post", id: post.id, text: post.text || "", author: post.author || "", media: post.media || [] });
   });
 
   const bookmarkBtn = iconCountButton("bookmark", post.bookmarkCount, "Save", post.bookmarkedByMe);
@@ -3099,7 +3174,8 @@ async function loadReels() {
     authorLink.href = `#u/${encodeURIComponent(reel.authorKey)}`;
     authorLink.textContent = `@${reel.author || "user"}`;
     author.appendChild(authorLink);
-    if (reel.verified) author.appendChild(verifiedBadge());
+    const reelBadge = renderUserBadge({ verified: reel.verified, role: reel.authorRole, createdAt: reel.authorCreatedAt });
+    if (reelBadge) author.appendChild(reelBadge);
     if (!isMineKey(reel.authorKey)) {
       const follow = document.createElement("button");
       follow.type = "button";
@@ -3328,18 +3404,27 @@ async function openReelComments(reel, commentAction) {
 }
 
 function shareReel(reel) {
-  const url = `${location.origin}/#p/${encodeURIComponent(reel.id)}`;
-  showActionSheet("Share reel", (body) => {
+  shareContent({ kind: "reel", id: reel.id, text: reel.text || "", author: reel.author || "", media: reel.media || [] });
+}
+
+function shareContent(item) {
+  const url = `${location.origin}/#p/${encodeURIComponent(item.id)}`;
+  showActionSheet(`Share ${item.kind || "post"}`, (body) => {
     const native = sheetButton("Share");
     const copy = sheetButton(t("copyLink"));
     const dmInput = document.createElement("input");
     dmInput.type = "text";
-    dmInput.placeholder = "Send to username";
+    dmInput.placeholder = "Send to friend username";
     const sendDm = sheetButton("Send to DM", "primary");
+    const preview = document.createElement("div");
+    preview.className = "sharePreviewCard";
+    preview.innerHTML = `<strong></strong><span></span>`;
+    preview.querySelector("strong").textContent = `@${item.author || "HYSA"}`;
+    preview.querySelector("span").textContent = String(item.text || url).slice(0, 110);
 
     on(native, "click", async () => {
       try {
-        if (navigator.share) await navigator.share({ title: "HYSA Reel", text: reel.text || "", url });
+        if (navigator.share) await navigator.share({ title: "HYSA", text: item.text || "", url });
         else showToast("Native share is not available here.", true);
       } catch {
         // ignore
@@ -3360,7 +3445,7 @@ function shareReel(reel) {
       try {
         await api(`/api/dm/${encodeURIComponent(peer)}`, {
           method: "POST",
-          body: JSON.stringify({ text: `HYSA Reel: ${url}` }),
+          body: JSON.stringify({ text: `Shared ${item.kind || "post"} from @${item.author || "HYSA"}: ${url}` }),
         });
         hideActionSheet();
         showToast("Sent to DM.");
@@ -3371,11 +3456,62 @@ function shareReel(reel) {
       }
     });
 
+    body.appendChild(preview);
     body.appendChild(native);
     body.appendChild(copy);
     body.appendChild(dmInput);
     body.appendChild(sendDm);
   });
+}
+
+async function openNotificationsPanel() {
+  try {
+    const r = await api("/api/notifications", { method: "GET" });
+    const notifications = Array.isArray(r.notifications) ? r.notifications : [];
+    showActionSheet("Notifications", (body) => {
+      body.classList.add("notificationsSheet");
+      if (!notifications.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.textContent = "No notifications yet.";
+        body.appendChild(empty);
+      }
+      for (const item of notifications) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `notificationItem ${item.read ? "" : "unread"}`.trim();
+        const actor = item.actorKey ? `@${item.actorKey}` : "HYSA";
+        const typeText = {
+          like: "liked your post",
+          comment: "commented on your post",
+          comment_reply: "replied to a comment",
+          dm: "sent you a message",
+          story_reaction: "reacted to your story",
+          new_follower: "started following you",
+          repost: "shared your post",
+        }[item.type] || String(item.type || "notification");
+        btn.innerHTML = `<strong></strong><small></small>`;
+        btn.querySelector("strong").textContent = `${actor} ${typeText}`;
+        btn.querySelector("small").textContent = fmtTime(item.createdAt);
+        on(btn, "click", () => {
+          hideActionSheet();
+          if (item.type === "dm" && item.actorKey) location.hash = `#dm/${encodeURIComponent(item.actorKey)}`;
+          else if (item.postId) location.hash = `#p/${encodeURIComponent(item.postId)}`;
+          else if (item.actorKey) location.hash = `#u/${encodeURIComponent(item.actorKey)}`;
+        });
+        body.appendChild(btn);
+      }
+      const mark = sheetButton("Mark all as read", "primary");
+      on(mark, "click", async () => {
+        await api("/api/notifications/read", { method: "POST", body: "{}" });
+        if (el.notifDot) el.notifDot.hidden = true;
+        hideActionSheet();
+      });
+      body.appendChild(mark);
+    });
+  } catch (err) {
+    showToast(humanizeError(err?.message), true);
+  }
 }
 
 async function openProfile(userKeyOrName) {
@@ -3566,7 +3702,8 @@ function showSearchResults(results) {
       right.textContent = "Post";
     } else {
       left.textContent = `@${r.username}`;
-      if (r.verified) left.appendChild(verifiedBadge());
+      const resultBadge = renderUserBadge(r);
+      if (resultBadge) left.appendChild(resultBadge);
       right.textContent = r.isPrivate ? "Private" : r.key;
     }
     item.appendChild(left);
@@ -3797,6 +3934,28 @@ function ensureProfileEditFields() {
   const modal = el.profileModal?.querySelector(".modal");
   if (!modal || !el.profileSave) return;
 
+  const usernameInput = document.createElement("input");
+  usernameInput.type = "text";
+  usernameInput.id = "profileUsername";
+  usernameInput.placeholder = "Username";
+  usernameInput.maxLength = 50;
+
+  const displayNameInput = document.createElement("input");
+  displayNameInput.type = "text";
+  displayNameInput.id = "profileDisplayName";
+  displayNameInput.placeholder = "Display name";
+  displayNameInput.maxLength = 80;
+
+  const emailInput = document.createElement("input");
+  emailInput.type = "email";
+  emailInput.id = "profileEmail";
+  emailInput.placeholder = "Email";
+  emailInput.maxLength = 160;
+
+  modal.insertBefore(usernameInput, el.profileBio);
+  modal.insertBefore(displayNameInput, el.profileBio);
+  modal.insertBefore(emailInput, el.profileBio);
+
   const privacyRow = document.createElement("label");
   privacyRow.className = "profileStats";
   privacyRow.style.justifyContent = "space-between";
@@ -3817,6 +3976,9 @@ function ensureProfileEditFields() {
 
   modal.insertBefore(privacyRow, el.profileSave);
   modal.insertBefore(skillsInput, el.profileSave);
+  el.profileUsername = usernameInput;
+  el.profileDisplayName = displayNameInput;
+  el.profileEmail = emailInput;
   el.profilePrivate = privacyInput;
   el.profileSkills = skillsInput;
 }
@@ -3826,6 +3988,9 @@ function openProfileEdit() {
   ensureProfileEditFields();
   pendingAvatarUrl = me.avatarUrl || "";
   setAvatarPreview(pendingAvatarUrl);
+  if (el.profileUsername) el.profileUsername.value = me.username || "";
+  if (el.profileDisplayName) el.profileDisplayName.value = me.displayName || "";
+  if (el.profileEmail) el.profileEmail.value = me.email || "";
   if (el.profileBio) el.profileBio.value = me.bio || "";
   if (el.profilePrivate) el.profilePrivate.checked = !!me.isPrivate;
   if (el.profileSkills) el.profileSkills.value = Array.isArray(me.skills) ? me.skills.join(", ") : "";
@@ -3884,6 +4049,29 @@ function bindOverlayClose(overlay, onClose) {
   on(overlay, "click", (e) => {
     if (e.target === overlay) onClose();
   });
+}
+
+function ensureSettingsSections() {
+  const body = el.settingsView?.querySelector(".settings-body");
+  if (!body || body.dataset.completedSections === "true") return;
+  const sections = [
+    ["Notifications", "Unread badges and alerts are stored with your account."],
+    ["Media", "Uploads continue through HYSA media storage."],
+    ["AI Assistant", "AI features can be configured without saving API keys in the app."],
+    ["Security", "Use a strong password and report suspicious accounts."],
+    ["Verification", me?.role === "owner" ? "Verified Owner account" : "Request verification from your profile tools."],
+    ["About", "HYSA social app"],
+  ];
+  for (const [title, desc] of sections) {
+    const section = document.createElement("div");
+    section.className = "settings-section";
+    section.innerHTML = `<h3 class="settings-section-title"></h3><div class="settings-option"><div class="settings-option-info"><span class="settings-option-label"></span><span class="settings-option-desc muted"></span></div></div>`;
+    section.querySelector(".settings-section-title").textContent = title;
+    section.querySelector(".settings-option-label").textContent = title;
+    section.querySelector(".settings-option-desc").textContent = desc;
+    body.appendChild(section);
+  }
+  body.dataset.completedSections = "true";
 }
 
 function ensureMediaPicker() {
@@ -4490,6 +4678,9 @@ async function boot() {
     if (el.profileSave) el.profileSave.disabled = true;
     try {
       const bio = String(el.profileBio?.value || "");
+      const username = String(el.profileUsername?.value || "").trim();
+      const displayName = String(el.profileDisplayName?.value || "").trim();
+      const email = String(el.profileEmail?.value || "").trim();
       const skills = String(el.profileSkills?.value || "")
         .split(",")
         .map((x) => x.trim())
@@ -4497,7 +4688,7 @@ async function boot() {
         .slice(0, 20);
       const r = await api("/api/profile", {
         method: "POST",
-        body: JSON.stringify({ bio, avatarUrl: pendingAvatarUrl, isPrivate: !!el.profilePrivate?.checked, skills }),
+        body: JSON.stringify({ username, displayName, email, bio, avatarUrl: pendingAvatarUrl, isPrivate: !!el.profilePrivate?.checked, skills }),
       });
       me = r.me;
       closeProfileEdit();
@@ -4580,6 +4771,7 @@ async function boot() {
   // =====================
   function openSettings() {
     if (!el.settingsView) return;
+    ensureSettingsSections();
     // Sync toggles to current state
     if (el.darkModeToggle) el.darkModeToggle.checked = (theme !== "light");
     if (el.settingsPrivate && me) el.settingsPrivate.checked = !!me.isPrivate;
@@ -4695,10 +4887,7 @@ async function boot() {
     } catch {}
   }
   if (el.notifBtn) {
-    on(el.notifBtn, "click", () => {
-      if (el.notifDot) el.notifDot.hidden = true;
-      showToast("الإشعارات قادمة قريبًا!");
-    });
+    on(el.notifBtn, "click", () => openNotificationsPanel());
     // Poll every 60s
     setInterval(checkNotifDot, 60000);
   }

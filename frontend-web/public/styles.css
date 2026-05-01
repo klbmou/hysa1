@@ -351,11 +351,19 @@ a {
 }
 
 .verifiedBadge {
+  appearance: none;
+  position: relative;
   width: 17px;
   height: 17px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
   display: inline-grid;
   place-items: center;
   color: #2997ff;
+  background: transparent;
+  vertical-align: -2px;
+  cursor: pointer;
 }
 
 .verifiedBadge svg {
@@ -2678,9 +2686,124 @@ select:focus {
   stroke-width: 2;
 }
 
+.ownerBadge {
+  width: 22px;
+  height: 22px;
+  color: #04202a;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0) 30%),
+    linear-gradient(135deg, #5ee7ff, #2f9bff 48%, #62f0c8);
+  box-shadow: 0 0 0 2px rgba(94, 231, 255, 0.18), 0 0 18px rgba(47, 155, 255, 0.52);
+}
+
+.ownerBadge::after {
+  content: "";
+  position: absolute;
+  inset: -60% 20%;
+  transform: rotate(24deg) translateX(-180%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.84), transparent);
+  animation: ownerBadgeShine 2.8s ease-in-out infinite;
+}
+
+.ownerBadgeMark {
+  font-size: 11px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.ownerBadgeCheck {
+  position: absolute;
+  right: 2px;
+  bottom: 1px;
+  font-size: 8px;
+  font-weight: 950;
+  color: #fff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.42);
+}
+
+@keyframes ownerBadgeShine {
+  0%, 55% { transform: rotate(24deg) translateX(-180%); }
+  78%, 100% { transform: rotate(24deg) translateX(180%); }
+}
+
+.ownerBadgePopover {
+  position: fixed;
+  z-index: 2500;
+  width: min(280px, calc(100vw - 28px));
+  padding: 12px 13px;
+  border-radius: 16px;
+  display: grid;
+  gap: 5px;
+  color: var(--text);
+}
+
+.ownerBadgePopover::before {
+  content: "";
+  position: absolute;
+  top: -7px;
+  left: 34px;
+  width: 14px;
+  height: 14px;
+  transform: rotate(45deg);
+  background: var(--glass);
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+}
+
+.ownerBadgePopover.mobile::before {
+  display: none;
+}
+
+.ownerBadgePopover strong {
+  font-size: 14px;
+}
+
+.ownerBadgePopover span,
+.ownerBadgePopover small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .mediaPickerGrid span {
   font-size: 12px;
   color: var(--muted);
+}
+
+.sharePreviewCard,
+.notificationItem {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: grid;
+  gap: 4px;
+  text-align: start;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.sharePreviewCard {
+  padding: 12px;
+}
+
+.sharePreviewCard span,
+.notificationItem small {
+  color: var(--muted);
+}
+
+.notificationsSheet {
+  max-height: min(62vh, 520px);
+  overflow: auto;
+}
+
+.notificationItem {
+  padding: 11px 12px;
+  cursor: pointer;
+}
+
+.notificationItem.unread {
+  border-color: rgba(47, 155, 255, 0.44);
+  background: rgba(47, 155, 255, 0.12);
 }
 
 @media (max-width: 720px) {
