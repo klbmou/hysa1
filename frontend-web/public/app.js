@@ -45,12 +45,20 @@ let activeProfileKey = null;
 let activePostId = null;
 let activeProfileTab = "posts";
 let storyCache = [];
+let storyGroups = [];
 let activeStoryIndex = 0;
 let storyProgressTimer = null;
 let storyFileInput = null;
 let storyDraftFile = null;
 let storyDraftPreviewUrl = "";
 let storyDraftFilter = "normal";
+let activeDmPeer = null;
+let activeDmPeerProfile = null;
+let dmThreadPollTimer = null;
+let dmInboxPollTimer = null;
+let dmPollGeneration = 0;
+let lastDmThreadSignature = "";
+let lastDmInboxSignature = "";
 let aiMode = "chat";
 
 const STORY_FILTERS = [
@@ -444,6 +452,30 @@ function formatCount(n) {
   return String(value);
 }
 
+function setIconCountState(button, iconName, count, active = false) {
+  if (!button) return;
+  button.classList.toggle("active", !!active);
+  button.innerHTML = `${icon(iconName)}<strong>${formatCount(count || 0)}</strong>`;
+}
+
+function normalizeReactionEntries(reactions) {
+  const source = reactions && typeof reactions === "object" ? reactions : {};
+  const items = [];
+  for (const [emoji, users] of Object.entries(source)) {
+    const uniqueUsers = Array.from(new Set((Array.isArray(users) ? users : []).map((user) => String(user || "")).filter(Boolean)));
+    if (!emoji || !uniqueUsers.length) continue;
+    items.push({ emoji, users: uniqueUsers, count: uniqueUsers.length });
+  }
+  items.sort((a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji));
+  return items;
+}
+
+function reactionSignature(reactions) {
+  return normalizeReactionEntries(reactions)
+    .map((entry) => `${entry.emoji}:${entry.users.join(",")}`)
+    .join("|");
+}
+
 const ICONS = {
   heart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg>',
   comment: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 17 0Z"/></svg>',
@@ -611,8 +643,6 @@ function hideAllOverlays() {
   if (el.aiPanel) el.aiPanel.hidden = true;
 }
 
-let activeDmPeer = null;
-let activeDmPeerProfile = null;
 let dmRecorder = null;
 let dmRecordingChunks = [];
 
@@ -683,7 +713,12 @@ function customAudioPlayer(url, { compact = false } = {}) {
   return wrap;
 }
 
-function customVideoPlayer(url, { muted = false, autoplay = false } = {}) {
+function customVideoPlayer(url, {
+  muted = false,
+  autoplay = false,
+  onDoubleTap = null,
+  singleTapBehavior = "toggle",
+} = {}) {
   const player = document.createElement("div");
   player.className = "proVideo";
 
@@ -700,6 +735,10 @@ function customVideoPlayer(url, { muted = false, autoplay = false } = {}) {
   center.className = "videoCenterPlay";
   center.setAttribute("aria-label", "Play video");
   center.textContent = "Play";
+
+  const spinner = document.createElement("div");
+  spinner.className = "videoSpinner";
+  spinner.setAttribute("aria-hidden", "true");
 
   const controls = document.createElement("div");
   controls.className = "videoControls glass";
@@ -721,7 +760,10 @@ function customVideoPlayer(url, { muted = false, autoplay = false } = {}) {
   mute.type = "button";
   mute.className = "videoControlBtn";
   mute.setAttribute("aria-label", "Mute video");
-  mute.textContent = video.muted ? "Mute" : "Sound";
+  mute.textContent = video.muted ? "Muted" : "Sound";
+
+  let tapTimer = null;
+  let lastTapAt = 0;
 
   function sync() {
     const total = Number(video.duration || 0);
@@ -735,21 +777,52 @@ function customVideoPlayer(url, { muted = false, autoplay = false } = {}) {
     play.textContent = paused ? "Play" : "Pause";
     center.textContent = paused ? "Play" : "";
   }
+  function setLoadingState(isLoading) {
+    player.classList.toggle("isLoading", !!isLoading);
+  }
   function togglePlay() {
     if (video.paused) video.play().catch(() => {});
     else video.pause();
   }
+  function clearTapTimer() {
+    if (tapTimer) window.clearTimeout(tapTimer);
+    tapTimer = null;
+  }
+  function handleSurfaceTap(event) {
+    if (event && typeof event.preventDefault === "function") event.preventDefault();
+    const now = Date.now();
+    if (now - lastTapAt < 280) {
+      clearTapTimer();
+      lastTapAt = 0;
+      if (typeof onDoubleTap === "function") onDoubleTap(event);
+      return;
+    }
+    lastTapAt = now;
+    clearTapTimer();
+    tapTimer = window.setTimeout(() => {
+      tapTimer = null;
+      lastTapAt = 0;
+      if (singleTapBehavior === "toggle") togglePlay();
+    }, typeof onDoubleTap === "function" ? 220 : 0);
+  }
 
   on(play, "click", togglePlay);
   on(center, "click", togglePlay);
-  on(video, "click", togglePlay);
+  on(video, "click", handleSurfaceTap);
+  on(center, "dblclick", (event) => event.preventDefault());
+  on(video, "dblclick", (event) => event.preventDefault());
   on(video, "play", setPausedState);
   on(video, "pause", setPausedState);
   on(video, "loadedmetadata", sync);
   on(video, "timeupdate", sync);
+  on(video, "loadstart", () => setLoadingState(true));
+  on(video, "waiting", () => setLoadingState(true));
+  on(video, "stalled", () => setLoadingState(true));
+  on(video, "canplay", () => setLoadingState(false));
+  on(video, "playing", () => setLoadingState(false));
   on(mute, "click", () => {
     video.muted = !video.muted;
-    mute.textContent = video.muted ? "Mute" : "Sound";
+    mute.textContent = video.muted ? "Muted" : "Sound";
   });
   on(bar, "click", (event) => {
     const rect = bar.getBoundingClientRect();
@@ -762,9 +835,11 @@ function customVideoPlayer(url, { muted = false, autoplay = false } = {}) {
   controls.appendChild(time);
   controls.appendChild(mute);
   player.appendChild(video);
+  player.appendChild(spinner);
   player.appendChild(center);
   player.appendChild(controls);
   setPausedState();
+  setLoadingState(autoplay);
   if (autoplay) {
     window.setTimeout(() => video.play().catch(() => {}), 0);
   }
@@ -791,9 +866,76 @@ function observeMediaPlayback(root) {
   for (const v of videos) mediaPlaybackObserver.observe(v);
 }
 
+function scrollDmToLatest({ smooth = false } = {}) {
+  if (!el.dmMessages) return;
+  el.dmMessages.scrollTo({ top: el.dmMessages.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+}
+
+function dmMessageSignature(messages) {
+  return (Array.isArray(messages) ? messages : [])
+    .map((message) => `${message.id}|${message.seen ? "1" : "0"}|${reactionSignature(message.reactions)}`)
+    .join("~");
+}
+
+function renderDmReactionSummary(message) {
+  const entries = normalizeReactionEntries(message.reactions);
+  if (!entries.length) return null;
+  const row = document.createElement("div");
+  row.className = "dmReactionSummary";
+  for (const entry of entries) {
+    const pill = document.createElement("button");
+    pill.type = "button";
+    pill.className = "dmReactionPill";
+    if (entry.users.includes(currentUserKey())) pill.classList.add("active");
+    pill.textContent = `${entry.emoji} ${entry.count}`;
+    on(pill, "click", async () => {
+      try {
+        await api(`/api/dm/message/${encodeURIComponent(message.id)}/reactions`, {
+          method: "POST",
+          body: JSON.stringify({ emoji: entry.emoji }),
+        });
+        if (activeDmPeer) await openDmThread(activeDmPeer, { silent: true, preserveScroll: true });
+      } catch (err) {
+        showToast(humanizeError(err?.message), true);
+      }
+    });
+    row.appendChild(pill);
+  }
+  return row;
+}
+
+function openDmReactionPicker(message) {
+  const emojis = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
+  showActionSheet("React", (body) => {
+    const row = document.createElement("div");
+    row.className = "storyViewerReactions";
+    for (const emoji of emojis) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "storyReactionBtn";
+      btn.textContent = emoji;
+      on(btn, "click", async () => {
+        try {
+          await api(`/api/dm/message/${encodeURIComponent(message.id)}/reactions`, {
+            method: "POST",
+            body: JSON.stringify({ emoji }),
+          });
+          hideActionSheet();
+          if (activeDmPeer) await openDmThread(activeDmPeer, { silent: true, preserveScroll: true });
+        } catch (err) {
+          showToast(humanizeError(err?.message), true);
+        }
+      });
+      row.appendChild(btn);
+    }
+    body.appendChild(row);
+  });
+}
+
 function renderDmMessage(message) {
   const b = document.createElement("div");
   b.className = `dmBubble ${message.mine ? "mine" : ""}`.trim();
+  b.dataset.messageId = String(message.id || "");
   const media = Array.isArray(message.media) ? message.media : [];
   if (message.text) {
     const text = document.createElement("div");
@@ -827,67 +969,39 @@ function renderDmMessage(message) {
     }
     b.appendChild(wrap);
   }
+  const meta = document.createElement("div");
+  meta.className = "dmBubbleMeta";
+  const time = document.createElement("span");
+  time.textContent = fmtTime(message.createdAt);
+  meta.appendChild(time);
+  if (message.mine) {
+    const seen = document.createElement("span");
+    seen.className = "dmSeenState";
+    seen.textContent = message.seen ? "Seen" : "Sent";
+    meta.appendChild(seen);
+  }
+  const react = document.createElement("button");
+  react.type = "button";
+  react.className = "dmReactionTrigger";
+  react.textContent = "☺";
+  on(react, "click", () => openDmReactionPicker(message));
+  meta.appendChild(react);
+  b.appendChild(meta);
+  const summary = renderDmReactionSummary(message);
+  if (summary) b.appendChild(summary);
   if (!b.childNodes.length) b.textContent = "Message";
   return b;
 }
 
-async function openDmThread(peerKey) {
-  activeDmPeer = peerKey;
-  if (el.dmModal) el.dmModal.hidden = false;
-  const r = await api(`/api/dm/${encodeURIComponent(peerKey)}`, { method: "GET" });
-  activeDmPeerProfile = r.peer || { key: peerKey, username: peerKey, avatarUrl: "" };
-  if (el.dmPeer) el.dmPeer.textContent = `@${activeDmPeerProfile.username || peerKey}`;
-  if (el.dmStatus) el.dmStatus.textContent = "Active now";
-  const dmHeader = el.dmModal?.querySelector(".dm-view-header");
-  if (dmHeader && !document.getElementById("dmCallButton")) {
-    const callBtn = document.createElement("button");
-    callBtn.id = "dmCallButton";
-    callBtn.type = "button";
-    callBtn.className = "iconBtn";
-    callBtn.setAttribute("aria-label", "Start video call");
-    callBtn.title = "Video call";
-    callBtn.innerHTML = icon("phone");
-    on(callBtn, "click", () => activeDmPeer && initiateVideoCall(activeDmPeer));
-    dmHeader.appendChild(callBtn);
-  }
-  const dmCallButton = document.getElementById("dmCallButton");
-  if (dmCallButton) dmCallButton.hidden = false;
-  if (el.dmHeaderAvatar) {
-    el.dmHeaderAvatar.replaceWith(avatarNode(activeDmPeerProfile.avatarUrl, activeDmPeerProfile.username, "sm"));
-    el.dmHeaderAvatar = document.getElementById("dmHeaderAvatar") || document.querySelector(".dm-view-header .avatar");
-    if (el.dmHeaderAvatar) el.dmHeaderAvatar.id = "dmHeaderAvatar";
-  }
-  if (el.dmMessages) {
-    el.dmMessages.textContent = "";
-    const messages = Array.isArray(r.messages) ? r.messages : [];
-    for (const m of messages) el.dmMessages.appendChild(renderDmMessage(m));
-    el.dmMessages.scrollTop = el.dmMessages.scrollHeight;
-  }
-  if (el.dmThreads) {
-    for (const n of el.dmThreads.querySelectorAll(".dmThreadItem")) {
-      n.classList.toggle("active", n.dataset.peerKey === peerKey);
-    }
-  }
+function stopDmPolling() {
+  dmPollGeneration += 1;
+  if (dmThreadPollTimer) window.clearInterval(dmThreadPollTimer);
+  if (dmInboxPollTimer) window.clearInterval(dmInboxPollTimer);
+  dmThreadPollTimer = null;
+  dmInboxPollTimer = null;
 }
 
-async function openDmInbox() {
-  if (!el.dmModal) return;
-  activeDmPeer = null;
-  activeDmPeerProfile = null;
-  el.dmModal.hidden = false;
-  if (el.dmPeer) el.dmPeer.textContent = "Direct Messages";
-  if (el.dmStatus) el.dmStatus.textContent = "Inbox";
-  const dmCallButton = document.getElementById("dmCallButton");
-  if (dmCallButton) dmCallButton.hidden = true;
-  if (el.dmMessages) {
-    el.dmMessages.textContent = "";
-    const empty = document.createElement("div");
-    empty.className = "dmEmpty";
-    empty.textContent = "Choose a conversation to start chatting.";
-    el.dmMessages.appendChild(empty);
-  }
-  const r = await api("/api/dm/threads", { method: "GET" });
-  const threads = Array.isArray(r.threads) ? r.threads : [];
+function renderDmThreadList(threads) {
   if (!el.dmThreads) return;
   el.dmThreads.textContent = "";
   if (!threads.length) {
@@ -902,6 +1016,7 @@ async function openDmInbox() {
     btn.type = "button";
     btn.className = "dmThreadItem";
     btn.dataset.peerKey = t.peerKey;
+    if (activeDmPeer && t.peerKey === activeDmPeer) btn.classList.add("active");
     const unread = Number(t.unreadCount || 0);
     btn.appendChild(avatarNode(t.peerAvatar, t.peerUsername, "sm"));
     const copy = document.createElement("span");
@@ -921,7 +1036,114 @@ async function openDmInbox() {
   }
 }
 
+async function refreshDmInbox({ silent = false } = {}) {
+  const r = await api("/api/dm/threads", { method: "GET" });
+  const threads = Array.isArray(r.threads) ? r.threads : [];
+  const signature = threads.map((item) => `${item.peerKey}|${item.createdAt}|${item.unreadCount}|${item.lastMessage}`).join("~");
+  if (!silent || signature !== lastDmInboxSignature) {
+    renderDmThreadList(threads);
+    lastDmInboxSignature = signature;
+  }
+}
+
+function startDmInboxPolling() {
+  stopDmPolling();
+  const generation = ++dmPollGeneration;
+  dmInboxPollTimer = window.setInterval(() => {
+    if (generation !== dmPollGeneration || location.hash.startsWith("#dm/")) return;
+    refreshDmInbox({ silent: true }).catch(() => {});
+  }, 8000);
+}
+
+function applyDmThreadPayload(payload, { preserveScroll = false } = {}) {
+  const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+  const signature = dmMessageSignature(messages);
+  if (preserveScroll && signature === lastDmThreadSignature) return;
+  lastDmThreadSignature = signature;
+  activeDmPeerProfile = payload.peer || activeDmPeerProfile || { key: activeDmPeer, username: activeDmPeer, avatarUrl: "" };
+  if (el.dmPeer) el.dmPeer.textContent = `@${activeDmPeerProfile.username || activeDmPeer || "dm"}`;
+  if (el.dmStatus) el.dmStatus.textContent = messages.length ? "Updated just now" : "No messages yet";
+  if (el.dmHeaderAvatar) {
+    el.dmHeaderAvatar.replaceWith(avatarNode(activeDmPeerProfile.avatarUrl, activeDmPeerProfile.username, "sm"));
+    el.dmHeaderAvatar = document.getElementById("dmHeaderAvatar") || document.querySelector(".dm-view-header .avatar");
+    if (el.dmHeaderAvatar) el.dmHeaderAvatar.id = "dmHeaderAvatar";
+  }
+  if (!el.dmMessages) return;
+  const nearBottom = preserveScroll
+    ? el.dmMessages.scrollHeight - el.dmMessages.scrollTop - el.dmMessages.clientHeight < 84
+    : true;
+  el.dmMessages.textContent = "";
+  if (!messages.length) {
+    const empty = document.createElement("div");
+    empty.className = "dmEmpty";
+    empty.textContent = "Say hello to start the conversation.";
+    el.dmMessages.appendChild(empty);
+    return;
+  }
+  for (const message of messages) el.dmMessages.appendChild(renderDmMessage(message));
+  if (!preserveScroll || nearBottom) scrollDmToLatest({ smooth: preserveScroll });
+}
+
+function startDmThreadPolling(peerKey) {
+  stopDmPolling();
+  const generation = ++dmPollGeneration;
+  dmThreadPollTimer = window.setInterval(() => {
+    if (generation !== dmPollGeneration || activeDmPeer !== peerKey) return;
+    openDmThread(peerKey, { silent: true, preserveScroll: true }).catch(() => {});
+  }, 3000);
+}
+
+async function openDmThread(peerKey, { silent = false, preserveScroll = false } = {}) {
+  activeDmPeer = peerKey;
+  if (el.dmModal) el.dmModal.hidden = false;
+  const r = await api(`/api/dm/${encodeURIComponent(peerKey)}`, { method: "GET" });
+  const dmHeader = el.dmModal?.querySelector(".dm-view-header");
+  if (dmHeader && !document.getElementById("dmCallButton")) {
+    const callBtn = document.createElement("button");
+    callBtn.id = "dmCallButton";
+    callBtn.type = "button";
+    callBtn.className = "iconBtn";
+    callBtn.setAttribute("aria-label", "Start video call");
+    callBtn.title = "Video call";
+    callBtn.innerHTML = icon("phone");
+    on(callBtn, "click", () => activeDmPeer && initiateVideoCall(activeDmPeer));
+    dmHeader.appendChild(callBtn);
+  }
+  const dmCallButton = document.getElementById("dmCallButton");
+  if (dmCallButton) dmCallButton.hidden = false;
+  applyDmThreadPayload(r, { preserveScroll });
+  if (el.dmThreads) {
+    for (const n of el.dmThreads.querySelectorAll(".dmThreadItem")) {
+      n.classList.toggle("active", n.dataset.peerKey === peerKey);
+    }
+  }
+  refreshDmInbox({ silent: true }).catch(() => {});
+  if (!silent) startDmThreadPolling(peerKey);
+}
+
+async function openDmInbox() {
+  if (!el.dmModal) return;
+  activeDmPeer = null;
+  activeDmPeerProfile = null;
+  lastDmThreadSignature = "";
+  el.dmModal.hidden = false;
+  if (el.dmPeer) el.dmPeer.textContent = "Direct Messages";
+  if (el.dmStatus) el.dmStatus.textContent = "Inbox";
+  const dmCallButton = document.getElementById("dmCallButton");
+  if (dmCallButton) dmCallButton.hidden = true;
+  if (el.dmMessages) {
+    el.dmMessages.textContent = "";
+    const empty = document.createElement("div");
+    empty.className = "dmEmpty";
+    empty.textContent = "Choose a conversation to start chatting.";
+    el.dmMessages.appendChild(empty);
+  }
+  await refreshDmInbox();
+  startDmInboxPolling();
+}
+
 function closeDmView() {
+  stopDmPolling();
   if (el.dmModal) el.dmModal.hidden = true;
   activeDmPeer = null;
   activeDmPeerProfile = null;
@@ -932,14 +1154,11 @@ async function sendDmMessage({ text = "", media = [] } = {}) {
   const body = { text: String(text || "").trim(), media };
   if (!body.text && !body.media.length) return;
   if (el.dmSend) el.dmSend.disabled = true;
-  if (el.dmMessages) {
-    el.dmMessages.appendChild(renderDmMessage({ ...body, mine: true, createdAt: new Date().toISOString() }));
-    el.dmMessages.scrollTop = el.dmMessages.scrollHeight;
-  }
   try {
     await api(`/api/dm/${encodeURIComponent(activeDmPeer)}`, { method: "POST", body: JSON.stringify(body) });
     if (el.dmText) el.dmText.value = "";
-    await openDmThread(activeDmPeer);
+    await openDmThread(activeDmPeer, { silent: true });
+    scrollDmToLatest({ smooth: true });
   } catch (err) {
     showToast(humanizeError(err?.message), true);
   } finally {
@@ -1292,24 +1511,74 @@ function avatarNode(avatarUrl, fallback, sizeClass = "") {
 }
 
 function safeStoryList(stories) {
-  return (Array.isArray(stories) ? stories : []).filter((story) => story && story.id && story.media && story.media.url);
+  return (Array.isArray(stories) ? stories : [])
+    .filter((story) => story && story.id && story.media && story.media.url)
+    .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")) || String(a.id).localeCompare(String(b.id)));
 }
 
 function storyLabel(story) {
   return String(story && story.author ? story.author : "user");
 }
 
+function storyOwnerKey(story) {
+  return String(story && (story.authorKey || story.author || "")).toLowerCase();
+}
+
+function buildStoryGroups(stories) {
+  const map = new Map();
+  for (const story of safeStoryList(stories)) {
+    const key = storyOwnerKey(story);
+    if (!key) continue;
+    let group = map.get(key);
+    if (!group) {
+      group = {
+        key,
+        authorKey: String(story.authorKey || key),
+        author: story.author || key,
+        authorAvatar: story.authorAvatar || "",
+        stories: [],
+      };
+      map.set(key, group);
+    }
+    group.stories.push(story);
+    if (!group.authorAvatar && story.authorAvatar) group.authorAvatar = story.authorAvatar;
+  }
+  const groups = Array.from(map.values());
+  groups.sort((a, b) => {
+    const aLatest = a.stories[a.stories.length - 1];
+    const bLatest = b.stories[b.stories.length - 1];
+    return String(bLatest?.createdAt || "").localeCompare(String(aLatest?.createdAt || ""));
+  });
+  return groups;
+}
+
+function storyGroupStartIndex(group) {
+  const list = Array.isArray(group?.stories) ? group.stories : [];
+  const firstUnseen = list.find((story) => !story.seen);
+  const target = firstUnseen || list[0];
+  return target ? storyIndexById(target.id) : -1;
+}
+
 function storyIndexById(id) {
   return storyCache.findIndex((story) => String(story.id) === String(id));
 }
 
-function storyNode(story) {
+function storyNode(group) {
+  const stories = Array.isArray(group?.stories) ? group.stories : [];
+  const story = stories[stories.length - 1] || {
+    id: "",
+    authorKey: group?.authorKey || "",
+    author: group?.author || "user",
+    authorAvatar: group?.authorAvatar || "",
+    seen: false,
+  };
+  const allSeen = stories.length > 0 && stories.every((item) => !!item.seen);
   const wrap = document.createElement("button");
   wrap.type = "button";
   wrap.className = "storyItem";
   wrap.title = `Story by @${storyLabel(story)}`;
   const ring = document.createElement("div");
-  ring.className = `storyRing ${story.seen ? "seen" : ""}`.trim();
+  ring.className = `storyRing ${allSeen ? "seen" : ""}`.trim();
   ring.appendChild(avatarNode(story.authorAvatar, storyLabel(story)));
   const label = document.createElement("div");
   label.className = "storyLabel";
@@ -1317,26 +1586,25 @@ function storyNode(story) {
   wrap.appendChild(ring);
   wrap.appendChild(label);
   on(wrap, "click", () => {
-    const idx = storyIndexById(story.id);
+    const idx = storyGroupStartIndex(group);
     if (idx >= 0) openStoryViewer(idx);
   });
   return wrap;
 }
 
-function myStoryNode(myStory) {
-  const wrap = storyNode(myStory || {
-    id: "",
+function myStoryNode(myGroup) {
+  const wrap = storyNode(myGroup || {
+    authorKey: me?.userKey || me?.username || "me",
     author: me?.username || "me",
     authorAvatar: me?.avatarUrl || "",
-    seen: false,
-    media: null,
+    stories: [],
   });
   wrap.classList.add("storyMine");
-  wrap.title = myStory ? "View your story" : "Add story";
+  wrap.title = myGroup && myGroup.stories.length ? "View your story" : "Add story";
   const label = wrap.querySelector(".storyLabel");
   if (label) label.textContent = "Your story";
   const ring = wrap.querySelector(".storyRing");
-  if (ring) ring.classList.toggle("empty", !myStory);
+  if (ring) ring.classList.toggle("empty", !(myGroup && myGroup.stories.length));
 
   const add = document.createElement("button");
   add.type = "button";
@@ -1351,7 +1619,7 @@ function myStoryNode(myStory) {
   });
   wrap.appendChild(add);
 
-  if (!myStory) {
+  if (!(myGroup && myGroup.stories.length)) {
     on(wrap, "click", (e) => {
       e.preventDefault();
       openStoryComposer();
@@ -1365,14 +1633,15 @@ async function loadStories() {
   try {
     const r = await api("/api/stories", { method: "GET" });
     const stories = safeStoryList(r.stories);
-    storyCache = stories;
+    storyGroups = buildStoryGroups(stories);
+    storyCache = storyGroups.flatMap((group) => group.stories);
     el.storiesBar.textContent = "";
     const myKey = String(me?.userKey || me?.username || "").toLowerCase();
-    const myStory = stories.find((s) => String(s.authorKey || s.author || "").toLowerCase() === myKey) || null;
-    if (me) el.storiesBar.appendChild(myStoryNode(myStory));
-    for (const s of stories) {
-      if (myStory && String(s.id) === String(myStory.id)) continue;
-      el.storiesBar.appendChild(storyNode(s));
+    const myGroup = storyGroups.find((group) => group.key === myKey) || null;
+    if (me) el.storiesBar.appendChild(myStoryNode(myGroup));
+    for (const group of storyGroups) {
+      if (myGroup && group.key === myGroup.key) continue;
+      el.storiesBar.appendChild(storyNode(group));
     }
     el.storiesBar.hidden = !me && !stories.length;
   } catch {
@@ -1541,6 +1810,10 @@ function ensureStoryViewer() {
         <button id="storyViewerClose" class="iconBtn" type="button" aria-label="Close">X</button>
       </header>
       <div id="storyViewerMedia" class="storyViewerMedia"></div>
+      <footer class="storyViewerFooter">
+        <div id="storyViewerReactions" class="storyViewerReactions"></div>
+        <button id="storyReplyBtn" class="storyReplyBtn" type="button">Reply</button>
+      </footer>
       <button id="storyPrev" class="storyTapZone prev" type="button" aria-label="Previous story"></button>
       <button id="storyNext" class="storyTapZone next" type="button" aria-label="Next story"></button>
     </section>
@@ -1550,12 +1823,44 @@ function ensureStoryViewer() {
   el.storyProgressFill = overlay.querySelector("#storyProgressFill");
   el.storyViewerAuthor = overlay.querySelector("#storyViewerAuthor");
   el.storyViewerMedia = overlay.querySelector("#storyViewerMedia");
+  el.storyViewerReactions = overlay.querySelector("#storyViewerReactions");
   el.storyViewerClose = overlay.querySelector("#storyViewerClose");
+  el.storyReplyBtn = overlay.querySelector("#storyReplyBtn");
   el.storyPrev = overlay.querySelector("#storyPrev");
   el.storyNext = overlay.querySelector("#storyNext");
   on(el.storyViewerClose, "click", closeStoryViewer);
   on(el.storyPrev, "click", previousStory);
   on(el.storyNext, "click", nextStory);
+  on(el.storyReplyBtn, "click", () => {
+    const story = storyCache[activeStoryIndex];
+    if (!story || !story.authorKey || isMineKey(story.authorKey)) return;
+    showActionSheet("Reply to story", (body) => {
+      const input = document.createElement("textarea");
+      input.className = "sheet-textarea";
+      input.maxLength = 280;
+      input.placeholder = "Send a reply...";
+      const sendBtn = sheetButton("Send", "primary");
+      on(sendBtn, "click", async () => {
+        const text = String(input.value || "").trim();
+        if (!text) return;
+        sendBtn.disabled = true;
+        try {
+          await api(`/api/dm/${encodeURIComponent(story.authorKey)}`, {
+            method: "POST",
+            body: JSON.stringify({ text }),
+          });
+          hideActionSheet();
+          showToast("Reply sent.");
+        } catch (err) {
+          showToast(humanizeError(err?.message), true);
+        } finally {
+          sendBtn.disabled = false;
+        }
+      });
+      body.appendChild(input);
+      body.appendChild(sendBtn);
+    });
+  });
   on(document, "keydown", (e) => {
     if (!el.storyViewer || el.storyViewer.hidden) return;
     if (e.key === "Escape") closeStoryViewer();
@@ -1596,6 +1901,16 @@ function closeStoryViewer() {
   clearStoryProgress();
   if (el.storyViewer) el.storyViewer.hidden = true;
   if (el.storyViewerMedia) el.storyViewerMedia.textContent = "";
+  if (el.storyViewerAuthor) el.storyViewerAuthor.textContent = "";
+  if (el.storyViewerReactions) el.storyViewerReactions.textContent = "";
+}
+
+async function sendStoryReaction(story, emoji) {
+  if (!story || !story.authorKey || isMineKey(story.authorKey)) return;
+  await api(`/api/dm/${encodeURIComponent(story.authorKey)}`, {
+    method: "POST",
+    body: JSON.stringify({ text: `${emoji} reacted to your story` }),
+  });
 }
 
 function renderStoryViewer() {
@@ -1604,10 +1919,32 @@ function renderStoryViewer() {
   clearStoryProgress();
   el.storyViewerMedia.textContent = "";
   el.storyViewerAuthor.textContent = "";
+  if (el.storyViewerReactions) el.storyViewerReactions.textContent = "";
   el.storyViewerAuthor.appendChild(avatarNode(story.authorAvatar, storyLabel(story), "sm"));
   const name = document.createElement("strong");
   name.textContent = `@${storyLabel(story)}`;
   el.storyViewerAuthor.appendChild(name);
+  if (el.storyReplyBtn) el.storyReplyBtn.disabled = isMineKey(story.authorKey);
+
+  if (el.storyViewerReactions) {
+    const reactions = ["❤️", "🔥", "😂", "😮", "😢", "👍"];
+    for (const emoji of reactions) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "storyReactionBtn";
+      button.textContent = emoji;
+      button.disabled = isMineKey(story.authorKey);
+      on(button, "click", async () => {
+        try {
+          await sendStoryReaction(story, emoji);
+          showToast("Reaction sent.");
+        } catch (err) {
+          showToast(humanizeError(err?.message), true);
+        }
+      });
+      el.storyViewerReactions.appendChild(button);
+    }
+  }
 
   const mediaClass = `storyFullMedia story-filter-${story.filter || "normal"}`;
   if (story.media.kind === "video") {
@@ -1875,7 +2212,12 @@ function closeMenu() {
   }
 }
 
-function mediaGridNode(media, { removable = false, onRemove, withControls = false } = {}) {
+function mediaGridNode(media, {
+  removable = false,
+  onRemove,
+  withControls = false,
+  onVideoDoubleTap = null,
+} = {}) {
   const grid = document.createElement("div");
   grid.className = "mediaGrid";
   for (const item of media || []) {
@@ -1892,9 +2234,9 @@ function mediaGridNode(media, { removable = false, onRemove, withControls = fals
 
     if (item.kind === "video") {
       if (withControls) {
-        tile.appendChild(customVideoPlayer(item.url, { muted: true }));
+        tile.appendChild(customVideoPlayer(item.url, { muted: true, onDoubleTap: onVideoDoubleTap }));
       } else {
-        tile.appendChild(customVideoPlayer(item.url, { muted: true, autoplay: true }));
+        tile.appendChild(customVideoPlayer(item.url, { muted: true, autoplay: true, onDoubleTap: onVideoDoubleTap }));
       }
     } else {
       const img = document.createElement("img");
@@ -2181,7 +2523,10 @@ function postNode(post) {
 
   let mediaNode = null;
   if (Array.isArray(post.media) && post.media.length) {
-    const media = mediaGridNode(post.media, { withControls: true });
+    const media = mediaGridNode(post.media, {
+      withControls: true,
+      onVideoDoubleTap: () => likeFromMedia().catch(() => {}),
+    });
     media.classList.add("postMedia");
     mediaNode = media;
     root.appendChild(media);
@@ -2200,8 +2545,7 @@ function postNode(post) {
     const r = await api(`/api/posts/${encodeURIComponent(post.id)}/like`, { method: "POST" });
     post.likedByMe = r.liked;
     post.likeCount = r.likeCount;
-    likeBtn.classList.toggle("active", !!post.likedByMe);
-    likeBtn.innerHTML = `${icon("heart")}<strong>${formatCount(post.likeCount)}</strong>`;
+    setIconCountState(likeBtn, "heart", post.likeCount, post.likedByMe);
   }
   on(likeBtn, "click", async () => {
     pulseTap(likeBtn);
@@ -2225,7 +2569,7 @@ function postNode(post) {
   let lastMediaLikeTrigger = 0;
   async function likeFromMedia(e) {
     const target = e && e.target && e.target.closest ? e.target : null;
-    if (target && target.closest("button, a, input, textarea, select, .videoControls")) return;
+    if (target && target.closest("button, a, input, textarea, select, .videoControls, .proVideo")) return;
     const now = Date.now();
     if (now - lastMediaLikeTrigger < 360) return;
     lastMediaLikeTrigger = now;
@@ -2240,9 +2584,15 @@ function postNode(post) {
     }
   }
   if (mediaNode) {
-    on(mediaNode, "dblclick", likeFromMedia);
+    on(mediaNode, "dblclick", (e) => {
+      const target = e && e.target && e.target.closest ? e.target : null;
+      if (target && target.closest(".proVideo")) return;
+      likeFromMedia(e).catch(() => {});
+    });
     on(mediaNode, "pointerup", (e) => {
       if (e.pointerType === "mouse") return;
+      const target = e && e.target && e.target.closest ? e.target : null;
+      if (target && target.closest(".proVideo")) return;
       const now = Date.now();
       if (now - lastMediaTap < 320) {
         lastMediaTap = 0;
@@ -2326,8 +2676,7 @@ function postNode(post) {
       const r = await api(`/api/posts/${encodeURIComponent(post.id)}/bookmark`, { method: "POST" });
       post.bookmarkedByMe = r.bookmarked;
       post.bookmarkCount = r.bookmarkCount;
-      bookmarkBtn.classList.toggle("active", !!post.bookmarkedByMe);
-      bookmarkBtn.innerHTML = `${icon("bookmark")}<strong>${formatCount(post.bookmarkCount)}</strong>`;
+      setIconCountState(bookmarkBtn, "bookmark", post.bookmarkCount, post.bookmarkedByMe);
     } catch (err) {
       showToast(humanizeError(err?.message), true);
     }
@@ -2601,13 +2950,6 @@ async function loadReels() {
     const reelMedia = (reel.media || []).find((m) => m && m.kind === "video") || (reel.media || [])[0];
     const media = document.createElement("div");
     media.className = "reelMedia";
-    if (reelMedia && reelMedia.kind === "video") media.appendChild(customVideoPlayer(reelMedia.url, { muted: true, autoplay: true }));
-    else if (reelMedia && reelMedia.kind === "image") {
-      const img = document.createElement("img");
-      img.alt = "";
-      img.src = reelMedia.url;
-      media.appendChild(img);
-    }
     const heart = document.createElement("div");
     heart.className = "heartBurst";
     heart.textContent = "♥";
@@ -2616,7 +2958,7 @@ async function loadReels() {
     const likeAction = document.createElement("button");
     likeAction.type = "button";
     likeAction.className = "reelActionBtn";
-    likeAction.innerHTML = `${icon("heart")}<strong>${formatCount(reel.likeCount || 0)}</strong>`;
+    setIconCountState(likeAction, "heart", reel.likeCount || 0, reel.likedByMe);
     const commentAction = document.createElement("button");
     commentAction.type = "button";
     commentAction.className = "reelActionBtn";
@@ -2636,15 +2978,37 @@ async function loadReels() {
     card.appendChild(media);
     card.appendChild(heart);
     card.appendChild(actions);
+    function flashHeart() {
+      heart.classList.remove("show");
+      void heart.offsetWidth;
+      heart.classList.add("show");
+      window.setTimeout(() => heart.classList.remove("show"), 620);
+    }
     async function likeReel() {
       const rLike = await api(`/api/posts/${encodeURIComponent(reel.id)}/like`, { method: "POST" });
       reel.likedByMe = rLike.liked;
       reel.likeCount = rLike.likeCount;
-      likeAction.innerHTML = `${icon("heart")}<strong>${formatCount(reel.likeCount || 0)}</strong>`;
+      setIconCountState(likeAction, "heart", reel.likeCount || 0, reel.likedByMe);
     }
-    on(card, "dblclick", () => {
-      heart.classList.add("show");
-      window.setTimeout(() => heart.classList.remove("show"), 400);
+    if (reelMedia && reelMedia.kind === "video") {
+      media.appendChild(customVideoPlayer(reelMedia.url, {
+        muted: true,
+        autoplay: true,
+        onDoubleTap: () => {
+          flashHeart();
+          if (!reel.likedByMe) likeReel().catch(() => {});
+        },
+      }));
+    } else if (reelMedia && reelMedia.kind === "image") {
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = reelMedia.url;
+      media.appendChild(img);
+    }
+    on(card, "dblclick", (event) => {
+      const target = event && event.target && event.target.closest ? event.target : null;
+      if (target && target.closest(".proVideo")) return;
+      flashHeart();
       if (!reel.likedByMe) likeReel().catch(() => {});
     });
     on(likeAction, "click", () => likeReel().catch(() => {}));
@@ -2672,19 +3036,7 @@ async function loadReels() {
     });
     el.reelsView.appendChild(card);
   }
-  const videos = Array.from(el.reelsView.querySelectorAll("video"));
-  const io = new IntersectionObserver(
-    (entries) => {
-      for (const e of entries) {
-        const v = e.target;
-        if (!(v instanceof HTMLVideoElement)) continue;
-        if (e.isIntersecting) v.play().catch(() => {});
-        else v.pause();
-      }
-    },
-    { threshold: 0.65 },
-  );
-  for (const v of videos) io.observe(v);
+  observeMediaPlayback(el.reelsView);
 }
 
 async function openProfile(userKeyOrName) {

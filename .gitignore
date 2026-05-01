@@ -10,5 +10,6 @@ backend/storage/
 *.avi
 .env
 .env.*
+backend/.env
 !.env.example
 .DS_Store

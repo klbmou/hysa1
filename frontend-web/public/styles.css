@@ -452,6 +452,27 @@ video {
   object-fit: cover;
 }
 
+.videoSpinner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  width: 42px;
+  height: 42px;
+  margin: -21px 0 0 -21px;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+  animation: videoSpin 0.8s linear infinite;
+}
+
+.proVideo.isLoading .videoSpinner {
+  opacity: 1;
+}
+
 .videoCenterPlay {
   position: absolute;
   left: 50%;
@@ -508,7 +529,7 @@ video {
 .videoProgress {
   position: relative;
   flex: 1;
-  height: 5px;
+  height: 8px;
   overflow: hidden;
   border: 0;
   border-radius: 999px;
@@ -529,6 +550,12 @@ video {
   color: rgba(255, 255, 255, 0.82);
   font-family: var(--mono);
   font-size: 11px;
+}
+
+@keyframes videoSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .postMedia {
@@ -1282,6 +1309,56 @@ select:focus {
   right: 0;
 }
 
+.storyViewerFooter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  padding: 16px 14px calc(18px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.72));
+}
+
+.storyViewerReactions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.storyViewerReactions::-webkit-scrollbar {
+  display: none;
+}
+
+.storyReactionBtn,
+.storyReplyBtn {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.storyReactionBtn {
+  min-width: 42px;
+  padding: 0;
+}
+
+.storyReactionBtn:disabled,
+.storyReplyBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .trends-bar {
   width: 100%;
   max-width: 600px;
@@ -1648,6 +1725,56 @@ select:focus {
   margin-top: 8px;
 }
 
+.dmBubbleMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: inherit;
+  font-size: 11px;
+  opacity: 0.78;
+}
+
+.dmBubble.mine .dmBubbleMeta {
+  justify-content: flex-end;
+}
+
+.dmSeenState {
+  font-weight: 700;
+}
+
+.dmReactionTrigger,
+.dmReactionPill {
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: inherit;
+  cursor: pointer;
+}
+
+.dmReactionTrigger {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.dmReactionSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.dmReactionPill {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.dmReactionPill.active {
+  background: rgba(255, 255, 255, 0.22);
+}
+
 .dmMedia {
   overflow: hidden;
   border-radius: 16px;
@@ -1872,6 +1999,14 @@ select:focus {
 .reelActionBtn strong {
   font-family: var(--mono);
   font-size: 11px;
+}
+
+.reelActionBtn.active {
+  color: #ff4f76;
+}
+
+.reelActionBtn.active svg {
+  fill: currentColor;
 }
 
 .glassPlayer {
