@@ -1,21 +1,33 @@
 /* eslint-disable no-console */
 "use strict";
 
-require("dotenv").config();
 const path = require("path");
 const fs = require("fs");
-const { Pool } = require("pg");
 
+// Load dotenv only if .env file exists
+const envPath = path.join(__dirname, ".env");
+if (fs.existsSync(envPath)) {
+  require("dotenv").config({ path: envPath });
+}
+
+const { Pool } = require("pg");
 const DATA_FILE = path.join(__dirname, "data.json");
+const SCHEMA_FILE = path.join(__dirname, "schema.sql");
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!DATABASE_URL) {
   console.error("Error: DATABASE_URL environment variable is not set");
+  console.error("Please set DATABASE_URL in your environment or create a .env file in the backend directory");
   process.exit(1);
 }
 
 if (!fs.existsSync(DATA_FILE)) {
   console.error(`Error: data.json not found at ${DATA_FILE}`);
+  process.exit(1);
+}
+
+if (!fs.existsSync(SCHEMA_FILE)) {
+  console.error(`Error: schema.sql not found at ${SCHEMA_FILE}`);
   process.exit(1);
 }
 
@@ -26,40 +38,39 @@ const pool = new Pool({
   },
 });
 
-async function readDataFile() {
+function readDataFile() {
   const raw = fs.readFileSync(DATA_FILE, "utf8");
   return JSON.parse(raw);
 }
 
 async function migrate() {
-  console.log("[migrate] Starting migration from data.json to PostgreSQL...");
+  console.log("========================================");
+  console.log("HYSA1 Data Migration");
+  console.log("========================================");
+  console.log(`Source: ${DATA_FILE}`);
+  console.log(`Target: PostgreSQL`);
+  console.log("----------------------------------------");
 
-  const data = await readDataFile();
-
-  // Create tables (we'll run the schema.sql here too)
-  const schemaSql = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
-  console.log("[migrate] Creating tables...");
+  // Read and execute schema
+  console.log("[1/6] Creating database tables...");
+  const schemaSql = fs.readFileSync(SCHEMA_FILE, "utf8");
   await pool.query(schemaSql);
+  console.log("✓ Tables created");
+
+  const data = readDataFile();
 
   // Migrate users
-  console.log("[migrate] Migrating users...");
+  console.log("[2/6] Migrating users...");
   const users = Object.entries(data.users || {});
+  let userCount = 0;
   for (const [userKey, user] of users) {
     await pool.query(
       `INSERT INTO users (
-        user_key, username, password, created_at, bio, avatar_url, 
-        is_private, is_pending_verification, verification_request_at, 
+        user_key, username, password, created_at, bio, avatar_url,
+        is_private, is_pending_verification, verification_request_at,
         skills, following, token
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      ON CONFLICT (user_key) DO UPDATE SET
-        username = EXCLUDED.username,
-        password = EXCLUDED.password,
-        bio = EXCLUDED.bio,
-        avatar_url = EXCLUDED.avatar_url,
-        is_private = EXCLUDED.is_private,
-        skills = EXCLUDED.skills,
-        following = EXCLUDED.following,
-        token = EXCLUDED.token`,
+      ON CONFLICT (user_key) DO NOTHING`,
       [
         userKey,
         user.username || userKey,
@@ -75,11 +86,14 @@ async function migrate() {
         user.token || "",
       ]
     );
+    userCount++;
   }
+  console.log(`✓ Users migrated: ${userCount}`);
 
   // Migrate posts
-  console.log("[migrate] Migrating posts...");
+  console.log("[3/6] Migrating posts...");
   const posts = Array.isArray(data.posts) ? data.posts : [];
+  let postCount = 0;
   for (const post of posts) {
     await pool.query(
       `INSERT INTO posts (
@@ -87,20 +101,7 @@ async function migrate() {
         likes, bookmarks, repost_of, quote_text, is_repost, repost_type,
         original_id, author_id, comments, views, viewed_by
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-      ON CONFLICT (id) DO UPDATE SET
-        author_key = EXCLUDED.author_key,
-        author = EXCLUDED.author,
-        text = EXCLUDED.text,
-        media = EXCLUDED.media,
-        visibility = EXCLUDED.visibility,
-        likes = EXCLUDED.likes,
-        bookmarks = EXCLUDED.bookmarks,
-        repost_of = EXCLUDED.repost_of,
-        quote_text = EXCLUDED.quote_text,
-        is_repost = EXCLUDED.is_repost,
-        comments = EXCLUDED.comments,
-        views = EXCLUDED.views,
-        viewed_by = EXCLUDED.viewed_by`,
+      ON CONFLICT (id) DO NOTHING`,
       [
         post.id,
         post.authorKey || post.authorId || (post.author ? post.author.toLowerCase() : ""),
@@ -122,11 +123,14 @@ async function migrate() {
         Array.isArray(post.viewedBy) ? post.viewedBy : [],
       ]
     );
+    postCount++;
   }
+  console.log(`✓ Posts migrated: ${postCount}`);
 
   // Migrate stories
-  console.log("[migrate] Migrating stories...");
+  console.log("[4/6] Migrating stories...");
   const stories = Array.isArray(data.stories) ? data.stories : [];
+  let storyCount = 0;
   for (const story of stories) {
     await pool.query(
       `INSERT INTO stories (
@@ -144,11 +148,14 @@ async function migrate() {
         Array.isArray(story.seenBy) ? story.seenBy : [],
       ]
     );
+    storyCount++;
   }
+  console.log(`✓ Stories migrated: ${storyCount}`);
 
   // Migrate DMs
-  console.log("[migrate] Migrating DMs...");
+  console.log("[5/6] Migrating direct messages...");
   const dms = Array.isArray(data.dms) ? data.dms : [];
+  let dmCount = 0;
   for (const dm of dms) {
     await pool.query(
       `INSERT INTO dms (
@@ -165,11 +172,14 @@ async function migrate() {
         Array.isArray(dm.readBy) ? dm.readBy : [],
       ]
     );
+    dmCount++;
   }
+  console.log(`✓ DMs migrated: ${dmCount}`);
 
-  // Migrate reports
-  console.log("[migrate] Migrating reports...");
+  // Migrate reports and notifications
+  console.log("[6/6] Migrating reports and notifications...");
   const reports = Array.isArray(data.reports) ? data.reports : [];
+  let reportCount = 0;
   for (const report of reports) {
     await pool.query(
       `INSERT INTO reports (
@@ -187,11 +197,11 @@ async function migrate() {
         report.ai ? JSON.stringify(report.ai) : null,
       ]
     );
+    reportCount++;
   }
 
-  // Migrate notifications
-  console.log("[migrate] Migrating notifications...");
   const notifications = Array.isArray(data.notifications) ? data.notifications : [];
+  let notificationCount = 0;
   for (const notification of notifications) {
     await pool.query(
       `INSERT INTO notifications (
@@ -209,13 +219,19 @@ async function migrate() {
         notification.createdAt || new Date().toISOString(),
       ]
     );
+    notificationCount++;
   }
+  console.log(`✓ Reports migrated: ${reportCount}`);
+  console.log(`✓ Notifications migrated: ${notificationCount}`);
 
-  console.log("[migrate] Migration complete!");
+  console.log("----------------------------------------");
+  console.log("Migration complete!");
+  console.log("========================================");
+
   await pool.end();
 }
 
 migrate().catch((err) => {
-  console.error("[migrate] Migration failed:", err);
+  console.error("Migration failed:", err);
   process.exit(1);
 });

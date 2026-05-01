@@ -7,7 +7,6 @@
 // - Stores app data in data.json and uploaded media under the configured uploads directory.
 // - Implements the endpoints expected by public/app.js (feed, upload, profile, etc)
 
-require('dotenv').config();
 const path = require("path");
 const fs = require("fs");
 const fsp = require("fs/promises");
@@ -16,12 +15,26 @@ const os = require("os");
 const http = require("http");
 const express = require("express");
 const { ExpressPeerServer } = require("peer");
-const { Pool } = require("pg");
-const cloudinary = require("cloudinary").v2;
+
+// Load dotenv only if .env file exists (for local dev)
+const envPath = path.join(__dirname, ".env");
+if (fs.existsSync(envPath)) {
+  require("dotenv").config({ path: envPath });
+}
+
+// Optional pg and cloudinary (loaded only if needed)
+let Pool, cloudinary;
+try {
+  Pool = require("pg").Pool;
+  cloudinary = require("cloudinary").v2;
+} catch {
+  // Ignore, will use fallback
+}
 
 // Render/Production Config
 const PORT = Number(process.env.PORT || 3000);
 const HOST = String(process.env.HOST || "0.0.0.0");
+const NODE_ENV = process.env.NODE_ENV || "development";
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB
 const JSON_LIMIT = "50mb";
@@ -44,26 +57,32 @@ const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
 const USE_POSTGRES = !!DATABASE_URL;
 const USE_CLOUDINARY = !!(CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET);
 
+// Enforce production behavior
+if (NODE_ENV === "production") {
+  if (!USE_POSTGRES) {
+    console.error("[FATAL] Production requires DATABASE_URL to be set");
+    process.exit(1);
+  }
+}
+
 // Initialize PostgreSQL pool if DATABASE_URL is present
 let pgPool = null;
-if (USE_POSTGRES) {
+if (USE_POSTGRES && Pool) {
   pgPool = new Pool({
     connectionString: DATABASE_URL,
     ssl: {
       rejectUnauthorized: false,
     },
   });
-  console.log("[postgres] Initialized PostgreSQL pool");
 }
 
 // Initialize Cloudinary if credentials are present
-if (USE_CLOUDINARY) {
+if (USE_CLOUDINARY && cloudinary) {
   cloudinary.config({
     cloud_name: CLOUDINARY_CLOUD_NAME,
     api_key: CLOUDINARY_API_KEY,
     api_secret: CLOUDINARY_API_SECRET,
   });
-  console.log("[cloudinary] Initialized Cloudinary");
 }
 
 function safeJsonParse(text) {
@@ -475,12 +494,347 @@ async function connectDataFile() {
   ensureDirSync(UPLOADS_DIR);
   const current = readDataFile();
   await writeDataFile(current);
-  console.log("[data] Using data.json storage only", {
-    dataFile: DATA_FILE,
-    uploadsDir: UPLOADS_DIR,
-    dataDirEnv: DATA_DIR_ENV || "",
-    persistentStorage: USING_PERSISTENT_STORAGE,
-  });
+}
+
+// -----------------------------
+// PostgreSQL Model Functions
+// -----------------------------
+async function pgFindUserByKey(key) {
+  const res = await pgPool.query("SELECT * FROM users WHERE user_key = $1", [key]);
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    ...row,
+    userKey: row.user_key,
+    avatarUrl: row.avatar_url,
+    isPrivate: row.is_private,
+    isPendingVerification: row.is_pending_verification,
+    verificationRequestAt: row.verification_request_at,
+    save: async () => {
+      await pgPool.query(
+        `UPDATE users SET
+          username = $2,
+          password = $3,
+          bio = $4,
+          avatar_url = $5,
+          is_private = $6,
+          is_pending_verification = $7,
+          verification_request_at = $8,
+          skills = $9,
+          following = $10,
+          token = $11
+        WHERE user_key = $1`,
+        [
+          row.user_key,
+          row.username,
+          row.password,
+          row.bio,
+          row.avatar_url,
+          row.is_private,
+          row.is_pending_verification,
+          row.verification_request_at,
+          row.skills,
+          row.following,
+          row.token,
+        ]
+      );
+    },
+  };
+}
+
+async function pgFindUserByToken(token) {
+  const res = await pgPool.query("SELECT * FROM users WHERE token = $1", [token]);
+  if (!res.rows.length) return null;
+  return pgFindUserByKey(res.rows[0].user_key);
+}
+
+async function pgCreateUser(user) {
+  await pgPool.query(
+    `INSERT INTO users (
+      user_key, username, password, created_at, bio, avatar_url,
+      is_private, is_pending_verification, verification_request_at,
+      skills, following, token
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    ON CONFLICT (user_key) DO UPDATE SET
+      username = EXCLUDED.username,
+      password = EXCLUDED.password,
+      bio = EXCLUDED.bio,
+      avatar_url = EXCLUDED.avatar_url,
+      skills = EXCLUDED.skills,
+      following = EXCLUDED.following,
+      token = EXCLUDED.token`,
+    [
+      user.userKey,
+      user.username,
+      user.password,
+      user.createdAt,
+      user.bio,
+      user.avatarUrl,
+      !!user.isPrivate,
+      !!user.isPendingVerification,
+      user.verificationRequestAt || null,
+      user.skills || [],
+      user.following || [],
+      user.token || "",
+    ]
+  );
+  return pgFindUserByKey(user.userKey);
+}
+
+async function pgCountFollowers(userKey) {
+  const res = await pgPool.query(
+    "SELECT COUNT(*) FROM users WHERE $1 = ANY(following)",
+    [userKey]
+  );
+  return Number(res.rows[0].count);
+}
+
+async function pgFindPrivateUsers() {
+  const res = await pgPool.query("SELECT user_key FROM users WHERE is_private = TRUE");
+  return res.rows.map((r) => r.user_key);
+}
+
+async function pgFindAllPosts() {
+  const res = await pgPool.query("SELECT * FROM posts ORDER BY created_at DESC, id DESC");
+  return res.rows.map((row) => ({
+    ...row,
+    authorKey: row.author_key,
+    repostOf: row.repost_of,
+    quoteText: row.quote_text,
+    isRepost: row.is_repost,
+    repostType: row.repost_type,
+    originalId: row.original_id,
+    authorId: row.author_id,
+    viewedBy: row.viewed_by,
+  }));
+}
+
+async function pgFindPostById(id) {
+  const res = await pgPool.query("SELECT * FROM posts WHERE id = $1", [id]);
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    ...row,
+    authorKey: row.author_key,
+    repostOf: row.repost_of,
+    quoteText: row.quote_text,
+    isRepost: row.is_repost,
+    repostType: row.repost_type,
+    originalId: row.original_id,
+    authorId: row.author_id,
+    viewedBy: row.viewed_by,
+    save: async () => {
+      await pgPool.query(
+        `UPDATE posts SET
+          author_key = $2,
+          author = $3,
+          text = $4,
+          media = $5,
+          visibility = $6,
+          likes = $7,
+          bookmarks = $8,
+          repost_of = $9,
+          quote_text = $10,
+          is_repost = $11,
+          comments = $12,
+          views = $13,
+          viewed_by = $14
+        WHERE id = $1`,
+        [
+          row.id,
+          row.author_key,
+          row.author,
+          row.text,
+          JSON.stringify(row.media || []),
+          row.visibility,
+          row.likes || [],
+          row.bookmarks || [],
+          row.repost_of,
+          row.quote_text,
+          !!row.is_repost,
+          JSON.stringify(row.comments || []),
+          row.views,
+          row.viewed_by || [],
+        ]
+      );
+    },
+  };
+}
+
+async function pgCreatePost(post) {
+  await pgPool.query(
+    `INSERT INTO posts (
+      id, author_key, author, text, media, visibility, created_at,
+      likes, bookmarks, repost_of, quote_text, is_repost, repost_type,
+      original_id, author_id, comments, views, viewed_by
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+    ON CONFLICT (id) DO UPDATE SET
+      author_key = EXCLUDED.author_key,
+      author = EXCLUDED.author,
+      text = EXCLUDED.text,
+      media = EXCLUDED.media,
+      visibility = EXCLUDED.visibility,
+      likes = EXCLUDED.likes,
+      bookmarks = EXCLUDED.bookmarks,
+      repost_of = EXCLUDED.repost_of,
+      quote_text = EXCLUDED.quote_text,
+      is_repost = EXCLUDED.is_repost,
+      comments = EXCLUDED.comments,
+      views = EXCLUDED.views,
+      viewed_by = EXCLUDED.viewed_by`,
+    [
+      post.id,
+      post.authorKey,
+      post.author,
+      post.text,
+      JSON.stringify(post.media || []),
+      post.visibility,
+      post.createdAt,
+      post.likes || [],
+      post.bookmarks || [],
+      post.repostOf,
+      post.quoteText,
+      !!post.isRepost,
+      post.repostType,
+      post.originalId,
+      post.authorId,
+      JSON.stringify(post.comments || []),
+      post.views || 0,
+      post.viewedBy || [],
+    ]
+  );
+  return pgFindPostById(post.id);
+}
+
+async function pgDeletePost(id) {
+  await pgPool.query("DELETE FROM posts WHERE id = $1", [id]);
+  return { deletedCount: 1 };
+}
+
+async function pgCountReposts(originalId) {
+  const res = await pgPool.query("SELECT COUNT(*) FROM posts WHERE repost_of = $1", [originalId]);
+  return Number(res.rows[0].count);
+}
+
+async function pgFindRepostByAuthor(originalId, authorKey) {
+  const res = await pgPool.query(
+    "SELECT * FROM posts WHERE repost_of = $1 AND author_key = $2 LIMIT 1",
+    [originalId, authorKey]
+  );
+  if (!res.rows.length) return null;
+  return pgFindPostById(res.rows[0].id);
+}
+
+async function pgFindAllStories() {
+  const res = await pgPool.query("SELECT * FROM stories ORDER BY created_at DESC");
+  return res.rows.map((row) => ({
+    ...row,
+    authorKey: row.author_key,
+    seenBy: row.seen_by,
+  }));
+}
+
+async function pgCreateStory(story) {
+  await pgPool.query(
+    `INSERT INTO stories (
+      id, author_key, author, media, filter, created_at, expires_at, seen_by
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    ON CONFLICT (id) DO NOTHING`,
+    [
+      story.id,
+      story.authorKey,
+      story.author,
+      JSON.stringify(story.media || {}),
+      story.filter,
+      story.createdAt,
+      story.expiresAt,
+      story.seenBy || [],
+    ]
+  );
+}
+
+async function pgFindAllDMs() {
+  const res = await pgPool.query('SELECT * FROM dms ORDER BY created_at');
+  return res.rows.map((row) => ({
+    ...row,
+    from: row.from,
+    to: row.to,
+    readBy: row.read_by,
+  }));
+}
+
+async function pgCreateDM(dm) {
+  await pgPool.query(
+    `INSERT INTO dms (
+      id, "from", "to", text, media, created_at, read_by
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+    ON CONFLICT (id) DO NOTHING`,
+    [
+      dm.id,
+      dm.from,
+      dm.to,
+      dm.text,
+      JSON.stringify(dm.media || []),
+      dm.createdAt,
+      dm.readBy || [],
+    ]
+  );
+}
+
+async function pgFindAllReports() {
+  const res = await pgPool.query("SELECT * FROM reports ORDER BY created_at");
+  return res.rows;
+}
+
+async function pgCreateReport(report) {
+  await pgPool.query(
+    `INSERT INTO reports (
+      id, reporter, type, target_id, reason, note, created_at, ai
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    ON CONFLICT (id) DO NOTHING`,
+    [
+      report.id,
+      report.reporter,
+      report.type,
+      report.targetId,
+      report.reason,
+      report.note,
+      report.createdAt,
+      report.ai ? JSON.stringify(report.ai) : null,
+    ]
+  );
+}
+
+async function pgFindNotificationsByUser(userKey) {
+  const res = await pgPool.query(
+    "SELECT * FROM notifications WHERE user_key = $1 ORDER BY created_at DESC LIMIT 100",
+    [userKey]
+  );
+  return res.rows.map((row) => ({
+    ...row,
+    userKey: row.user_key,
+    actorKey: row.actor_key,
+    postId: row.post_id,
+    commentId: row.comment_id,
+  }));
+}
+
+async function pgCreateNotification(notification) {
+  await pgPool.query(
+    `INSERT INTO notifications (
+      id, user_key, type, actor_key, post_id, comment_id, read, created_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      notification.id,
+      notification.userKey,
+      notification.type,
+      notification.actorKey,
+      notification.postId,
+      notification.commentId,
+      !!notification.read,
+      notification.createdAt,
+    ]
+  );
 }
 
 function normalizeUsername(input) {
@@ -687,6 +1041,11 @@ function getBearerToken(req) {
 async function authUserFromReq(req) {
   const token = getBearerToken(req);
   if (!token) return null;
+  
+  if (USE_POSTGRES) {
+    return await pgFindUserByToken(token);
+  }
+  
   return await User.findOne({ token });
 }
 
@@ -701,6 +1060,11 @@ async function requireAuth(req, res) {
 
 async function findUserByKey(key) {
   const k = String(key || "");
+  
+  if (USE_POSTGRES) {
+    return await pgFindUserByKey(k);
+  }
+  
   return await User.findOne({ userKey: k });
 }
 
@@ -710,6 +1074,10 @@ async function findUserByKeyOrName(input) {
 }
 
 async function followerCountFor(userKey) {
+  if (USE_POSTGRES) {
+    return await pgCountFollowers(userKey);
+  }
+  
   return await User.countDocuments({ following: userKey });
 }
 
@@ -802,12 +1170,26 @@ async function toPublicPost(p, viewer) {
   const comments = asArray(p.comments);
   const viewCount = Number.isFinite(Number(p.views)) ? Number(p.views) : 0;
   const id = String(p.id);
-  const repostCount = await Post.countDocuments({ repostOf: id });
-  const repostedByMe = viewerKey ? !!(await Post.findOne({ repostOf: id, authorKey: viewerKey })) : false;
+  
+  let repostCount, repostedByMe;
+  if (USE_POSTGRES) {
+    repostCount = await pgCountReposts(id);
+    repostedByMe = viewerKey ? !!(await pgFindRepostByAuthor(id, viewerKey)) : false;
+  } else {
+    repostCount = await Post.countDocuments({ repostOf: id });
+    repostedByMe = viewerKey ? !!(await Post.findOne({ repostOf: id, authorKey: viewerKey })) : false;
+  }
+  
   let quotedPost = null;
   const repostOf = String(p.repostOf || "");
   if (repostOf) {
-    const original = await Post.findOne({ id: repostOf });
+    let original;
+    if (USE_POSTGRES) {
+      original = await pgFindPostById(repostOf);
+    } else {
+      original = await Post.findOne({ id: repostOf });
+    }
+    
     if (original && await canViewerSeePost(original, viewer)) {
       const originalAuthorKey = String(original.authorKey || normalizeUsername(original.author).key || "");
       const originalAuthor = await findUserByKey(originalAuthorKey);
@@ -862,6 +1244,23 @@ function conversationKey(a, b) {
 async function visiblePostsForViewer(viewer) {
   const viewerKey = viewer ? String(viewer.userKey) : "";
   const viewerFollowing = asArray(viewer && viewer.following).map(String);
+  
+  if (USE_POSTGRES) {
+    const privateUsers = await pgFindPrivateUsers();
+    const hiddenAuthors = privateUsers.filter((k) => k && k !== viewerKey && !viewerFollowing.includes(k));
+    const allPosts = await pgFindAllPosts();
+    return allPosts.filter((post) => {
+      const authorKey = String(post.authorKey || normalizeUsername(post.author).key || "");
+      if (hiddenAuthors.includes(authorKey)) return false;
+      const visibility = coerceVisibility(post.visibility);
+      return (
+        visibility === "public" ||
+        authorKey === viewerKey ||
+        viewerFollowing.includes(authorKey)
+      );
+    });
+  }
+  
   const privateUsers = await User.find({ isPrivate: true }).select("userKey");
   const hiddenAuthors = privateUsers
     .map((u) => String(u.userKey || ""))
@@ -890,6 +1289,12 @@ async function canViewerSeePost(post, viewer) {
 }
 
 async function nextPostId() {
+  if (USE_POSTGRES) {
+    const posts = await pgFindAllPosts();
+    const maxId = posts.reduce((max, p) => Math.max(max, Number.parseInt(String(p.id || ""), 10) || 0), 0);
+    return String(maxId + 1);
+  }
+  
   const posts = await Post.find().select("id");
   const maxId = posts.reduce((max, p) => Math.max(max, Number.parseInt(String(p.id || ""), 10) || 0), 0);
   return String(maxId + 1);
@@ -1224,9 +1629,17 @@ async function handleRegister(req, res) {
     },
     key,
   );
-  await User.create(u);
-  await syncDataJson();
-  return res.status(200).json({ ok: true, token: u.token, me: toPublicMe(u) });
+  
+  let createdUser;
+  if (USE_POSTGRES) {
+    createdUser = await pgCreateUser(u);
+  } else {
+    await User.create(u);
+    await syncDataJson();
+    createdUser = u;
+  }
+  
+  return res.status(200).json({ ok: true, token: createdUser.token, me: toPublicMe(createdUser) });
 }
 
 app.post("/api/register", handleRegister);
@@ -1244,7 +1657,9 @@ app.post("/api/login", async (req, res) => {
 
   u.token = newToken();
   await u.save();
-  await syncDataJson();
+  if (!USE_POSTGRES) {
+    await syncDataJson();
+  }
   return res.status(200).json({ ok: true, token: u.token, me: toPublicMe(u) });
 });
 
@@ -1253,7 +1668,9 @@ app.post("/api/logout", async (req, res) => {
   if (!u) return;
   u.token = "";
   await u.save();
-  await syncDataJson();
+  if (!USE_POSTGRES) {
+    await syncDataJson();
+  }
   return res.status(200).json({ ok: true });
 });
 
@@ -2397,21 +2814,27 @@ app.use((err, req, res, next) => {
 });
 
 async function start() {
-  await connectDataFile();
+  const dataMode = USE_POSTGRES ? "postgres" : "data.json";
+  const storageMode = USE_CLOUDINARY ? "cloudinary" : "local";
+
+  console.log("========================================");
+  console.log("HYSA1 Backend Starting");
+  console.log("========================================");
+  console.log(`Environment: ${NODE_ENV}`);
+  console.log(`DATABASE_URL present: ${!!DATABASE_URL}`);
+  console.log(`Data mode: ${dataMode}`);
+  console.log(`Storage mode: ${storageMode}`);
+  console.log(`Data file path: ${DATA_FILE}`);
+  console.log(`Uploads path: ${UPLOADS_DIR}`);
+  console.log("----------------------------------------");
+
+  if (!USE_POSTGRES) {
+    await connectDataFile();
+  }
 
   try {
     const pubOk = fs.existsSync(PUBLIC_DIR);
     const idxOk = fs.existsSync(INDEX_HTML);
-    console.log("[startup] paths", {
-      publicDir: PUBLIC_DIR,
-      publicExists: pubOk,
-      indexExists: idxOk,
-      storageDir: STORAGE_DIR,
-      dataFile: DATA_FILE,
-      uploadsDir: UPLOADS_DIR,
-      dataMode: "data.json",
-      persistentStorage: USING_PERSISTENT_STORAGE,
-    });
     if (!pubOk) console.error(`[startup] public folder not found. Checked: ${PUBLIC_DIR}`);
     if (pubOk && !idxOk) console.error(`[startup] index.html not found at: ${INDEX_HTML}`);
   } catch (err) {
@@ -2421,6 +2844,9 @@ async function start() {
   httpServer.listen(PORT, HOST, () => {
     console.log(`[server] listening on http://${HOST}:${PORT}`);
     console.log("[peerjs] signaling mounted at /peerjs");
+    console.log("========================================");
+    console.log("Server is ready!");
+    console.log("========================================");
   });
   httpServer.on("error", (err) => {
     console.error("[server] failed to start:", err);
