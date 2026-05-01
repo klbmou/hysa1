@@ -4,7 +4,7 @@
 // HYSA1 (Render-ready JSON backend)
 // - Binds to process.env.PORT (Render) and 0.0.0.0 (HOST)
 // - Serves /public statically
-// - Stores uploaded media as Base64 data URLs in post records/data.json.
+// - Stores app data in data.json and uploaded media under the configured uploads directory.
 // - Implements the endpoints expected by public/app.js (feed, upload, profile, etc)
 
 require('dotenv').config();
@@ -16,6 +16,8 @@ const os = require("os");
 const http = require("http");
 const express = require("express");
 const { ExpressPeerServer } = require("peer");
+const { Pool } = require("pg");
+const cloudinary = require("cloudinary").v2;
 
 // Render/Production Config
 const PORT = Number(process.env.PORT || 3000);
@@ -29,6 +31,40 @@ const VERIFIED_USERS = new Set(
     .map((x) => String(x || "").trim().toLowerCase())
     .filter(Boolean),
 );
+
+// -----------------------------
+// Data & Storage Mode Detection
+// -----------------------------
+
+const DATABASE_URL = process.env.DATABASE_URL;
+const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY;
+const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
+
+const USE_POSTGRES = !!DATABASE_URL;
+const USE_CLOUDINARY = !!(CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET);
+
+// Initialize PostgreSQL pool if DATABASE_URL is present
+let pgPool = null;
+if (USE_POSTGRES) {
+  pgPool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: {
+      rejectUnauthorized: false,
+    },
+  });
+  console.log("[postgres] Initialized PostgreSQL pool");
+}
+
+// Initialize Cloudinary if credentials are present
+if (USE_CLOUDINARY) {
+  cloudinary.config({
+    cloud_name: CLOUDINARY_CLOUD_NAME,
+    api_key: CLOUDINARY_API_KEY,
+    api_secret: CLOUDINARY_API_SECRET,
+  });
+  console.log("[cloudinary] Initialized Cloudinary");
+}
 
 function safeJsonParse(text) {
   try {
@@ -82,12 +118,42 @@ function asArray(x) {
   return [];
 }
 
+function isSamePath(a, b) {
+  try {
+    return path.resolve(a) === path.resolve(b);
+  } catch {
+    return false;
+  }
+}
+
 const PUBLIC_DIR = path.join(__dirname, '../frontend-web/public');
 const INDEX_HTML = path.join(PUBLIC_DIR, "index.html");
-const STORAGE_DIR = path.resolve(__dirname);
+const REPO_DATA_FILE = path.join(__dirname, "data.json");
+const REPO_UPLOADS_DIR = path.join(__dirname, "uploads");
+const DATA_DIR_ENV = process.env.DATA_DIR ? String(process.env.DATA_DIR).trim() : "";
+const STORAGE_DIR = path.resolve(__dirname, DATA_DIR_ENV || ".");
 const DATA_FILE = path.join(STORAGE_DIR, "data.json");
 const UPLOADS_DIR = path.join(STORAGE_DIR, "uploads");
+const USING_PERSISTENT_STORAGE = !!DATA_DIR_ENV && !isSamePath(STORAGE_DIR, __dirname);
+ensureDirSync(STORAGE_DIR);
 ensureDirSync(UPLOADS_DIR);
+
+function seedPersistentStorageSync() {
+  if (!isFile(DATA_FILE) && isFile(REPO_DATA_FILE) && !isSamePath(DATA_FILE, REPO_DATA_FILE)) {
+    fs.copyFileSync(REPO_DATA_FILE, DATA_FILE);
+    console.log("[data] Seeded persistent data.json from repository copy");
+  }
+
+  if (!isSamePath(UPLOADS_DIR, REPO_UPLOADS_DIR) && isDir(REPO_UPLOADS_DIR)) {
+    const hasUploads = isDir(UPLOADS_DIR) && fs.readdirSync(UPLOADS_DIR).length > 0;
+    if (!hasUploads) {
+      fs.cpSync(REPO_UPLOADS_DIR, UPLOADS_DIR, { recursive: true });
+      console.log("[data] Seeded persistent uploads from repository copy");
+    }
+  }
+}
+
+seedPersistentStorageSync();
 
 // -----------------------------
 // data.json models
@@ -406,9 +472,15 @@ const Report = createJsonModel({
 
 async function connectDataFile() {
   ensureDirSync(STORAGE_DIR);
+  ensureDirSync(UPLOADS_DIR);
   const current = readDataFile();
   await writeDataFile(current);
-  console.log("[data] Using data.json storage only");
+  console.log("[data] Using data.json storage only", {
+    dataFile: DATA_FILE,
+    uploadsDir: UPLOADS_DIR,
+    dataDirEnv: DATA_DIR_ENV || "",
+    persistentStorage: USING_PERSISTENT_STORAGE,
+  });
 }
 
 function normalizeUsername(input) {
@@ -518,7 +590,7 @@ function normalizeUserObject(u, fallbackKey) {
     password: u && u.password ? u.password : null,
     createdAt: String((u && u.createdAt) || new Date().toISOString()),
     bio: String((u && u.bio) || ""),
-    avatarUrl: String((u && u.avatarUrl) || ""),
+    avatarUrl: publicStoredUrl(u && u.avatarUrl),
     isPrivate: !!(u && u.isPrivate),
     isPendingVerification: !!(u && u.isPendingVerification),
     verificationRequestAt: String((u && u.verificationRequestAt) || ""),
@@ -592,10 +664,18 @@ function normalizeStoryObject(s) {
     authorKey,
     author: String(s.author || ""),
     media: { url: mediaUrl, kind: mediaKind, mime: mediaMime },
+    filter: normalizeStoryFilter(s.filter),
     createdAt: String(s.createdAt || new Date().toISOString()),
     expiresAt: String(s.expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()),
     seenBy: asArray(s.seenBy).map(String),
   };
+}
+
+const STORY_FILTERS = new Set(["normal", "warm", "cool", "contrast", "grayscale", "glow"]);
+
+function normalizeStoryFilter(value) {
+  const filter = String(value || "normal").toLowerCase();
+  return STORY_FILTERS.has(filter) ? filter : "normal";
 }
 
 function getBearerToken(req) {
@@ -640,7 +720,7 @@ function toPublicMe(u) {
     userKey: key,
     username: String(u && u.username ? u.username : ""),
     bio: String((u && u.bio) || ""),
-    avatarUrl: String((u && u.avatarUrl) || ""),
+    avatarUrl: publicStoredUrl(u && u.avatarUrl),
     isPrivate: !!(u && u.isPrivate),
     skills: asArray(u && u.skills).map(String),
     verified: VERIFIED_USERS.has(key),
@@ -655,7 +735,7 @@ async function toPublicProfile(target, viewer) {
     userKey: key,
     username: String(target.username || ""),
     bio: String(target.bio || ""),
-    avatarUrl: String(target.avatarUrl || ""),
+    avatarUrl: publicStoredUrl(target.avatarUrl),
     isPrivate: !!target.isPrivate,
     skills: asArray(target.skills).map(String),
     verified: VERIFIED_USERS.has(key),
@@ -669,12 +749,14 @@ async function toPublicStory(s, viewer) {
   const author = await findUserByKey(String(s.authorKey || ""));
   const viewerKey = viewer ? String(viewer.userKey) : "";
   const seenBy = asArray(s.seenBy).map(String);
+  const media = toPublicMediaList([s.media])[0] || null;
   return {
     id: String(s.id || ""),
     authorKey: String(s.authorKey || ""),
     author: String((author && author.username) || s.author || ""),
-    authorAvatar: String((author && author.avatarUrl) || ""),
-    media: s.media || null,
+    authorAvatar: publicStoredUrl(author && author.avatarUrl),
+    media,
+    filter: normalizeStoryFilter(s.filter),
     createdAt: String(s.createdAt || ""),
     expiresAt: String(s.expiresAt || ""),
     seen: !!(viewerKey && seenBy.includes(viewerKey)),
@@ -688,7 +770,7 @@ async function toPublicComment(c) {
     id: String((c && c.id) || ""),
     authorKey,
     author: String((authorUser && authorUser.username) || (c && c.author) || ""),
-    authorAvatar: String((authorUser && authorUser.avatarUrl) || ""),
+    authorAvatar: publicStoredUrl(authorUser && authorUser.avatarUrl),
     text: String((c && c.text) || ""),
     parentId: String((c && c.parentId) || ""),
     createdAt: String((c && c.createdAt) || new Date().toISOString()),
@@ -733,10 +815,10 @@ async function toPublicPost(p, viewer) {
         id: String(original.id),
         authorKey: originalAuthorKey,
         author: String((originalAuthor && originalAuthor.username) || original.author || ""),
-        authorAvatar: String((originalAuthor && originalAuthor.avatarUrl) || ""),
+        authorAvatar: publicStoredUrl(originalAuthor && originalAuthor.avatarUrl),
         verified: VERIFIED_USERS.has(originalAuthorKey),
         text: String(original.text || ""),
-        media: asArray(original.media),
+        media: toPublicMediaList(original.media),
         createdAt: String(original.createdAt || ""),
       };
     }
@@ -747,11 +829,11 @@ async function toPublicPost(p, viewer) {
     authorKey,
     authorId: String(p.authorId || authorKey),
     author: String((author && author.username) || p.author || ""),
-    authorAvatar: String((author && author.avatarUrl) || ""),
+    authorAvatar: publicStoredUrl(author && author.avatarUrl),
     verified: VERIFIED_USERS.has(authorKey),
     text: String(p.text || ""),
     content: String(p.text || ""),
-    media: asArray(p.media),
+    media: toPublicMediaList(p.media),
     repostOf,
     quoteText: String(p.quoteText || ""),
     isRepost: !!(p.isRepost || repostOf || p.originalId),
@@ -829,7 +911,38 @@ function validateMediaList(media) {
 
 function isAllowedMediaUrl(url) {
   const s = String(url || "");
-  return /^data:(image|video|audio)\/[a-z0-9.+-]+;base64,/i.test(s);
+  return /^data:(image|video|audio)\/[a-z0-9.+-]+;base64,/i.test(s) || 
+    /^\/uploads\/[a-z0-9._-]+$/i.test(s) ||
+    /^https?:\/\/(res\.cloudinary\.com|.*\.cloudinary\.com)/i.test(s);
+}
+
+function uploadUrlExists(url) {
+  const s = String(url || "");
+  if (/^https?:\/\/(res\.cloudinary\.com|.*\.cloudinary\.com)/i.test(s)) {
+    return true;
+  }
+  const m = /^\/uploads\/([a-z0-9._-]+)$/i.exec(s);
+  if (!m) return true;
+  return isFile(path.join(UPLOADS_DIR, m[1]));
+}
+
+function publicStoredUrl(url) {
+  const s = String(url || "");
+  if (/^https?:\/\/(res\.cloudinary\.com|.*\.cloudinary\.com)/i.test(s)) {
+    return s;
+  }
+  return s && uploadUrlExists(s) ? s : "";
+}
+
+function toPublicMediaList(media) {
+  return asArray(media)
+    .map((m) => ({
+      url: String(m && m.url ? m.url : ""),
+      kind: String(m && m.kind ? m.kind : ""),
+      mime: String(m && m.mime ? m.mime : ""),
+    }))
+    .filter((m) => m.kind && m.mime)
+    .map((m) => (m.url && uploadUrlExists(m.url) ? m : { ...m, url: "", missing: true }));
 }
 
 function validateDmMediaList(media) {
@@ -895,7 +1008,10 @@ function readDataFile() {
 }
 
 async function writeDataFile(data) {
-  await fsp.writeFile(DATA_FILE, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+  await fsp.mkdir(path.dirname(DATA_FILE), { recursive: true });
+  const tmp = path.join(path.dirname(DATA_FILE), `data.${process.pid}.${Date.now()}.tmp`);
+  await fsp.writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+  await fsp.rename(tmp, DATA_FILE);
 }
 
 async function upsertPostInDataFile(post) {
@@ -981,6 +1097,7 @@ async function syncDataJson() {
     authorKey: String(s.authorKey || ""),
     author: String(s.author || ""),
     media: s.media || null,
+    filter: normalizeStoryFilter(s.filter),
     createdAt: String(s.createdAt || ""),
     expiresAt: String(s.expiresAt || ""),
     seenBy: asArray(s.seenBy).map(String),
@@ -1076,7 +1193,13 @@ app.get("/healthz", (req, res) => res.status(200).send("ok"));
 // API
 // -----------------------------
 
-app.get("/api/version", (req, res) => res.status(200).json({ ok: true, version: "hysa1-json-2026-04-28" }));
+app.get("/api/version", (req, res) => res.status(200).json({
+  ok: true,
+  version: "hysa1-json-persistent-2026-05-01",
+  dataMode: USE_POSTGRES ? "postgres" : "data.json",
+  storageMode: USE_CLOUDINARY ? "cloudinary" : "local",
+  persistentStorage: USING_PERSISTENT_STORAGE,
+}));
 
 async function handleRegister(req, res) {
   const body = req.body || {};
@@ -1299,12 +1422,32 @@ app.post("/api/stories", async (req, res) => {
     authorKey: String(viewer.userKey),
     author: String(viewer.username),
     media: { url: mediaUrl, kind: mediaKind, mime: mediaMime },
+    filter: normalizeStoryFilter(req.body && req.body.filter),
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     seenBy: [String(viewer.userKey)],
   };
   await Story.create(story);
   await syncDataJson();
+  return res.status(200).json({ ok: true, story: await toPublicStory(story, viewer) });
+});
+
+app.post("/api/stories/:id/view", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const id = String(req.params.id || "");
+  const story = await Story.findOne({ id });
+  if (!story) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (String(story.expiresAt || "") <= new Date().toISOString()) {
+    return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  }
+  if (!Array.isArray(story.seenBy)) story.seenBy = [];
+  const viewerKey = String(viewer.userKey);
+  if (!story.seenBy.includes(viewerKey)) {
+    story.seenBy.push(viewerKey);
+    await story.save();
+    await syncDataJson();
+  }
   return res.status(200).json({ ok: true, story: await toPublicStory(story, viewer) });
 });
 
@@ -1853,7 +1996,7 @@ app.get("/api/dm/threads", async (req, res) => {
       return {
         peerKey,
         peerUsername: String((peer && peer.username) || peerKey),
-        peerAvatar: String((peer && peer.avatarUrl) || ""),
+        peerAvatar: publicStoredUrl(peer && peer.avatarUrl),
         lastMessage: String(msg.text || "") || (asArray(msg.media).length ? `[${String(asArray(msg.media)[0].kind || "media")}]` : ""),
         createdAt: String(msg.createdAt || ""),
         unreadCount,
@@ -1885,11 +2028,7 @@ app.get("/api/dm/:key", async (req, res) => {
     from: String(m.from || ""),
     to: String(m.to || ""),
     text: String(m.text || ""),
-    media: asArray(m.media).map((x) => ({
-      url: String(x && x.url ? x.url : ""),
-      kind: String(x && x.kind ? x.kind : ""),
-      mime: String(x && x.mime ? x.mime : ""),
-    })).filter((x) => x.url && x.kind && x.mime),
+    media: toPublicMediaList(m.media),
     createdAt: String(m.createdAt || ""),
     mine: String(m.from) === viewerKey,
   }));
@@ -1903,7 +2042,7 @@ app.get("/api/dm/:key", async (req, res) => {
 
   return res.status(200).json({
     ok: true,
-    peer: { key: peerKey, username: String(peer.username || ""), avatarUrl: String(peer.avatarUrl || "") },
+    peer: { key: peerKey, username: String(peer.username || ""), avatarUrl: publicStoredUrl(peer.avatarUrl) },
     messages,
   });
 });
@@ -1982,6 +2121,93 @@ app.get("/api/moderation/reports", async (req, res) => {
   return res.status(200).json({ ok: true, reports: list });
 });
 
+function aiNotConfigured(kind, prompt) {
+  const trimmed = String(prompt || "").trim();
+  if (kind === "image") {
+    return {
+      configured: false,
+      message: "AI image generation is not configured yet.",
+      media: null,
+      prompt: trimmed,
+    };
+  }
+  if (kind === "video") {
+    return {
+      configured: false,
+      message: "AI video generation is not configured yet.",
+      media: null,
+      prompt: trimmed,
+      status: "placeholder",
+    };
+  }
+  return {
+    configured: false,
+    reply: trimmed
+      ? `AI is not configured yet, but I can still help you shape this idea: "${trimmed.slice(0, 160)}". Add an AI API key on the backend to enable live responses.`
+      : "AI is not configured yet. Add an AI API key on the backend to enable live responses.",
+  };
+}
+
+app.post("/api/ai/chat", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const message = String(req.body && req.body.message || "").trim();
+  if (!message || message.length > 2000) return res.status(400).json({ ok: false, error: "INVALID_MESSAGE" });
+
+  const apiKey = process.env.OPENAI_API_KEY ? String(process.env.OPENAI_API_KEY).trim() : "";
+  if (!apiKey) return res.status(200).json({ ok: true, ...aiNotConfigured("chat", message) });
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        input: message,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      console.error("[ai] chat provider error:", body && (body.error || body));
+      return res.status(200).json({ ok: true, ...aiNotConfigured("chat", message) });
+    }
+    const reply = String(body.output_text || body.text || "").trim() || "I am ready.";
+    return res.status(200).json({ ok: true, configured: true, reply });
+  } catch (err) {
+    console.error("[ai] chat failed:", err.message);
+    return res.status(200).json({ ok: true, ...aiNotConfigured("chat", message) });
+  }
+});
+
+app.post("/api/ai/image", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const prompt = String(req.body && req.body.prompt || "").trim();
+  if (!prompt || prompt.length > 1000) return res.status(400).json({ ok: false, error: "INVALID_PROMPT" });
+  return res.status(200).json({ ok: true, ...aiNotConfigured("image", prompt) });
+});
+
+app.post("/api/ai/video", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const prompt = String(req.body && req.body.prompt || "").trim();
+  if (!prompt || prompt.length > 1000) return res.status(400).json({ ok: false, error: "INVALID_PROMPT" });
+  return res.status(200).json({ ok: true, ...aiNotConfigured("video", prompt) });
+});
+
+async function uploadToCloudinary(dataUrl, kind) {
+  const result = await cloudinary.uploader.upload(dataUrl, {
+    resource_type: kind === "video" ? "video" : "image",
+    folder: "hysa1",
+    use_filename: true,
+    unique_filename: true,
+  });
+  return result.secure_url;
+}
+
 app.post("/api/upload", async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
@@ -2004,7 +2230,30 @@ app.post("/api/upload", async (req, res) => {
   if (!buf || !buf.length) return res.status(400).json({ ok: false, error: "UPLOAD_INVALID" });
   if (buf.length > MAX_UPLOAD_BYTES) return res.status(413).json({ ok: false, error: "UPLOAD_TOO_LARGE" });
 
-  const media = { url: String(body.dataUrl), kind, mime };
+  let mediaUrl;
+  if (USE_CLOUDINARY) {
+    try {
+      const result = await cloudinary.uploader.upload(body.dataUrl, {
+        resource_type: kind === "video" ? "video" : "image",
+        folder: "hysa1",
+        use_filename: true,
+        unique_filename: true,
+      });
+      mediaUrl = result.secure_url;
+    } catch (err) {
+      console.warn("[cloudinary] Upload failed, falling back to local:", err.message);
+      USE_CLOUDINARY = false;
+    }
+  }
+
+  if (!mediaUrl) {
+    await fsp.mkdir(UPLOADS_DIR, { recursive: true });
+    const filename = `${Date.now()}_${crypto.randomBytes(8).toString("base64url")}.${ext}`;
+    await fsp.writeFile(path.join(UPLOADS_DIR, filename), buf);
+    mediaUrl = `/uploads/${filename}`;
+  }
+
+  const media = { url: mediaUrl, kind, mime };
   return res.status(200).json({ ok: true, media });
 });
 
@@ -2065,11 +2314,7 @@ app.get("/api/messages/:userId", async (req, res) => {
     from: String(m.from || ""),
     to: String(m.to || ""),
     text: String(m.text || ""),
-    media: asArray(m.media).map((x) => ({
-      url: String(x && x.url ? x.url : ""),
-      kind: String(x && x.kind ? x.kind : ""),
-      mime: String(x && x.mime ? x.mime : ""),
-    })).filter((x) => x.url && x.kind && x.mime),
+    media: toPublicMediaList(m.media),
     createdAt: String(m.createdAt || ""),
     mine: String(m.from) === viewerKey,
   }));
@@ -2083,7 +2328,7 @@ app.get("/api/messages/:userId", async (req, res) => {
 
   return res.status(200).json({
     ok: true,
-    peer: { key: peerKey, username: String(peer.username || ""), avatarUrl: String(peer.avatarUrl || "") },
+    peer: { key: peerKey, username: String(peer.username || ""), avatarUrl: publicStoredUrl(peer.avatarUrl) },
     messages,
   });
 });
@@ -2163,7 +2408,9 @@ async function start() {
       indexExists: idxOk,
       storageDir: STORAGE_DIR,
       dataFile: DATA_FILE,
+      uploadsDir: UPLOADS_DIR,
       dataMode: "data.json",
+      persistentStorage: USING_PERSISTENT_STORAGE,
     });
     if (!pubOk) console.error(`[startup] public folder not found. Checked: ${PUBLIC_DIR}`);
     if (pubOk && !idxOk) console.error(`[startup] index.html not found at: ${INDEX_HTML}`);

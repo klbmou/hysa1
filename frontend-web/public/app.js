@@ -44,6 +44,23 @@ const sentViews = new Set();
 let activeProfileKey = null;
 let activePostId = null;
 let activeProfileTab = "posts";
+let storyCache = [];
+let activeStoryIndex = 0;
+let storyProgressTimer = null;
+let storyFileInput = null;
+let storyDraftFile = null;
+let storyDraftPreviewUrl = "";
+let storyDraftFilter = "normal";
+let aiMode = "chat";
+
+const STORY_FILTERS = [
+  { key: "normal", label: "Normal" },
+  { key: "warm", label: "Warm" },
+  { key: "cool", label: "Cool" },
+  { key: "contrast", label: "Contrast" },
+  { key: "grayscale", label: "Gray" },
+  { key: "glow", label: "Glow" },
+];
 
 let lang = localStorage.getItem(langKey) || "ar";
 if (!["ar", "en", "fr"].includes(lang)) lang = "ar";
@@ -64,7 +81,7 @@ const I18N = {
     searchPlaceholder: "ابحث عن مستخدم...",
     logout: "تسجيل خروج",
     startNow: "ابدأ الآن",
-    authBlurb: 'هذا مشروع تجريبي سريع. البيانات تُحفظ في قاعدة بيانات <span class="mono">MongoDB</span> لضمان الاستمرارية.',
+    authBlurb: 'هذا مشروع تجريبي سريع. البيانات تُحفظ في <span class="mono">data.json</span>.',
     login: "دخول",
     register: "تسجيل",
     username: "اسم المستخدم",
@@ -154,7 +171,7 @@ const I18N = {
     searchPlaceholder: "Search users...",
     logout: "Log out",
     startNow: "Get started",
-    authBlurb: 'Quick demo project. Data is stored in <span class="mono">MongoDB</span> for persistence.',
+    authBlurb: 'Quick demo project. Data is stored in <span class="mono">data.json</span>.',
     login: "Login",
     register: "Register",
     username: "Username",
@@ -232,7 +249,7 @@ const I18N = {
     searchPlaceholder: "Rechercher un utilisateur...",
     logout: "Deconnexion",
     startNow: "Commencer",
-    authBlurb: 'Projet de demo. Les donnees sont stockees dans <span class="mono">MongoDB</span> pour la persistance.',
+    authBlurb: 'Projet de demo. Les donnees sont stockees dans <span class="mono">data.json</span>.',
     login: "Connexion",
     register: "Inscription",
     username: "Nom d'utilisateur",
@@ -437,6 +454,10 @@ const ICONS = {
   trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 15H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
   phone: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 8-6 4 6 4V8Z"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>',
   lock: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
+  image: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="m21 15-4.5-4.5L9 18"/></svg>',
+  video: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3Z"/></svg>',
+  spark: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l1.8 6.1L20 10l-6.2 1.9L12 18l-1.8-6.1L4 10l6.2-1.9Z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8Z"/></svg>',
 };
 
 function icon(name) {
@@ -469,7 +490,7 @@ function pulseTap(node) {
 }
 
 function isFullMediaUrl(url) {
-  return /^(https?:\/\/|data:(image|video|audio)\/[a-z0-9.+-]+;base64,)/i.test(String(url || ""));
+  return /^(\/uploads\/|https?:\/\/|data:(image|video|audio)\/[a-z0-9.+-]+;base64,)/i.test(String(url || ""));
 }
 
 function currentUserKey() {
@@ -577,11 +598,15 @@ function clearSession({ clearToken = true } = {}) {
 }
 
 function hideAllOverlays() {
+  clearStoryProgress();
   if (el.composeModal) el.composeModal.hidden = true;
   if (el.profileModal) el.profileModal.hidden = true;
   if (el.reportModal) el.reportModal.hidden = true;
   if (el.insightsModal) el.insightsModal.hidden = true;
   if (el.dmModal) el.dmModal.hidden = true;
+  if (el.storyComposer) el.storyComposer.hidden = true;
+  if (el.storyViewer) el.storyViewer.hidden = true;
+  if (el.aiPanel) el.aiPanel.hidden = true;
 }
 
 let activeDmPeer = null;
@@ -781,7 +806,7 @@ function renderDmMessage(message) {
     if (!isFullMediaUrl(item.url)) {
       const archived = document.createElement("div");
       archived.className = "mediaArchived";
-      archived.innerHTML = `<strong>Media Archived</strong><span>This older message was not stored on Cloudinary.</span>`;
+      archived.innerHTML = `<strong>Media unavailable</strong><span>This upload is missing from storage.</span>`;
       wrap.appendChild(archived);
       b.appendChild(wrap);
       continue;
@@ -1178,6 +1203,8 @@ function showAuth() {
   if (el.mobileNav) el.mobileNav.hidden = true;
   if (el.dmBtn) el.dmBtn.hidden = true;
   if (el.reelsBtn) el.reelsBtn.hidden = true;
+  if (el.aiFab) el.aiFab.hidden = true;
+  if (el.aiPanel) el.aiPanel.hidden = true;
   location.hash = "#home";
 }
 
@@ -1191,6 +1218,7 @@ function showApp() {
   if (el.searchInput) el.searchInput.disabled = false;
   if (el.composeFab) el.composeFab.hidden = false;
   if (el.mobileNav) el.mobileNav.hidden = false;
+  if (el.aiFab) el.aiFab.hidden = false;
   if (el.meBtn) el.meBtn.textContent = me ? `@${me.username}` : "@me";
   if (me) ensurePeerClient().catch(() => {});
 }
@@ -1252,23 +1280,72 @@ function avatarNode(avatarUrl, fallback, sizeClass = "") {
   return node;
 }
 
+function safeStoryList(stories) {
+  return (Array.isArray(stories) ? stories : []).filter((story) => story && story.id && story.media && story.media.url);
+}
+
+function storyLabel(story) {
+  return String(story && story.author ? story.author : "user");
+}
+
+function storyIndexById(id) {
+  return storyCache.findIndex((story) => String(story.id) === String(id));
+}
+
 function storyNode(story) {
   const wrap = document.createElement("button");
   wrap.type = "button";
   wrap.className = "storyItem";
+  wrap.title = `Story by @${storyLabel(story)}`;
   const ring = document.createElement("div");
   ring.className = `storyRing ${story.seen ? "seen" : ""}`.trim();
-  ring.appendChild(avatarNode(story.authorAvatar, story.author));
+  ring.appendChild(avatarNode(story.authorAvatar, storyLabel(story)));
   const label = document.createElement("div");
-  label.textContent = `@${story.author}`;
+  label.className = "storyLabel";
+  label.textContent = `@${storyLabel(story)}`;
   wrap.appendChild(ring);
   wrap.appendChild(label);
   on(wrap, "click", () => {
-    if (story.media && story.media.url) {
-      if (story.media.kind === "video") window.open(story.media.url, "_blank", "noopener");
-      else showToast(`Story by @${story.author}`);
-    }
+    const idx = storyIndexById(story.id);
+    if (idx >= 0) openStoryViewer(idx);
   });
+  return wrap;
+}
+
+function myStoryNode(myStory) {
+  const wrap = storyNode(myStory || {
+    id: "",
+    author: me?.username || "me",
+    authorAvatar: me?.avatarUrl || "",
+    seen: false,
+    media: null,
+  });
+  wrap.classList.add("storyMine");
+  wrap.title = myStory ? "View your story" : "Add story";
+  const label = wrap.querySelector(".storyLabel");
+  if (label) label.textContent = "Your story";
+  const ring = wrap.querySelector(".storyRing");
+  if (ring) ring.classList.toggle("empty", !myStory);
+
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "storyAddBtn";
+  add.innerHTML = icon("plus");
+  add.setAttribute("aria-label", "Add story");
+  add.title = "Add story";
+  on(add, "click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openStoryComposer();
+  });
+  wrap.appendChild(add);
+
+  if (!myStory) {
+    on(wrap, "click", (e) => {
+      e.preventDefault();
+      openStoryComposer();
+    });
+  }
   return wrap;
 }
 
@@ -1276,22 +1353,300 @@ async function loadStories() {
   if (!el.storiesBar || !getToken()) return;
   try {
     const r = await api("/api/stories", { method: "GET" });
-    const stories = Array.isArray(r.stories) ? r.stories : [];
+    const stories = safeStoryList(r.stories);
+    storyCache = stories;
     el.storiesBar.textContent = "";
-    if (!stories.length) {
-      if (me) {
-        const own = storyNode({ author: me.username, authorAvatar: me.avatarUrl, seen: false, media: null });
-        el.storiesBar.appendChild(own);
-        el.storiesBar.hidden = false;
-      } else {
-        el.storiesBar.hidden = true;
-      }
-      return;
+    const myKey = String(me?.userKey || me?.username || "").toLowerCase();
+    const myStory = stories.find((s) => String(s.authorKey || s.author || "").toLowerCase() === myKey) || null;
+    if (me) el.storiesBar.appendChild(myStoryNode(myStory));
+    for (const s of stories) {
+      if (myStory && String(s.id) === String(myStory.id)) continue;
+      el.storiesBar.appendChild(storyNode(s));
     }
-    for (const s of stories) el.storiesBar.appendChild(storyNode(s));
-    el.storiesBar.hidden = false;
+    el.storiesBar.hidden = !me && !stories.length;
   } catch {
     el.storiesBar.hidden = true;
+  }
+}
+
+function ensureStoryFileInput() {
+  if (storyFileInput) return storyFileInput;
+  storyFileInput = document.createElement("input");
+  storyFileInput.type = "file";
+  storyFileInput.accept = "image/*,video/*";
+  storyFileInput.hidden = true;
+  on(storyFileInput, "change", () => {
+    const file = storyFileInput.files && storyFileInput.files[0];
+    if (file) handleStoryDraftFile(file).catch((err) => setMsg(el.storyMsg, humanizeError(err?.message), true));
+    storyFileInput.value = "";
+  });
+  document.body.appendChild(storyFileInput);
+  return storyFileInput;
+}
+
+function ensureStoryComposer() {
+  if (el.storyComposer) return;
+  const overlay = document.createElement("div");
+  overlay.id = "storyComposerModal";
+  overlay.className = "overlay glass storyComposerOverlay";
+  overlay.hidden = true;
+  overlay.innerHTML = `
+    <div class="modal card storyComposerCard" role="dialog" aria-modal="true" aria-label="Create story">
+      <div class="modal-header">
+        <h3>Add story</h3>
+        <button id="storyClose" class="iconBtn" type="button" aria-label="Close">X</button>
+      </div>
+      <div id="storyPreview" class="storyDraftPreview">
+        <div class="storyDraftEmpty">${icon("image")}<strong>Select an image or video</strong></div>
+      </div>
+      <div id="storyFilters" class="storyFilterRow"></div>
+      <div class="modal-footer storyComposerActions">
+        <button id="storyPick" class="btn ghost" type="button">Choose media</button>
+        <button id="storyShare" class="btn primary" type="button" disabled>Share story</button>
+      </div>
+      <div id="storyMsg" class="msg"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  el.storyComposer = overlay;
+  el.storyClose = overlay.querySelector("#storyClose");
+  el.storyPreview = overlay.querySelector("#storyPreview");
+  el.storyFilters = overlay.querySelector("#storyFilters");
+  el.storyPick = overlay.querySelector("#storyPick");
+  el.storyShare = overlay.querySelector("#storyShare");
+  el.storyMsg = overlay.querySelector("#storyMsg");
+
+  on(el.storyClose, "click", closeStoryComposer);
+  on(el.storyPick, "click", () => ensureStoryFileInput().click());
+  on(el.storyShare, "click", publishStory);
+  bindOverlayClose(overlay, closeStoryComposer);
+}
+
+function resetStoryDraft() {
+  if (storyDraftPreviewUrl && storyDraftPreviewUrl.startsWith("blob:")) URL.revokeObjectURL(storyDraftPreviewUrl);
+  storyDraftFile = null;
+  storyDraftPreviewUrl = "";
+  storyDraftFilter = "normal";
+  setMsg(el.storyMsg, "");
+  renderStoryDraft();
+}
+
+function openStoryComposer() {
+  if (!getToken()) return showAuth();
+  ensureStoryComposer();
+  resetStoryDraft();
+  showOverlay(el.storyComposer);
+}
+
+function closeStoryComposer() {
+  hideOverlay(el.storyComposer);
+}
+
+function setStoryFilter(filter) {
+  storyDraftFilter = STORY_FILTERS.some((item) => item.key === filter) ? filter : "normal";
+  renderStoryDraft();
+}
+
+async function handleStoryDraftFile(file) {
+  if (!file) return;
+  if (!/^image\//.test(file.type) && !/^video\//.test(file.type)) throw new Error("INVALID_FILE");
+  const maxBytes = 25 * 1024 * 1024;
+  if (file.size > maxBytes) throw new Error("FILE_TOO_LARGE");
+  if (storyDraftPreviewUrl && storyDraftPreviewUrl.startsWith("blob:")) URL.revokeObjectURL(storyDraftPreviewUrl);
+  storyDraftFile = file;
+  storyDraftPreviewUrl = URL.createObjectURL(file);
+  setMsg(el.storyMsg, "");
+  renderStoryDraft();
+}
+
+function renderStoryDraft() {
+  if (!el.storyPreview || !el.storyFilters || !el.storyShare) return;
+  el.storyPreview.textContent = "";
+  if (!storyDraftFile) {
+    const empty = document.createElement("div");
+    empty.className = "storyDraftEmpty";
+    empty.innerHTML = `${icon("image")}<strong>Select an image or video</strong>`;
+    el.storyPreview.appendChild(empty);
+  } else if (/^video\//.test(storyDraftFile.type)) {
+    const video = document.createElement("video");
+    video.src = storyDraftPreviewUrl;
+    video.controls = true;
+    video.playsInline = true;
+    video.className = `storyDraftMedia story-filter-${storyDraftFilter}`;
+    el.storyPreview.appendChild(video);
+  } else {
+    const img = document.createElement("img");
+    img.alt = "";
+    img.src = storyDraftPreviewUrl;
+    img.className = `storyDraftMedia story-filter-${storyDraftFilter}`;
+    el.storyPreview.appendChild(img);
+  }
+
+  el.storyFilters.textContent = "";
+  for (const item of STORY_FILTERS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `storyFilter ${item.key === storyDraftFilter ? "active" : ""}`.trim();
+    btn.textContent = item.label;
+    on(btn, "click", () => setStoryFilter(item.key));
+    el.storyFilters.appendChild(btn);
+  }
+  el.storyShare.disabled = !storyDraftFile;
+}
+
+async function publishStory() {
+  if (!storyDraftFile || !el.storyShare) return;
+  el.storyShare.disabled = true;
+  if (el.storyPick) el.storyPick.disabled = true;
+  setMsg(el.storyMsg, "Uploading story...");
+  try {
+    const media = await uploadFile(storyDraftFile);
+    await api("/api/stories", {
+      method: "POST",
+      body: JSON.stringify({ media, filter: storyDraftFilter }),
+    });
+    closeStoryComposer();
+    showToast("Story shared.");
+    await loadStories();
+  } catch (err) {
+    setMsg(el.storyMsg, humanizeError(err?.message), true);
+  } finally {
+    if (el.storyPick) el.storyPick.disabled = false;
+    if (el.storyShare) el.storyShare.disabled = !storyDraftFile;
+  }
+}
+
+function ensureStoryViewer() {
+  if (el.storyViewer) return;
+  const overlay = document.createElement("div");
+  overlay.id = "storyViewer";
+  overlay.className = "storyViewerOverlay";
+  overlay.hidden = true;
+  overlay.innerHTML = `
+    <section class="storyViewerShell" role="dialog" aria-modal="true" aria-label="Story viewer">
+      <div class="storyProgress"><span id="storyProgressFill"></span></div>
+      <header class="storyViewerHeader">
+        <div id="storyViewerAuthor" class="storyViewerAuthor"></div>
+        <button id="storyViewerClose" class="iconBtn" type="button" aria-label="Close">X</button>
+      </header>
+      <div id="storyViewerMedia" class="storyViewerMedia"></div>
+      <button id="storyPrev" class="storyTapZone prev" type="button" aria-label="Previous story"></button>
+      <button id="storyNext" class="storyTapZone next" type="button" aria-label="Next story"></button>
+    </section>
+  `;
+  document.body.appendChild(overlay);
+  el.storyViewer = overlay;
+  el.storyProgressFill = overlay.querySelector("#storyProgressFill");
+  el.storyViewerAuthor = overlay.querySelector("#storyViewerAuthor");
+  el.storyViewerMedia = overlay.querySelector("#storyViewerMedia");
+  el.storyViewerClose = overlay.querySelector("#storyViewerClose");
+  el.storyPrev = overlay.querySelector("#storyPrev");
+  el.storyNext = overlay.querySelector("#storyNext");
+  on(el.storyViewerClose, "click", closeStoryViewer);
+  on(el.storyPrev, "click", previousStory);
+  on(el.storyNext, "click", nextStory);
+  on(document, "keydown", (e) => {
+    if (!el.storyViewer || el.storyViewer.hidden) return;
+    if (e.key === "Escape") closeStoryViewer();
+    if (e.key === "ArrowRight") nextStory();
+    if (e.key === "ArrowLeft") previousStory();
+  });
+}
+
+function clearStoryProgress() {
+  if (storyProgressTimer) window.clearTimeout(storyProgressTimer);
+  storyProgressTimer = null;
+  if (el.storyProgressFill) {
+    el.storyProgressFill.style.transition = "none";
+    el.storyProgressFill.style.width = "0%";
+  }
+}
+
+function startStoryProgress(durationMs) {
+  clearStoryProgress();
+  if (!el.storyProgressFill) return;
+  window.requestAnimationFrame(() => {
+    if (!el.storyProgressFill) return;
+    el.storyProgressFill.style.transition = `width ${durationMs}ms linear`;
+    el.storyProgressFill.style.width = "100%";
+  });
+  storyProgressTimer = window.setTimeout(nextStory, durationMs);
+}
+
+function openStoryViewer(index) {
+  ensureStoryViewer();
+  if (!storyCache.length) return;
+  activeStoryIndex = Math.max(0, Math.min(storyCache.length - 1, Number(index) || 0));
+  el.storyViewer.hidden = false;
+  renderStoryViewer();
+}
+
+function closeStoryViewer() {
+  clearStoryProgress();
+  if (el.storyViewer) el.storyViewer.hidden = true;
+  if (el.storyViewerMedia) el.storyViewerMedia.textContent = "";
+}
+
+function renderStoryViewer() {
+  const story = storyCache[activeStoryIndex];
+  if (!story || !el.storyViewerMedia || !el.storyViewerAuthor) return closeStoryViewer();
+  clearStoryProgress();
+  el.storyViewerMedia.textContent = "";
+  el.storyViewerAuthor.textContent = "";
+  el.storyViewerAuthor.appendChild(avatarNode(story.authorAvatar, storyLabel(story), "sm"));
+  const name = document.createElement("strong");
+  name.textContent = `@${storyLabel(story)}`;
+  el.storyViewerAuthor.appendChild(name);
+
+  const mediaClass = `storyFullMedia story-filter-${story.filter || "normal"}`;
+  if (story.media.kind === "video") {
+    const video = document.createElement("video");
+    video.src = story.media.url;
+    video.className = mediaClass;
+    video.autoplay = true;
+    video.controls = true;
+    video.muted = true;
+    video.playsInline = true;
+    on(video, "loadedmetadata", () => {
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? Math.min(video.duration * 1000, 15000) : 8000;
+      startStoryProgress(duration);
+    }, { once: true });
+    on(video, "ended", nextStory);
+    el.storyViewerMedia.appendChild(video);
+    window.setTimeout(() => {
+      if (!storyProgressTimer) startStoryProgress(8000);
+    }, 600);
+  } else {
+    const img = document.createElement("img");
+    img.alt = "";
+    img.src = story.media.url;
+    img.className = mediaClass;
+    el.storyViewerMedia.appendChild(img);
+    startStoryProgress(5500);
+  }
+
+  if (!story.seen) {
+    story.seen = true;
+    api(`/api/stories/${encodeURIComponent(story.id)}/view`, { method: "POST", body: "{}" }).catch(() => {});
+  }
+}
+
+function nextStory() {
+  if (activeStoryIndex < storyCache.length - 1) {
+    activeStoryIndex += 1;
+    renderStoryViewer();
+  } else {
+    closeStoryViewer();
+    loadStories().catch(() => {});
+  }
+}
+
+function previousStory() {
+  if (activeStoryIndex > 0) {
+    activeStoryIndex -= 1;
+    renderStoryViewer();
+  } else {
+    renderStoryViewer();
   }
 }
 
@@ -1518,7 +1873,7 @@ function mediaGridNode(media, { removable = false, onRemove, withControls = fals
     if (!isFullMediaUrl(item && item.url)) {
       const archived = document.createElement("div");
       archived.className = "mediaArchived";
-      archived.innerHTML = `<strong>Media Archived</strong><span>This older upload was not stored on Cloudinary.</span>`;
+      archived.innerHTML = `<strong>Media unavailable</strong><span>This upload is missing from storage.</span>`;
       tile.appendChild(archived);
       grid.appendChild(tile);
       continue;
@@ -1813,16 +2168,18 @@ function postNode(post) {
     root.appendChild(richTextNode(post.text));
   }
 
+  let mediaNode = null;
   if (Array.isArray(post.media) && post.media.length) {
     const media = mediaGridNode(post.media, { withControls: true });
     media.classList.add("postMedia");
+    mediaNode = media;
     root.appendChild(media);
   }
   if (post.quotedPost) {
     const quoted = quotedPostNode(post.quotedPost);
     if (quoted) root.appendChild(quoted);
   }
-  root.appendChild(postHeart);
+  if (mediaNode) mediaNode.appendChild(postHeart);
 
   const actions = document.createElement("div");
   actions.className = "postActions";
@@ -1846,9 +2203,23 @@ function postNode(post) {
       likeBtn.disabled = false;
     }
   });
-  on(root, "dblclick", async () => {
+  function showPostHeart() {
+    postHeart.classList.remove("show");
+    void postHeart.offsetWidth;
     postHeart.classList.add("show");
-    window.setTimeout(() => postHeart.classList.remove("show"), 420);
+    window.setTimeout(() => postHeart.classList.remove("show"), 620);
+  }
+
+  let lastMediaTap = 0;
+  let lastMediaLikeTrigger = 0;
+  async function likeFromMedia(e) {
+    const target = e && e.target && e.target.closest ? e.target : null;
+    if (target && target.closest("button, a, input, textarea, select, .videoControls")) return;
+    const now = Date.now();
+    if (now - lastMediaLikeTrigger < 360) return;
+    lastMediaLikeTrigger = now;
+    if (e && typeof e.preventDefault === "function") e.preventDefault();
+    showPostHeart();
     if (!post.likedByMe) {
       try {
         await toggleLike();
@@ -1856,7 +2227,20 @@ function postNode(post) {
         // ignore
       }
     }
-  });
+  }
+  if (mediaNode) {
+    on(mediaNode, "dblclick", likeFromMedia);
+    on(mediaNode, "pointerup", (e) => {
+      if (e.pointerType === "mouse") return;
+      const now = Date.now();
+      if (now - lastMediaTap < 320) {
+        lastMediaTap = 0;
+        likeFromMedia(e).catch(() => {});
+      } else {
+        lastMediaTap = now;
+      }
+    });
+  }
 
   const commentBtn = iconCountButton("comment", post.commentCount, t("comments"));
 
@@ -2793,6 +3177,133 @@ function bindOverlayClose(overlay, onClose) {
   });
 }
 
+function ensureAiAssistant() {
+  if (el.aiFab) return;
+  const fab = document.createElement("button");
+  fab.id = "aiFab";
+  fab.type = "button";
+  fab.className = "aiFab";
+  fab.innerHTML = icon("spark");
+  fab.setAttribute("aria-label", "Open AI assistant");
+  fab.title = "AI assistant";
+
+  const panel = document.createElement("section");
+  panel.id = "aiPanel";
+  panel.className = "aiPanel glass";
+  panel.hidden = true;
+  panel.innerHTML = `
+    <header class="aiHeader">
+      <div><strong>HYSA AI</strong><span>Assistant</span></div>
+      <button id="aiClose" class="iconBtn" type="button" aria-label="Close">X</button>
+    </header>
+    <div id="aiModes" class="aiModes">
+      <button type="button" data-ai-mode="chat" class="active">${icon("spark")}<span>Chat</span></button>
+      <button type="button" data-ai-mode="image">${icon("image")}<span>Image</span></button>
+      <button type="button" data-ai-mode="video">${icon("video")}<span>Video</span></button>
+    </div>
+    <div id="aiMessages" class="aiMessages"></div>
+    <form id="aiForm" class="aiForm">
+      <input id="aiPrompt" type="text" maxlength="1000" autocomplete="off" placeholder="Ask HYSA AI...">
+      <button id="aiSend" class="btn primary sm" type="submit">Send</button>
+    </form>
+  `;
+  document.body.appendChild(fab);
+  document.body.appendChild(panel);
+
+  el.aiFab = fab;
+  el.aiPanel = panel;
+  el.aiClose = panel.querySelector("#aiClose");
+  el.aiModes = panel.querySelector("#aiModes");
+  el.aiMessages = panel.querySelector("#aiMessages");
+  el.aiForm = panel.querySelector("#aiForm");
+  el.aiPrompt = panel.querySelector("#aiPrompt");
+  el.aiSend = panel.querySelector("#aiSend");
+
+  on(fab, "click", () => {
+    if (!getToken()) return showAuth();
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden && el.aiMessages && !el.aiMessages.children.length) {
+      addAiMessage("assistant", "AI is ready. If the backend has no API key yet, I will answer in safe mock mode.");
+    }
+    if (!panel.hidden && el.aiPrompt) el.aiPrompt.focus();
+  });
+  on(el.aiClose, "click", () => {
+    panel.hidden = true;
+  });
+  for (const btn of panel.querySelectorAll("[data-ai-mode]")) {
+    on(btn, "click", () => {
+      aiMode = btn.getAttribute("data-ai-mode") || "chat";
+      for (const item of panel.querySelectorAll("[data-ai-mode]")) item.classList.toggle("active", item === btn);
+      if (el.aiPrompt) {
+        el.aiPrompt.placeholder = aiMode === "chat" ? "Ask HYSA AI..." : `Describe the ${aiMode} you want...`;
+        el.aiPrompt.focus();
+      }
+    });
+  }
+  on(el.aiForm, "submit", sendAiPrompt);
+}
+
+function addAiMessage(role, text, mediaUrl = "") {
+  if (!el.aiMessages) return;
+  const item = document.createElement("div");
+  item.className = `aiBubble ${role === "user" ? "user" : "assistant"}`;
+  const copy = document.createElement("div");
+  copy.textContent = text || "";
+  item.appendChild(copy);
+  if (mediaUrl) {
+    const card = document.createElement("a");
+    card.className = "aiMediaCard";
+    card.href = mediaUrl;
+    card.target = "_blank";
+    card.rel = "noopener";
+    card.textContent = "Open generated media";
+    item.appendChild(card);
+  }
+  el.aiMessages.appendChild(item);
+  el.aiMessages.scrollTop = el.aiMessages.scrollHeight;
+}
+
+function setAiTyping(show) {
+  if (!el.aiMessages) return null;
+  let node = el.aiMessages.querySelector(".aiTyping");
+  if (!show) {
+    if (node) node.remove();
+    return null;
+  }
+  if (!node) {
+    node = document.createElement("div");
+    node.className = "aiBubble assistant aiTyping";
+    node.innerHTML = "<span></span><span></span><span></span>";
+    el.aiMessages.appendChild(node);
+  }
+  el.aiMessages.scrollTop = el.aiMessages.scrollHeight;
+  return node;
+}
+
+async function sendAiPrompt(e) {
+  e.preventDefault();
+  const prompt = String(el.aiPrompt?.value || "").trim();
+  if (!prompt) return;
+  if (!getToken()) return showAuth();
+  el.aiPrompt.value = "";
+  addAiMessage("user", prompt);
+  setAiTyping(true);
+  if (el.aiSend) el.aiSend.disabled = true;
+  try {
+    const endpoint = aiMode === "image" ? "/api/ai/image" : aiMode === "video" ? "/api/ai/video" : "/api/ai/chat";
+    const body = aiMode === "chat" ? { message: prompt } : { prompt };
+    const r = await api(endpoint, { method: "POST", body: JSON.stringify(body) });
+    setAiTyping(false);
+    const text = r.reply || r.message || "AI is not configured yet.";
+    addAiMessage("assistant", text, r.imageUrl || r.videoUrl || "");
+  } catch (err) {
+    setAiTyping(false);
+    addAiMessage("assistant", humanizeError(err?.message, "AI could not respond right now."));
+  } finally {
+    if (el.aiSend) el.aiSend.disabled = false;
+  }
+}
+
 async function boot() {
   el = {
     authView: document.getElementById("authView"),
@@ -2885,6 +3396,7 @@ async function boot() {
 
   applyI18n();
   switchAuthTab("login");
+  ensureAiAssistant();
 
   if (el.langSelect) {
     on(el.langSelect, "change", () => {

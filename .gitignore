@@ -1,10 +1,14 @@
 node_modules/
-backend/node_modules/
-mobile-app/node_modules/
+**/node_modules/
 uploads/
 backend/uploads/
+storage/
+backend/storage/
+.tmp-*/
 *.mp4
 *.mov
 *.avi
 .env
+.env.*
+!.env.example
 .DS_Store

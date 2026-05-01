@@ -1,0 +1,98 @@
+-- HYSA1 PostgreSQL Schema
+-- Designed for Supabase/Neon free tiers
+
+-- Users table
+CREATE TABLE IF NOT EXISTS users (
+  user_key VARCHAR(50) PRIMARY KEY,
+  username VARCHAR(50) NOT NULL UNIQUE,
+  password JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  bio TEXT DEFAULT '',
+  avatar_url TEXT DEFAULT '',
+  is_private BOOLEAN DEFAULT FALSE,
+  is_pending_verification BOOLEAN DEFAULT FALSE,
+  verification_request_at TIMESTAMPTZ,
+  skills TEXT[] DEFAULT '{}',
+  following TEXT[] DEFAULT '{}',
+  token TEXT
+);
+
+-- Posts table
+CREATE TABLE IF NOT EXISTS posts (
+  id VARCHAR(50) PRIMARY KEY,
+  author_key VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  author VARCHAR(50) NOT NULL,
+  text TEXT DEFAULT '',
+  media JSONB DEFAULT '[]',
+  visibility VARCHAR(20) DEFAULT 'public',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  likes TEXT[] DEFAULT '{}',
+  bookmarks TEXT[] DEFAULT '{}',
+  repost_of VARCHAR(50),
+  quote_text TEXT DEFAULT '',
+  is_repost BOOLEAN DEFAULT FALSE,
+  repost_type VARCHAR(50) DEFAULT '',
+  original_id VARCHAR(50),
+  author_id VARCHAR(50),
+  comments JSONB DEFAULT '[]',
+  views INTEGER DEFAULT 0,
+  viewed_by TEXT[] DEFAULT '{}'
+);
+
+-- Stories table
+CREATE TABLE IF NOT EXISTS stories (
+  id VARCHAR(50) PRIMARY KEY,
+  author_key VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  author VARCHAR(50) NOT NULL,
+  media JSONB NOT NULL,
+  filter VARCHAR(50) DEFAULT 'normal',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  seen_by TEXT[] DEFAULT '{}'
+);
+
+-- Direct Messages table
+CREATE TABLE IF NOT EXISTS dms (
+  id VARCHAR(50) PRIMARY KEY,
+  "from" VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  "to" VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  text TEXT DEFAULT '',
+  media JSONB DEFAULT '[]',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  read_by TEXT[] DEFAULT '{}'
+);
+
+-- Reports table
+CREATE TABLE IF NOT EXISTS reports (
+  id VARCHAR(50) PRIMARY KEY,
+  reporter VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  type VARCHAR(50) NOT NULL,
+  target_id VARCHAR(50) NOT NULL,
+  reason VARCHAR(50) NOT NULL,
+  note TEXT DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ai JSONB
+);
+
+-- Notifications table
+CREATE TABLE IF NOT EXISTS notifications (
+  id VARCHAR(50) PRIMARY KEY,
+  user_key VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  type VARCHAR(50) NOT NULL,
+  actor_key VARCHAR(50),
+  post_id VARCHAR(50),
+  comment_id VARCHAR(50),
+  read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_posts_author_key ON posts(author_key);
+CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stories_author_key ON stories(author_key);
+CREATE INDEX IF NOT EXISTS idx_stories_expires_at ON stories(expires_at);
+CREATE INDEX IF NOT EXISTS idx_dms_from ON dms("from");
+CREATE INDEX IF NOT EXISTS idx_dms_to ON dms("to");
+CREATE INDEX IF NOT EXISTS idx_dms_created_at ON dms(created_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_key ON notifications(user_key);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
