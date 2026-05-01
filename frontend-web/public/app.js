@@ -1,10 +1,40 @@
 /* global window, document */
 
-const tokenKey = "hysa_token";
+const tokenKey = "token";
+const legacyTokenKey = "hysa_token";
 const langKey = "hysa_lang";
 const themeKey = "hysa_theme";
 
-let token = localStorage.getItem(tokenKey) || "";
+function getToken() {
+  return localStorage.getItem("token");
+}
+
+function readStoredToken() {
+  const current = getToken();
+  if (current) return current;
+  const legacy = localStorage.getItem(legacyTokenKey);
+  if (legacy) {
+    localStorage.setItem(tokenKey, legacy);
+    localStorage.removeItem(legacyTokenKey);
+    return legacy;
+  }
+  return "";
+}
+
+function saveToken(nextToken) {
+  token = String(nextToken || "");
+  if (token) localStorage.setItem("token", token);
+  else localStorage.removeItem("token");
+  localStorage.removeItem(legacyTokenKey);
+}
+
+function clearStoredToken() {
+  token = "";
+  localStorage.removeItem("token");
+  localStorage.removeItem(legacyTokenKey);
+}
+
+let token = readStoredToken();
 let me = null;
 let feedCursor = null;
 let feedLoading = false;
@@ -451,17 +481,23 @@ function isMineKey(key) {
   return !!mine && String(key || "").toLowerCase() === mine;
 }
 
-async function api(path, opts = {}) {
+let authFailureCount = 0;
+
+async function fetchJson(path, opts = {}) {
+  const p = String(path || "");
+  if (!p.startsWith("/api/")) throw new Error("INVALID_API_PATH");
+
   const headers = new Headers(opts.headers || {});
   headers.set("Accept", "application/json");
   if (opts.body && !(opts.body instanceof FormData)) headers.set("Content-Type", "application/json; charset=utf-8");
-  if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  if (location.protocol === "file:") throw new Error("FILE_ORIGIN");
+  token = readStoredToken();
+  const storedToken = getToken();
+  if (storedToken) headers.set("Authorization", `Bearer ${storedToken}`);
 
   let res;
   try {
-    res = await fetch(path, { ...opts, headers });
+    res = await fetch(p, { ...opts, headers });
   } catch {
     throw new Error("NETWORK");
   }
@@ -473,11 +509,33 @@ async function api(path, opts = {}) {
     // ignore
   }
 
+  return { res, json };
+}
+
+async function api(path, opts = {}) {
+  if (location.protocol === "file:") throw new Error("FILE_ORIGIN");
+
   const p = String(path || "");
   const isAuthEndpoint = p.startsWith("/api/login") || p.startsWith("/api/register");
+  let { res, json } = await fetchJson(p, opts);
+
   if (res.status === 401 && !isAuthEndpoint) {
-    clearSession();
-    showAuth();
+    let retried = false;
+    if (getToken()) {
+      retried = true;
+      ({ res, json } = await fetchJson(p, opts));
+    }
+    if (res.status === 401) authFailureCount += retried ? 2 : 1;
+    else authFailureCount = 0;
+  } else if (res.ok && !(json && json.ok === false)) {
+    authFailureCount = 0;
+  }
+
+  if (res.status === 401 && !isAuthEndpoint) {
+    if (p.startsWith("/api/me") || authFailureCount > 2) {
+      clearSession({ clearToken: true });
+      showAuth();
+    }
     throw new Error("UNAUTHENTICATED");
   }
 
@@ -509,13 +567,12 @@ function humanizeError(message, fallback) {
   return fallback || t("error_unknown");
 }
 
-function clearSession() {
+function clearSession({ clearToken = true } = {}) {
   endVideoCall({ closePeerCall: true });
   if (peerClient && typeof peerClient.destroy === "function") peerClient.destroy();
   peerClient = null;
   peerReadyPromise = null;
-  token = "";
-  localStorage.removeItem(tokenKey);
+  if (clearToken) clearStoredToken();
   me = null;
 }
 
@@ -1141,7 +1198,7 @@ function showApp() {
 function showFeedError(err, { reset = false } = {}) {
   if (!el.feed) return;
   const code = String(err && err.message || "");
-  if (code === "UNAUTHENTICATED" || !token) {
+  if (code === "UNAUTHENTICATED" || !getToken()) {
     showAuth();
     return;
   }
@@ -1216,7 +1273,7 @@ function storyNode(story) {
 }
 
 async function loadStories() {
-  if (!el.storiesBar || !token) return;
+  if (!el.storiesBar || !getToken()) return;
   try {
     const r = await api("/api/stories", { method: "GET" });
     const stories = Array.isArray(r.stories) ? r.stories : [];
@@ -1239,7 +1296,7 @@ async function loadStories() {
 }
 
 async function loadTrends() {
-  if (!el.trendsBar || !token) return;
+  if (!el.trendsBar || !getToken()) return;
   try {
     const r = await api("/api/trends", { method: "GET" });
     const trends = Array.isArray(r.trends) ? r.trends : [];
@@ -2070,7 +2127,7 @@ function createSkeletonPost() {
 
 async function loadFeed({ reset = false } = {}) {
   if (!el.feed) return;
-  if (!token) {
+  if (!getToken()) {
     showAuth();
     return;
   }
@@ -2289,7 +2346,7 @@ function ensureInfiniteFeed() {
     (entries) => {
       const hit = entries.some((e) => e.isIntersecting);
       if (!hit) return;
-      if (!token) return;
+      if (!getToken()) return;
       if (activeProfileKey || activePostId) return;
       if (!feedCursor) return;
       if (feedLoading) return;
@@ -2339,7 +2396,7 @@ function observePostView(node, postId) {
 }
 
 function route() {
-  if (!token) return;
+  if (!getToken()) return;
   const h = location.hash || "#home";
   const mProfile = /^#u\/(.+)$/.exec(h);
   const mPost = /^#p\/(.+)$/.exec(h);
@@ -2872,8 +2929,8 @@ async function boot() {
     const password = String(fd.get("password") || "");
     try {
       const r = await api("/api/login", { method: "POST", body: JSON.stringify({ username, password }) });
-      token = r.token;
-      localStorage.setItem(tokenKey, token);
+      saveToken(r.token);
+      authFailureCount = 0;
       me = r.me;
       showApp();
       route();
@@ -2890,8 +2947,8 @@ async function boot() {
     const password = String(fd.get("password") || "");
     try {
       const r = await api("/api/register", { method: "POST", body: JSON.stringify({ username, password }) });
-      token = r.token;
-      localStorage.setItem(tokenKey, token);
+      saveToken(r.token);
+      authFailureCount = 0;
       me = r.me;
       showApp();
       route();
@@ -2996,7 +3053,7 @@ async function boot() {
 
   const homeBrand = document.getElementById("homeBrand");
   const goHome = () => {
-    if (!token) return;
+    if (!getToken()) return;
     location.hash = "#home";
     route();
   };
@@ -3208,26 +3265,32 @@ async function boot() {
 
   on(window, "hashchange", () => route());
 
-  if (!token) {
+  token = readStoredToken();
+  if (!getToken()) {
     showAuth();
     return;
   }
 
-  try {
-    const r = await api("/api/me", { method: "GET" });
-    me = r.me;
-    showApp();
-    route();
-    api("/api/version", { method: "GET" }).catch(() => showToast(t("error_server_outdated"), true));
-  } catch {
-    showAuth();
-  }
+  showApp();
+  route();
+
+  api("/api/me", { method: "GET" })
+    .then((r) => {
+      me = r.me;
+      showApp();
+    })
+    .catch((err) => {
+      if (String(err && err.message) !== "UNAUTHENTICATED") {
+        showToast(humanizeError(err && err.message), true);
+      }
+    });
+  api("/api/version", { method: "GET" }).catch(() => showToast(t("error_server_outdated"), true));
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   boot().catch((err) => {
     console.error("[boot] failed:", err);
-    clearSession();
+    clearSession({ clearToken: false });
     showAuth();
     setMsg(el.loginMsg, humanizeError(err && err.message), true);
   });
