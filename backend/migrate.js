@@ -159,8 +159,8 @@ async function migrate() {
   for (const dm of dms) {
     await pool.query(
       `INSERT INTO dms (
-        id, "from", "to", text, media, created_at, read_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        id, "from", "to", text, media, created_at, read_by, reactions
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (id) DO NOTHING`,
       [
         dm.id,
@@ -170,6 +170,7 @@ async function migrate() {
         JSON.stringify(Array.isArray(dm.media) ? dm.media : []),
         dm.createdAt || new Date().toISOString(),
         Array.isArray(dm.readBy) ? dm.readBy : [],
+        JSON.stringify(dm.reactions && typeof dm.reactions === "object" ? dm.reactions : {}),
       ]
     );
     dmCount++;

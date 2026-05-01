@@ -451,9 +451,19 @@ const Story = createJsonModel({
   normalize: (doc) => normalizeStoryObject(doc),
 });
 
-const DM = createJsonModel({
-  keyField: "id",
-  read: (data) => asArray(data.dms).map((m) => ({
+function normalizeDmReactions(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const reactions = {};
+  for (const [emoji, users] of Object.entries(source)) {
+    const list = Array.from(new Set(asArray(users).map(String).filter(Boolean)));
+    if (!emoji || !list.length) continue;
+    reactions[String(emoji)] = list;
+  }
+  return reactions;
+}
+
+function normalizeDmObject(m) {
+  return {
     id: String((m && m.id) || crypto.randomBytes(12).toString("base64url")),
     from: String((m && m.from) || ""),
     to: String((m && m.to) || ""),
@@ -461,27 +471,17 @@ const DM = createJsonModel({
     media: asArray(m && m.media),
     createdAt: String((m && m.createdAt) || new Date().toISOString()),
     readBy: asArray(m && m.readBy).map(String),
-  })),
+    reactions: normalizeDmReactions(m && m.reactions),
+  };
+}
+
+const DM = createJsonModel({
+  keyField: "id",
+  read: (data) => asArray(data.dms).map(normalizeDmObject),
   write: (data, docs) => {
-    data.dms = docs.map((m) => ({
-      id: String((m && m.id) || crypto.randomBytes(12).toString("base64url")),
-      from: String((m && m.from) || ""),
-      to: String((m && m.to) || ""),
-      text: String((m && m.text) || ""),
-      media: asArray(m && m.media),
-      createdAt: String((m && m.createdAt) || new Date().toISOString()),
-      readBy: asArray(m && m.readBy).map(String),
-    }));
+    data.dms = docs.map(normalizeDmObject);
   },
-  normalize: (doc) => ({
-    id: String((doc && doc.id) || crypto.randomBytes(12).toString("base64url")),
-    from: String((doc && doc.from) || ""),
-    to: String((doc && doc.to) || ""),
-    text: String((doc && doc.text) || ""),
-    media: asArray(doc && doc.media),
-    createdAt: String((doc && doc.createdAt) || new Date().toISOString()),
-    readBy: asArray(doc && doc.readBy).map(String),
-  }),
+  normalize: (doc) => normalizeDmObject(doc),
 });
 
 const Report = createJsonModel({
@@ -769,19 +769,23 @@ async function pgCreateStory(story) {
 
 async function pgFindAllDMs() {
   const res = await pgPool.query('SELECT * FROM dms ORDER BY created_at');
-  return res.rows.map((row) => ({
-    ...row,
+  return res.rows.map((row) => normalizeDmObject({
+    id: row.id,
     from: row.from,
     to: row.to,
+    text: row.text,
+    media: row.media,
+    createdAt: row.created_at,
     readBy: row.read_by,
+    reactions: row.reactions,
   }));
 }
 
 async function pgCreateDM(dm) {
   await pgPool.query(
     `INSERT INTO dms (
-      id, "from", "to", text, media, created_at, read_by
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      id, "from", "to", text, media, created_at, read_by, reactions
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     ON CONFLICT (id) DO NOTHING`,
     [
       dm.id,
@@ -791,6 +795,37 @@ async function pgCreateDM(dm) {
       JSON.stringify(dm.media || []),
       dm.createdAt,
       dm.readBy || [],
+      JSON.stringify(normalizeDmReactions(dm.reactions)),
+    ]
+  );
+  if (process.env.DM_DEBUG === "1") console.log("[dm] saved to postgres", dm.id);
+}
+
+async function pgFindDmById(id) {
+  const res = await pgPool.query('SELECT * FROM dms WHERE id = $1 LIMIT 1', [id]);
+  if (!res.rows.length) return null;
+  return normalizeDmObject({
+    id: res.rows[0].id,
+    from: res.rows[0].from,
+    to: res.rows[0].to,
+    text: res.rows[0].text,
+    media: res.rows[0].media,
+    createdAt: res.rows[0].created_at,
+    readBy: res.rows[0].read_by,
+    reactions: res.rows[0].reactions,
+  });
+}
+
+async function pgUpdateDmMeta(dm) {
+  await pgPool.query(
+    `UPDATE dms
+       SET read_by = $2,
+           reactions = $3
+     WHERE id = $1`,
+    [
+      dm.id,
+      asArray(dm.readBy).map(String),
+      JSON.stringify(normalizeDmReactions(dm.reactions)),
     ]
   );
 }
@@ -1668,6 +1703,7 @@ async function syncDataJson() {
     media: asArray(m.media),
     createdAt: String(m.createdAt || ""),
     readBy: asArray(m.readBy).map(String),
+    reactions: normalizeDmReactions(m.reactions),
   }));
   const reports = await Report.find().sort({ createdAt: 1 });
   await writeDataFile({
@@ -2487,8 +2523,10 @@ app.get("/api/dm/threads", async (req, res) => {
   if (!viewer) return;
   const viewerKey = String(viewer.userKey);
 
-  // Fetch all DMs involving the viewer
-  const allDms = await DM.find({ $or: [{ from: viewerKey }, { to: viewerKey }] });
+  const allDms = USE_POSTGRES
+    ? (await pgFindAllDMs()).filter((msg) => String(msg.from) === viewerKey || String(msg.to) === viewerKey)
+    : await DM.find({ $or: [{ from: viewerKey }, { to: viewerKey }] });
+  if (USE_POSTGRES && process.env.DM_DEBUG === "1") console.log("[dm] loaded inbox from postgres", viewerKey, allDms.length);
 
   const threadMap = new Map();
   for (const msg of allDms) {
@@ -2508,12 +2546,13 @@ app.get("/api/dm/threads", async (req, res) => {
       const peerKey = String(msg.from) === viewerKey ? String(msg.to) : String(msg.from);
       const peer = await findUserByKey(peerKey);
 
-      // Direct query for unread count to avoid legacy data.dms reference
-      const unreadCount = await DM.countDocuments({
-        from: peerKey,
-        to: viewerKey,
-        readBy: { $ne: viewerKey }
-      });
+      const unreadCount = USE_POSTGRES
+        ? allDms.filter((item) => String(item.from) === peerKey && String(item.to) === viewerKey && !asArray(item.readBy).includes(viewerKey)).length
+        : await DM.countDocuments({
+            from: peerKey,
+            to: viewerKey,
+            readBy: { $ne: viewerKey }
+          });
 
       return {
         peerKey,
@@ -2538,12 +2577,18 @@ app.get("/api/dm/:key", async (req, res) => {
   const viewerKey = String(viewer.userKey);
   const peerKey = String(peer.userKey);
 
-  const list = await DM.find({
-    $or: [
-      { from: viewerKey, to: peerKey },
-      { from: peerKey, to: viewerKey }
-    ]
-  }).sort({ createdAt: 1 });
+  const list = USE_POSTGRES
+    ? (await pgFindAllDMs()).filter((msg) => (
+        (String(msg.from) === viewerKey && String(msg.to) === peerKey) ||
+        (String(msg.from) === peerKey && String(msg.to) === viewerKey)
+      )).sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")))
+    : await DM.find({
+        $or: [
+          { from: viewerKey, to: peerKey },
+          { from: peerKey, to: viewerKey }
+        ]
+      }).sort({ createdAt: 1 });
+  if (USE_POSTGRES && process.env.DM_DEBUG === "1") console.log("[dm] loaded thread from postgres", viewerKey, peerKey, list.length);
 
   const messages = list.map((m) => ({
     id: String(m.id || ""),
@@ -2553,13 +2598,23 @@ app.get("/api/dm/:key", async (req, res) => {
     media: toPublicMediaList(m.media),
     createdAt: String(m.createdAt || ""),
     mine: String(m.from) === viewerKey,
+    seen: String(m.from) === viewerKey ? asArray(m.readBy).includes(peerKey) : true,
+    reactions: normalizeDmReactions(m.reactions),
   }));
 
-  // Mark incoming messages as read in DB
-  await DM.updateMany(
-    { from: peerKey, to: viewerKey, readBy: { $ne: viewerKey } },
-    { $push: { readBy: viewerKey } }
-  );
+  if (USE_POSTGRES) {
+    for (const message of list) {
+      if (String(message.from) !== peerKey || String(message.to) !== viewerKey) continue;
+      if (asArray(message.readBy).includes(viewerKey)) continue;
+      message.readBy = asArray(message.readBy).concat(viewerKey);
+      await pgUpdateDmMeta(message);
+    }
+  } else {
+    await DM.updateMany(
+      { from: peerKey, to: viewerKey, readBy: { $ne: viewerKey } },
+      { $push: { readBy: viewerKey } }
+    );
+  }
   await syncDataJson();
 
   return res.status(200).json({
@@ -2590,10 +2645,41 @@ app.post("/api/dm/:key", async (req, res) => {
     media: mediaCheck.media,
     createdAt: new Date().toISOString(),
     readBy: [String(viewer.userKey)],
+    reactions: {},
   };
-  await DM.create(message);
+  if (USE_POSTGRES) await pgCreateDM(message);
+  else await DM.create(message);
   await syncDataJson();
   return res.status(200).json({ ok: true, message: { ...message, mine: true } });
+});
+
+app.post("/api/dm/message/:id/reactions", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const messageId = String(req.params.id || "");
+  const emoji = String(req.body && req.body.emoji || "").trim();
+  if (!messageId || !emoji || emoji.length > 8) {
+    return res.status(400).json({ ok: false, error: "INVALID_MESSAGE" });
+  }
+  const viewerKey = String(viewer.userKey);
+  const message = USE_POSTGRES ? await pgFindDmById(messageId) : await DM.findOne({ id: messageId });
+  if (!message) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  const participants = new Set([String(message.from || ""), String(message.to || "")]);
+  if (!participants.has(viewerKey)) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  const reactions = normalizeDmReactions(message.reactions);
+  const hadSameEmoji = asArray(reactions[emoji]).map(String).includes(viewerKey);
+  for (const key of Object.keys(reactions)) {
+    reactions[key] = asArray(reactions[key]).map(String).filter((user) => user !== viewerKey);
+    if (!reactions[key].length) delete reactions[key];
+  }
+  if (!hadSameEmoji) {
+    reactions[emoji] = Array.from(new Set(asArray(reactions[emoji]).concat(viewerKey).map(String).filter(Boolean)));
+  }
+  message.reactions = reactions;
+  if (USE_POSTGRES) await pgUpdateDmMeta(message);
+  else await message.save();
+  await syncDataJson();
+  return res.status(200).json({ ok: true, reactions });
 });
 
 app.post("/api/report", async (req, res) => {
@@ -2863,8 +2949,10 @@ app.post("/api/messages", async (req, res) => {
     media: mediaCheck.media,
     createdAt: new Date().toISOString(),
     readBy: [String(viewer.userKey)],
+    reactions: {},
   };
-  await DM.create(message);
+  if (USE_POSTGRES) await pgCreateDM(message);
+  else await DM.create(message);
   await syncDataJson();
   return res.status(200).json({ ok: true, message: { ...message, mine: true } });
 });
@@ -2879,12 +2967,17 @@ app.get("/api/messages/:userId", async (req, res) => {
   const viewerKey = String(viewer.userKey);
   const peerKey = String(peer.userKey);
 
-  const list = await DM.find({
-    $or: [
-      { from: viewerKey, to: peerKey },
-      { from: peerKey, to: viewerKey }
-    ]
-  }).sort({ createdAt: 1 });
+  const list = USE_POSTGRES
+    ? (await pgFindAllDMs()).filter((msg) => (
+        (String(msg.from) === viewerKey && String(msg.to) === peerKey) ||
+        (String(msg.from) === peerKey && String(msg.to) === viewerKey)
+      )).sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")))
+    : await DM.find({
+        $or: [
+          { from: viewerKey, to: peerKey },
+          { from: peerKey, to: viewerKey }
+        ]
+      }).sort({ createdAt: 1 });
 
   const messages = list.map((m) => ({
     id: String(m.id || ""),
@@ -2894,13 +2987,24 @@ app.get("/api/messages/:userId", async (req, res) => {
     media: toPublicMediaList(m.media),
     createdAt: String(m.createdAt || ""),
     mine: String(m.from) === viewerKey,
+    seen: String(m.from) === viewerKey ? asArray(m.readBy).includes(peerKey) : true,
+    reactions: normalizeDmReactions(m.reactions),
   }));
 
   // Mark incoming as read
-  await DM.updateMany(
-    { from: peerKey, to: viewerKey, readBy: { $ne: viewerKey } },
-    { $push: { readBy: viewerKey } }
-  );
+  if (USE_POSTGRES) {
+    for (const message of list) {
+      if (String(message.from) !== peerKey || String(message.to) !== viewerKey) continue;
+      if (asArray(message.readBy).includes(viewerKey)) continue;
+      message.readBy = asArray(message.readBy).concat(viewerKey);
+      await pgUpdateDmMeta(message);
+    }
+  } else {
+    await DM.updateMany(
+      { from: peerKey, to: viewerKey, readBy: { $ne: viewerKey } },
+      { $push: { readBy: viewerKey } }
+    );
+  }
   await syncDataJson();
 
   return res.status(200).json({

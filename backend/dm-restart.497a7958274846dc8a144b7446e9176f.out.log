@@ -1,0 +1,17 @@
+[PeerJS] Server initialized successfully
+========================================
+HYSA1 Backend Starting
+========================================
+Environment: development
+DATABASE_URL present: true
+Data mode: postgres
+Storage mode: cloudinary
+Data file path: C:\Users\psx\Pictures\HYSA1\backend\data.json
+Uploads path: C:\Users\psx\Pictures\HYSA1\backend\uploads
+----------------------------------------
+[postgres] Schema initialized (CREATE TABLE IF NOT EXISTS)
+[server] listening on http://0.0.0.0:3011
+[peerjs] signaling mounted at /peerjs
+========================================
+Server is ready!
+========================================

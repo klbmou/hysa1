@@ -62,6 +62,9 @@ CREATE TABLE IF NOT EXISTS dms (
   read_by TEXT[] DEFAULT '{}'
 );
 
+ALTER TABLE dms
+  ADD COLUMN IF NOT EXISTS reactions JSONB DEFAULT '{}'::jsonb;
+
 -- Reports table
 CREATE TABLE IF NOT EXISTS reports (
   id VARCHAR(50) PRIMARY KEY,
