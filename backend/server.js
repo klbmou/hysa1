@@ -1,6 +1,8 @@
 /* eslint-disable no-console */
 "use strict";
 
+require("dotenv").config({ path: require("path").join(__dirname, ".env") });
+
 // HYSA1 (Render-ready JSON backend)
 // - Binds to process.env.PORT (Render) and 0.0.0.0 (HOST)
 // - Serves /public statically
@@ -15,12 +17,6 @@ const os = require("os");
 const http = require("http");
 const express = require("express");
 const { ExpressPeerServer } = require("peer");
-
-// Load dotenv only if .env file exists (for local dev)
-const envPath = path.join(__dirname, ".env");
-if (fs.existsSync(envPath)) {
-  require("dotenv").config({ path: envPath });
-}
 
 // Optional pg and cloudinary (loaded only if needed)
 let Pool, cloudinary;
@@ -54,8 +50,12 @@ const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY;
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
 
-const USE_POSTGRES = !!DATABASE_URL;
-const USE_CLOUDINARY = !!(CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET);
+const USE_POSTGRES = !!process.env.DATABASE_URL;
+const USE_CLOUDINARY = !!(
+  process.env.CLOUDINARY_CLOUD_NAME &&
+  process.env.CLOUDINARY_API_KEY &&
+  process.env.CLOUDINARY_API_SECRET
+);
 
 // Enforce production behavior
 if (NODE_ENV === "production") {
