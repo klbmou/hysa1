@@ -1,0 +1,19 @@
+{
+  "name": "hysa-backend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "HYSA1 Backend API Server",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "express": "^4.18.2",
+    "peer": "^1.0.2"
+  }
+}

@@ -1,0 +1,226 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title data-t="pageTitle">HYSA - Mini Social</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="favicon.svg">
+</head>
+<body>
+  <div id="authView" class="auth-container" hidden>
+    <div class="glass card auth-card">
+      <h1 class="brand">HYSA</h1>
+      <p class="muted" data-t-html="authBlurbNode"></p>
+      <div class="tabs">
+        <button id="tabLogin" class="active" data-t="login"></button>
+        <button id="tabRegister" data-t="register"></button>
+      </div>
+      <form id="loginForm">
+        <input type="text" name="username" data-t-placeholder="username" required>
+        <input type="password" name="password" data-t-placeholder="password" required>
+        <button type="submit" class="btn primary full" data-t="login"></button>
+        <div id="loginMsg" class="msg"></div>
+      </form>
+      <form id="registerForm" hidden>
+        <input type="text" name="username" data-t-placeholder="username" required>
+        <input type="password" name="password" data-t-placeholder="password" required>
+        <button type="submit" class="btn primary full" data-t="register"></button>
+        <div id="registerMsg" class="msg"></div>
+      </form>
+      <footer class="auth-footer">
+        <div class="lang-selector">
+          <select id="langSelect">
+            <option value="en">English</option>
+            <option value="ar">Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©</option>
+            <option value="fr">FranÃ§ais</option>
+          </select>
+        </div>
+        <div class="lang-toggle-wrap">
+          <button id="langToggle" aria-expanded="false"></button>
+          <div id="langMenu" class="drop-menu" hidden>
+            <button class="langOption" data-lang="en">English</button>
+            <button class="langOption" data-lang="ar">Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©</button>
+            <button class="langOption" data-lang="fr">FranÃ§ais</button>
+          </div>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <div id="appView" hidden>
+    <nav class="glass top-nav">
+      <div class="nav-content">
+        <h2 id="homeBrand" class="brand clickable">HYSA</h2>
+        <div id="viewTitle" class="view-title" hidden></div>
+        <div class="search-wrap">
+          <input type="text" id="searchInput" data-t-placeholder="searchPlaceholder" class="glass">
+          <div id="searchResults" class="glass drop-menu" hidden></div>
+        </div>
+        <div class="nav-actions">
+          <button id="themeToggle" class="theme-toggle" aria-label="Toggle theme" title="Toggle theme">
+            <svg id="themeIconDark" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+            <svg id="themeIconLight" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+          </button>
+          <button id="refreshBtn" class="nav-item" aria-label="Refresh" title="Refresh">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 1-9 9 9.8 9.8 0 0 1-6.7-2.7L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 9-9 9.8 9.8 0 0 1 6.7 2.7L21 8"/><path d="M21 3v5h-5"/></svg>
+          </button>
+          <button id="reelsBtn" class="nav-item" aria-label="Reels" title="Reels">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="m9 8 6 4-6 4Z"/></svg>
+          </button>
+          <button id="dmBtn" class="nav-item" aria-label="Direct messages" title="Direct messages">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+          </button>
+          <button id="meBtn" class="btn ghost sm">@me</button>
+          <button id="logoutBtn" class="nav-item" aria-label="Log out" title="Log out">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <main class="main-content">
+      <div id="storiesBar" class="stories-bar" hidden></div>
+      <section id="trendsBar" class="trends-bar" hidden></section>
+      <header id="profileHeader" hidden></header>
+      <div id="feed"></div>
+      <section id="reelsView" aria-label="Reels" hidden></section>
+      <div id="feedLoader" class="muted" hidden data-t="loading"></div>
+      <div id="feedSentinel"></div>
+    </main>
+
+    <nav id="mobileNav" class="glass bottom-nav">
+      <button class="nav-item active" data-nav="home">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      </button>
+      <button class="nav-item" data-nav="reels">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><polyline points="9 3 9 21"/><polyline points="15 3 15 21"/><line x1="3" x2="9" y1="9" y2="9"/><line x1="3" x2="9" y1="15" y2="15"/><line x1="15" x2="21" y1="9" y2="9"/><line x1="15" x2="21" y1="15" y2="15"/></svg>
+      </button>
+      <button id="composeFab" class="nav-item plus" data-nav="create">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
+      </button>
+      <button class="nav-item" data-nav="profile">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </button>
+    </nav>
+
+    <section id="dmModal" class="dm-view" hidden>
+      <header class="dm-view-header glass">
+        <button id="dmBack" class="iconBtn" aria-label="Back" title="Back">
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <div id="dmHeaderAvatar" class="avatar sm"></div>
+        <div class="dm-header-copy">
+          <h3 id="dmPeer">Direct Messages</h3>
+          <span id="dmStatus">Inbox</span>
+        </div>
+      </header>
+      <div class="dm-container">
+        <aside id="dmThreads" class="dm-threads"></aside>
+        <section class="dm-main">
+          <div id="dmMessages" class="dm-messages"></div>
+          <div class="dm-input-bar glass">
+            <button id="dmAttach" class="iconBtn" aria-label="Attach media" title="Attach media">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 1 1-2.83-2.83l8.49-8.48"/></svg>
+            </button>
+            <input type="file" id="dmFiles" accept="image/*,video/*,audio/*" multiple hidden>
+            <input type="text" id="dmText" placeholder="Message...">
+            <button id="dmRecord" class="iconBtn" aria-label="Record voice message" title="Record voice message">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+            </button>
+            <button id="dmSend" class="btn primary">Send</button>
+          </div>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <!-- Post Creator Modal -->
+  <div id="composeModal" class="overlay glass" hidden>
+    <div class="modal card">
+      <div class="modal-header">
+        <h3 data-t="composeTitle"></h3>
+        <button id="composeClose" class="iconBtn" aria-label="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <textarea id="composeText" data-t-placeholder="composePlaceholder" maxlength="280"></textarea>
+      <div id="composeMedia" class="media-preview" hidden></div>
+      <div class="modal-footer">
+        <div id="composeCount" class="muted">0/280</div>
+        <button id="composeAddMedia" class="btn ghost" data-t="addMedia"></button>
+        <select id="composeVisibility">
+          <option value="public" data-t="visibilityPublic"></option>
+          <option value="private" data-t="visibilityPrivate"></option>
+        </select>
+        <button id="composeSend" class="btn primary" data-t="post"></button>
+      </div>
+      <div id="composeMsg" class="msg"></div>
+      <input type="file" id="composeFiles" multiple accept="image/*,video/*" hidden>
+    </div>
+  </div>
+
+  <!-- Profile Edit Modal -->
+  <div id="profileModal" class="overlay glass" hidden>
+    <div class="modal card">
+      <div class="modal-header">
+        <h3 data-t="editProfile"></h3>
+        <button id="profileClose" class="iconBtn" aria-label="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="avatar-edit">
+        <div id="avatarPreview"></div>
+        <button id="avatarPick" class="btn ghost sm" data-t="changePhoto"></button>
+        <button id="avatarRemove" class="btn ghost sm danger" data-t="removePhoto"></button>
+      </div>
+      <textarea id="profileBio" data-t-placeholder="bioPlaceholder" maxlength="160"></textarea>
+      <button id="profileSave" class="btn primary full" data-t="save"></button>
+      <div id="profileMsg" class="msg"></div>
+      <input type="file" id="avatarFile" accept="image/*" hidden>
+    </div>
+  </div>
+
+  <!-- Report Modal -->
+  <div id="reportModal" class="overlay glass" hidden>
+    <div class="modal card">
+      <h3 data-t="report"></h3>
+      <select id="reportReason">
+        <option value="spam" data-t="reasonSpam"></option>
+        <option value="abuse" data-t="reasonAbuse"></option>
+        <option value="fake" data-t="reasonFake"></option>
+        <option value="other" data-t="reasonOther"></option>
+      </select>
+      <textarea id="reportNote" data-t-placeholder="notePlaceholder"></textarea>
+      <button id="reportSend" class="btn primary full" data-t="sendReport"></button>
+      <button id="reportClose" class="btn ghost full">Cancel</button>
+      <div id="reportMsg" class="msg"></div>
+    </div>
+  </div>
+
+  <!-- Insights Modal -->
+  <div id="insightsModal" class="overlay glass" hidden>
+    <div class="modal card">
+      <h3 data-t="insights"></h3>
+      <div class="insight-row">Posts: <span id="insightsPosts">0</span></div>
+      <div class="insight-row">Views: <span id="insightsViews">0</span></div>
+      <div class="insight-row">Likes: <span id="insightsLikes">0</span></div>
+      <button id="insightsClose" class="btn ghost full">Close</button>
+      <div id="insightsMsg" class="msg"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="glass toast" hidden></div>
+
+  <div id="actionSheet" class="sheet-backdrop" hidden>
+    <section class="action-sheet glass" role="dialog" aria-modal="true" aria-label="Post actions">
+      <div class="sheet-handle"></div>
+      <div id="sheetTitle" class="sheet-title">Repost</div>
+      <div id="sheetBody" class="sheet-body"></div>
+      <button id="sheetCancel" class="sheet-cancel" type="button">Cancel</button>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

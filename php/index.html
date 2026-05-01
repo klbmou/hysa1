@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title data-t="pageTitle">HYSA - شبكة تواصل مصغّرة</title>
+    <meta name="description" content="أساس بسيط لموقع تواصل اجتماعي يشبه تويتر (تجريبي)." />
+    <link rel="icon" href="./favicon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="bg"></div>
+    <header class="topbar">
+      <div class="brand" id="homeBrand" role="button" tabindex="0" aria-label="Home">
+        <div class="logo" aria-hidden="true">HY</div>
+        <div class="brandText">
+          <div class="brandName">HYSA</div>
+          <div class="brandTag" data-t="brandTag">منشورات قصيرة, متابعة, إعجاب</div>
+        </div>
+      </div>
+      <div class="topActions" id="topActions">
+        <div class="searchWrap">
+          <input
+            id="searchInput"
+            class="search"
+            type="search"
+            placeholder="ابحث عن مستخدم..."
+            data-t-placeholder="searchPlaceholder"
+            autocomplete="off"
+          />
+          <div id="searchResults" class="searchResults" hidden></div>
+        </div>
+        <select id="langSelect" class="langSelect" aria-label="Language">
+          <option value="ar">AR</option>
+          <option value="en">EN</option>
+          <option value="fr">FR</option>
+        </select>
+        <button id="meBtn" class="btn ghost" type="button" hidden></button>
+        <button id="logoutBtn" class="btn ghost" type="button" hidden data-t="logout">تسجيل خروج</button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section id="authView" class="card auth">
+        <h1 data-t="startNow">ابدأ الآن</h1>
+        <p class="muted" data-t-html="authBlurb">
+          هذا مشروع تجريبي سريع. البيانات تُحفظ داخل قاعدة بيانات <span class="mono">MySQL</span>.
+        </p>
+        <div class="tabs">
+          <button id="tabLogin" class="tab active" type="button" data-t="login">دخول</button>
+          <button id="tabRegister" class="tab" type="button" data-t="register">تسجيل</button>
+        </div>
+
+        <form id="loginForm" class="form">
+          <label>
+            <span data-t="username">اسم المستخدم</span>
+            <input name="username" required minlength="3" maxlength="20" autocomplete="username" />
+          </label>
+          <label>
+            <span data-t="password">كلمة المرور</span>
+            <input name="password" type="password" required minlength="6" autocomplete="current-password" />
+          </label>
+          <button class="btn primary" type="submit" data-t="login">دخول</button>
+          <div id="loginMsg" class="msg" role="status"></div>
+        </form>
+
+        <form id="registerForm" class="form" hidden>
+          <label>
+            <span data-t="username">اسم المستخدم</span>
+            <input name="username" required minlength="3" maxlength="20" autocomplete="username" />
+          </label>
+          <label>
+            <span data-t="password">كلمة المرور</span>
+            <input name="password" type="password" required minlength="6" autocomplete="new-password" />
+          </label>
+          <button class="btn primary" type="submit" data-t="register">تسجيل</button>
+          <div id="registerMsg" class="msg" role="status"></div>
+        </form>
+      </section>
+
+      <section id="appView" class="app" hidden>
+        <section class="card mainCard">
+          <div class="row">
+            <h2 id="viewTitle" class="h2" data-t="feedTitle">المنشورات</h2>
+            <button id="refreshBtn" class="btn ghost" type="button" data-t="refresh">تحديث</button>
+          </div>
+          <div id="profileHeader" class="profileHeader" hidden></div>
+          <div id="feed" class="feed"></div>
+          <div id="feedLoader" class="feedLoader" hidden>
+            <div class="spinner" aria-hidden="true"></div>
+            <div class="muted" data-t="loading">جار التحميل...</div>
+          </div>
+          <div id="feedSentinel" class="feedSentinel" aria-hidden="true"></div>
+        </section>
+
+        <button id="composeFab" class="fab" type="button" aria-label="Compose" hidden>+</button>
+
+        <div id="composeModal" class="modalOverlay" hidden>
+          <div class="modal card" role="dialog" aria-modal="true" aria-labelledby="composeTitle">
+            <div class="modalTop">
+              <h2 id="composeTitle" class="h2" data-t="composeTitle">منشور جديد</h2>
+              <button id="composeClose" class="iconBtn" type="button" aria-label="Close">&times;</button>
+            </div>
+            <textarea
+              id="composeText"
+              class="composeText"
+              rows="4"
+              maxlength="280"
+              placeholder="بماذا تفكر؟"
+              data-t-placeholder="composePlaceholder"
+            ></textarea>
+            <input id="composeFiles" type="file" accept="image/*,video/*" multiple hidden />
+            <div class="row">
+              <button id="composeAddMedia" class="btn ghost" type="button" data-t="addMedia">إضافة وسائط</button>
+              <div class="composeRight">
+                <select id="composeVisibility" class="select sm" aria-label="Visibility">
+                  <option value="public" data-t="visibilityPublic">عام</option>
+                  <option value="private" data-t="visibilityPrivate">خاص</option>
+                </select>
+                <div id="composeCount" class="muted mono">0/280</div>
+              </div>
+            </div>
+            <div id="composeMedia" hidden></div>
+            <div class="row">
+              <div id="composeMsg" class="msg" role="status"></div>
+            </div>
+            <div class="modalActions">
+              <button id="composeSend" class="btn primary" type="button" data-t="post">نشر</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="profileModal" class="modalOverlay" hidden>
+          <div class="modal card" role="dialog" aria-modal="true" aria-labelledby="profileEditTitle">
+            <div class="modalTop">
+              <h2 id="profileEditTitle" class="h2" data-t="editProfile">تعديل البروفايل</h2>
+              <button id="profileClose" class="iconBtn" type="button" aria-label="Close">&times;</button>
+            </div>
+            <div class="profileEdit">
+              <div class="avatarEdit">
+                <div id="avatarPreview" class="avatar xl" aria-hidden="true"></div>
+                <div class="avatarBtns">
+                  <input id="avatarFile" type="file" accept="image/*" hidden />
+                  <button id="avatarPick" class="btn ghost" type="button" data-t="changePhoto">تغيير الصورة</button>
+                  <button id="avatarRemove" class="btn ghost danger" type="button" data-t="removePhoto">إزالة</button>
+                </div>
+              </div>
+              <label class="bioLabel">
+                <span data-t="bio">النبذة</span>
+                <textarea id="profileBio" rows="3" maxlength="160" placeholder="..." data-t-placeholder="bioPlaceholder"></textarea>
+              </label>
+              <div class="row">
+                <div id="profileMsg" class="msg" role="status"></div>
+              </div>
+              <div class="modalActions">
+                <button id="profileSave" class="btn primary" type="button" data-t="save">حفظ</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="insightsModal" class="modalOverlay" hidden>
+          <div class="modal card insightsModal" role="dialog" aria-modal="true" aria-labelledby="insightsTitle">
+            <div class="modalTop">
+              <h2 id="insightsTitle" class="h2" data-t="insights">الإحصائيات</h2>
+              <button id="insightsClose" class="iconBtn" type="button" aria-label="Close">&times;</button>
+            </div>
+            <div class="insightsGrid">
+              <div class="insightCard">
+                <div class="muted" data-t="feedTitle">المنشورات</div>
+                <div id="insightsPosts" class="insightValue mono">0</div>
+              </div>
+              <div class="insightCard">
+                <div class="muted" data-t="views">مشاهدات</div>
+                <div id="insightsViews" class="insightValue mono">0</div>
+              </div>
+              <div class="insightCard">
+                <div class="muted" data-t="like">إعجاب</div>
+                <div id="insightsLikes" class="insightValue mono">0</div>
+              </div>
+            </div>
+            <div class="row">
+              <div id="insightsMsg" class="msg" role="status"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="reportModal" class="modalOverlay" hidden>
+          <div class="modal card" role="dialog" aria-modal="true" aria-labelledby="reportTitle">
+            <div class="modalTop">
+              <h2 id="reportTitle" class="h2" data-t="report">إبلاغ</h2>
+              <button id="reportClose" class="iconBtn" type="button" aria-label="Close">&times;</button>
+            </div>
+            <div class="reportBody">
+              <label>
+                <span data-t="reportReason">السبب</span>
+                <select id="reportReason" class="select">
+                  <option value="spam" data-t="reasonSpam">سبام</option>
+                  <option value="abuse" data-t="reasonAbuse">إساءة</option>
+                  <option value="fake" data-t="reasonFake">انتحال</option>
+                  <option value="other" data-t="reasonOther">أخرى</option>
+                </select>
+              </label>
+              <label>
+                <span data-t="note">ملاحظة (اختياري)</span>
+                <textarea id="reportNote" rows="3" maxlength="300" placeholder="..." data-t-placeholder="notePlaceholder"></textarea>
+              </label>
+              <div class="row">
+                <div id="reportMsg" class="msg" role="status"></div>
+              </div>
+              <div class="modalActions">
+                <button id="reportSend" class="btn danger" type="button" data-t="sendReport">إرسال الإبلاغ</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span class="muted" data-t="footerNote">HYSA تجريبي. ليس جاهزا للإنتاج بدون مراجعة أمن/خصوصية/إشراف.</span>
+    </footer>
+
+    <div id="toast" class="toast" hidden></div>
+    <script src="./app.js" defer></script>
+  </body>
+</html>

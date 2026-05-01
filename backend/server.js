@@ -1,0 +1,2190 @@
+/* eslint-disable no-console */
+"use strict";
+
+// HYSA1 (Render-ready JSON backend)
+// - Binds to process.env.PORT (Render) and 0.0.0.0 (HOST)
+// - Serves /public statically
+// - Stores uploaded media as Base64 data URLs in post records/data.json.
+// - Implements the endpoints expected by public/app.js (feed, upload, profile, etc)
+
+require('dotenv').config();
+const path = require("path");
+const fs = require("fs");
+const fsp = require("fs/promises");
+const crypto = require("crypto");
+const os = require("os");
+const http = require("http");
+const express = require("express");
+const { ExpressPeerServer } = require("peer");
+
+// Render/Production Config
+const PORT = Number(process.env.PORT || 3000);
+const HOST = String(process.env.HOST || "0.0.0.0");
+
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB
+const JSON_LIMIT = "50mb";
+const VERIFIED_USERS = new Set(
+  String(process.env.VERIFIED_USERS || "hysa,admin,psx")
+    .split(",")
+    .map((x) => String(x || "").trim().toLowerCase())
+    .filter(Boolean),
+);
+
+function safeJsonParse(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function isDir(p) {
+  try {
+    return fs.existsSync(p) && fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function isFile(p) {
+  try {
+    return fs.existsSync(p) && fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function ensureDirSync(dir) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isProbablyWritable(dir) {
+  try {
+    if (!ensureDirSync(dir)) return false;
+    const testPath = path.join(dir, `.writetest_${crypto.randomBytes(6).toString("hex")}`);
+    fs.writeFileSync(testPath, "1", "utf8");
+    fs.unlinkSync(testPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function asArray(x) {
+  if (Array.isArray(x)) return x;
+  if (!x) return [];
+  if (typeof x === "object" && x.constructor === Object) return Object.values(x);
+  return [];
+}
+
+const PUBLIC_DIR = path.join(__dirname, '../frontend-web/public');
+const INDEX_HTML = path.join(PUBLIC_DIR, "index.html");
+const STORAGE_DIR = path.resolve(__dirname);
+const DATA_FILE = path.join(STORAGE_DIR, "data.json");
+const UPLOADS_DIR = path.join(STORAGE_DIR, "uploads");
+ensureDirSync(UPLOADS_DIR);
+
+// -----------------------------
+// data.json models
+// -----------------------------
+
+function clonePlain(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function isOperatorObject(value) {
+  return !!(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).some((k) => k.startsWith("$")));
+}
+
+function valuesEqual(a, b) {
+  return String(a ?? "") === String(b ?? "");
+}
+
+function matchesCondition(actual, condition) {
+  if (condition instanceof RegExp) return condition.test(String(actual ?? ""));
+  if (isOperatorObject(condition)) {
+    for (const [op, expected] of Object.entries(condition)) {
+      if (op === "$options") continue;
+      if (op === "$in") {
+        const list = asArray(expected);
+        const ok = Array.isArray(actual)
+          ? actual.some((x) => list.some((y) => valuesEqual(x, y)))
+          : list.some((x) => valuesEqual(actual, x));
+        if (!ok) return false;
+      } else if (op === "$nin") {
+        const list = asArray(expected);
+        const ok = Array.isArray(actual)
+          ? actual.every((x) => !list.some((y) => valuesEqual(x, y)))
+          : !list.some((x) => valuesEqual(actual, x));
+        if (!ok) return false;
+      } else if (op === "$ne") {
+        const ok = Array.isArray(actual)
+          ? !actual.some((x) => valuesEqual(x, expected))
+          : !valuesEqual(actual, expected);
+        if (!ok) return false;
+      } else if (op === "$gt") {
+        if (!(String(actual ?? "") > String(expected ?? ""))) return false;
+      } else if (op === "$regex") {
+        const flags = String(condition.$options || "");
+        const regex = expected instanceof RegExp ? expected : new RegExp(String(expected || ""), flags);
+        if (!regex.test(String(actual ?? ""))) return false;
+      }
+    }
+    return true;
+  }
+  if (Array.isArray(actual)) return actual.some((x) => valuesEqual(x, condition));
+  return valuesEqual(actual, condition);
+}
+
+function matchesFilter(doc, filter) {
+  const criteria = filter && typeof filter === "object" ? filter : {};
+  for (const [field, condition] of Object.entries(criteria)) {
+    if (field === "$or") {
+      if (!asArray(condition).some((item) => matchesFilter(doc, item))) return false;
+      continue;
+    }
+    if (field === "$and") {
+      if (!asArray(condition).every((item) => matchesFilter(doc, item))) return false;
+      continue;
+    }
+    if (!matchesCondition(doc[field], condition)) return false;
+  }
+  return true;
+}
+
+function sortDocuments(docs, sortSpec) {
+  if (!sortSpec || typeof sortSpec !== "object") return docs;
+  const entries = Object.entries(sortSpec);
+  return docs.sort((a, b) => {
+    for (const [field, direction] of entries) {
+      const dir = Number(direction) < 0 ? -1 : 1;
+      const av = a[field] ?? "";
+      const bv = b[field] ?? "";
+      if (av < bv) return dir < 0 ? 1 : -1;
+      if (av > bv) return dir < 0 ? -1 : 1;
+    }
+    return 0;
+  });
+}
+
+function modelKey(config, doc) {
+  return String((doc && doc[config.keyField]) || (doc && doc._id) || "");
+}
+
+function attachModelDocument(config, record) {
+  const doc = clonePlain(record) || {};
+  const key = modelKey(config, doc);
+  Object.defineProperty(doc, "_id", { value: key, enumerable: false, configurable: true });
+  Object.defineProperty(doc, "save", {
+    enumerable: false,
+    value: async () => {
+      await saveJsonDocument(config, doc);
+      return doc;
+    },
+  });
+  Object.defineProperty(doc, "toObject", {
+    enumerable: false,
+    value: () => clonePlain(doc),
+  });
+  return doc;
+}
+
+function selectDocumentFields(config, doc, fields) {
+  const selected = {};
+  for (const field of fields) {
+    if (!field || field.startsWith("-")) continue;
+    selected[field] = doc[field];
+  }
+  return attachModelDocument(config, selected);
+}
+
+class JsonQuery {
+  constructor(config, filter) {
+    this.config = config;
+    this.filter = filter || {};
+    this.sortSpec = null;
+    this.limitCount = null;
+    this.selectSpec = "";
+  }
+
+  sort(sortSpec) {
+    this.sortSpec = sortSpec;
+    return this;
+  }
+
+  limit(limitCount) {
+    this.limitCount = Number(limitCount);
+    return this;
+  }
+
+  select(selectSpec) {
+    this.selectSpec = String(selectSpec || "");
+    return this;
+  }
+
+  async exec() {
+    let docs = readJsonDocuments(this.config).filter((doc) => matchesFilter(doc, this.filter));
+    docs = sortDocuments(docs, this.sortSpec);
+    if (Number.isFinite(this.limitCount) && this.limitCount >= 0) docs = docs.slice(0, this.limitCount);
+    const fields = this.selectSpec.split(/\s+/).filter(Boolean);
+    if (fields.length) docs = docs.map((doc) => selectDocumentFields(this.config, doc, fields));
+    return docs;
+  }
+
+  then(resolve, reject) {
+    return this.exec().then(resolve, reject);
+  }
+
+  catch(reject) {
+    return this.exec().catch(reject);
+  }
+}
+
+function readJsonDocuments(config) {
+  return config.read(readDataFile()).map((record) => attachModelDocument(config, record));
+}
+
+async function saveJsonDocument(config, doc) {
+  const data = readDataFile();
+  const docs = config.read(data);
+  const normalized = config.normalize(doc);
+  const key = modelKey(config, normalized);
+  const idx = docs.findIndex((item) => modelKey(config, item) === key);
+  if (idx >= 0) docs[idx] = normalized;
+  else docs.push(normalized);
+  config.write(data, docs);
+  await writeDataFile(data);
+}
+
+function applyJsonUpdate(doc, update) {
+  const changes = update && typeof update === "object" ? update : {};
+  if (changes.$set && typeof changes.$set === "object") {
+    Object.assign(doc, changes.$set);
+  }
+  if (changes.$push && typeof changes.$push === "object") {
+    for (const [field, value] of Object.entries(changes.$push)) {
+      if (!Array.isArray(doc[field])) doc[field] = [];
+      doc[field].push(value);
+    }
+  }
+  return doc;
+}
+
+function createJsonModel(config) {
+  return {
+    find(filter = {}) {
+      return new JsonQuery(config, filter);
+    },
+    async findOne(filter = {}) {
+      const docs = await new JsonQuery(config, filter).limit(1);
+      return docs[0] || null;
+    },
+    async countDocuments(filter = {}) {
+      const docs = await new JsonQuery(config, filter);
+      return docs.length;
+    },
+    async create(record) {
+      const doc = attachModelDocument(config, config.normalize(record));
+      await saveJsonDocument(config, doc);
+      return doc;
+    },
+    async deleteOne(filter = {}) {
+      const data = readDataFile();
+      const docs = config.read(data);
+      const idx = docs.findIndex((record) => matchesFilter(attachModelDocument(config, record), filter));
+      if (idx >= 0) docs.splice(idx, 1);
+      config.write(data, docs);
+      await writeDataFile(data);
+      return { deletedCount: idx >= 0 ? 1 : 0 };
+    },
+    async updateMany(filter = {}, update = {}) {
+      const data = readDataFile();
+      const docs = config.read(data);
+      let modifiedCount = 0;
+      const nextDocs = docs.map((record) => {
+        const doc = attachModelDocument(config, record);
+        if (!matchesFilter(doc, filter)) return record;
+        modifiedCount += 1;
+        return config.normalize(applyJsonUpdate(doc, update));
+      });
+      config.write(data, nextDocs);
+      await writeDataFile(data);
+      return { modifiedCount };
+    },
+  };
+}
+
+const User = createJsonModel({
+  keyField: "userKey",
+  read: (data) => Object.entries(data.users || {})
+    .map(([key, value]) => normalizeUserObject({ ...(value || {}), userKey: key }, key)),
+  write: (data, docs) => {
+    data.users = {};
+    for (const doc of docs) {
+      const user = normalizeUserObject(doc, doc && doc.userKey);
+      if (user.userKey) data.users[user.userKey] = user;
+    }
+  },
+  normalize: (doc) => normalizeUserObject(doc, doc && doc.userKey),
+});
+
+const Post = createJsonModel({
+  keyField: "id",
+  read: (data) => asArray(data.posts).map(normalizePostObject).filter(Boolean),
+  write: (data, docs) => {
+    data.posts = docs.map(normalizePostObject).filter(Boolean);
+    data.nextPostId = data.posts.reduce((max, p) => Math.max(max, (Number.parseInt(p.id, 10) || 0) + 1), 1);
+  },
+  normalize: (doc) => normalizePostObject(doc),
+});
+
+const Story = createJsonModel({
+  keyField: "id",
+  read: (data) => asArray(data.stories).map(normalizeStoryObject).filter(Boolean),
+  write: (data, docs) => {
+    data.stories = docs.map(normalizeStoryObject).filter(Boolean);
+  },
+  normalize: (doc) => normalizeStoryObject(doc),
+});
+
+const DM = createJsonModel({
+  keyField: "id",
+  read: (data) => asArray(data.dms).map((m) => ({
+    id: String((m && m.id) || crypto.randomBytes(12).toString("base64url")),
+    from: String((m && m.from) || ""),
+    to: String((m && m.to) || ""),
+    text: String((m && m.text) || ""),
+    media: asArray(m && m.media),
+    createdAt: String((m && m.createdAt) || new Date().toISOString()),
+    readBy: asArray(m && m.readBy).map(String),
+  })),
+  write: (data, docs) => {
+    data.dms = docs.map((m) => ({
+      id: String((m && m.id) || crypto.randomBytes(12).toString("base64url")),
+      from: String((m && m.from) || ""),
+      to: String((m && m.to) || ""),
+      text: String((m && m.text) || ""),
+      media: asArray(m && m.media),
+      createdAt: String((m && m.createdAt) || new Date().toISOString()),
+      readBy: asArray(m && m.readBy).map(String),
+    }));
+  },
+  normalize: (doc) => ({
+    id: String((doc && doc.id) || crypto.randomBytes(12).toString("base64url")),
+    from: String((doc && doc.from) || ""),
+    to: String((doc && doc.to) || ""),
+    text: String((doc && doc.text) || ""),
+    media: asArray(doc && doc.media),
+    createdAt: String((doc && doc.createdAt) || new Date().toISOString()),
+    readBy: asArray(doc && doc.readBy).map(String),
+  }),
+});
+
+const Report = createJsonModel({
+  keyField: "id",
+  read: (data) => asArray(data.reports).map((r) => clonePlain(r)).filter(Boolean),
+  write: (data, docs) => {
+    data.reports = docs.map((r) => clonePlain(r)).filter(Boolean);
+  },
+  normalize: (doc) => ({
+    id: String((doc && doc.id) || crypto.randomBytes(12).toString("base64url")),
+    reporter: String((doc && doc.reporter) || ""),
+    type: String((doc && doc.type) || ""),
+    targetId: String((doc && doc.targetId) || ""),
+    reason: String((doc && doc.reason) || ""),
+    note: String((doc && doc.note) || ""),
+    createdAt: String((doc && doc.createdAt) || new Date().toISOString()),
+    ai: doc && doc.ai ? clonePlain(doc.ai) : undefined,
+  }),
+});
+
+async function connectDataFile() {
+  ensureDirSync(STORAGE_DIR);
+  const current = readDataFile();
+  await writeDataFile(current);
+  console.log("[data] Using data.json storage only");
+}
+
+function normalizeUsername(input) {
+  const display = String(input ?? "").trim();
+  const key = display.toLowerCase();
+  return { display, key };
+}
+
+function validateUsername(display) {
+  if (!display || display.length < 3 || display.length > 20) return "INVALID_USERNAME";
+  if (!/^[a-z0-9_]+$/i.test(display)) return "INVALID_USERNAME";
+  return null;
+}
+
+function validatePassword(pass) {
+  const p = String(pass ?? "");
+  if (p.length < 6 || p.length > 200) return "INVALID_PASSWORD";
+  return null;
+}
+
+function newToken() {
+  return crypto.randomBytes(24).toString("base64url");
+}
+
+function hashPassword(password) {
+  // Keep same shape as the older server so existing users can still login.
+  const iterations = 120000;
+  const keylen = 32;
+  const digest = "sha256";
+  const salt = crypto.randomBytes(32).toString("base64");
+  const derived = crypto.pbkdf2Sync(String(password), Buffer.from(salt, "base64"), iterations, keylen, digest);
+  return { salt, hash: derived.toString("base64"), iterations, keylen, digest };
+}
+
+function verifyPassword(password, stored) {
+  if (!stored) return false;
+  if (typeof stored === "string") return String(password) === stored;
+  if (typeof stored !== "object") return false;
+  const saltB64 = String(stored.salt || "");
+  const hashB64 = String(stored.hash || "");
+  const iterations = Number(stored.iterations || 0);
+  const keylen = Number(stored.keylen || 0);
+  const digest = String(stored.digest || "sha256");
+  if (!saltB64 || !hashB64 || !iterations || !keylen) return false;
+  const derived = crypto.pbkdf2Sync(String(password), Buffer.from(saltB64, "base64"), iterations, keylen, digest);
+  const a = Buffer.from(hashB64, "base64");
+  const b = derived;
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+// Word Filter for profanity masking
+const PROFANITY_FILTER = [
+  "fuck", "shit", "damn", "ass", "bitch", "crap", "bastard", "bullshit",
+  "cunt", "dick", "cock", "pussy", "whore", "slut", "prick", "fag", "nigger",
+  "retard", "idiot", "stupid", "moron", "dumb"
+];
+
+function filterProfanity(text) {
+  if (!text || typeof text !== "string") return "";
+  let filtered = text;
+  for (const word of PROFANITY_FILTER) {
+    const regex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, "gi");
+    filtered = filtered.replace(regex, "****");
+  }
+  return filtered;
+}
+
+function escapeRegex(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function coerceVisibility(v) {
+  const s = String(v || "public");
+  return s === "private" ? "private" : "public";
+}
+
+function sanitizeBio(input) {
+  const b = String(input ?? "");
+  if (b.length > 160) return { ok: false, error: "BIO_TOO_LONG" };
+  return { ok: true, bio: b };
+}
+
+function sanitizeSkills(input) {
+  const source = Array.isArray(input) ? input : String(input ?? "").split(",");
+  const seen = new Set();
+  const skills = [];
+  for (const item of source) {
+    const skill = String(item || "").trim().replace(/\s+/g, " ");
+    if (!skill || skill.length > 40) continue;
+    const key = skill.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    skills.push(skill);
+    if (skills.length >= 20) break;
+  }
+  return skills;
+}
+
+function normalizeUserObject(u, fallbackKey) {
+  const username = String(u && u.username ? u.username : fallbackKey || "").trim();
+  const { display, key } = normalizeUsername(username);
+  const userKey = String(u && u.userKey ? u.userKey : key);
+  return {
+    userKey,
+    username: display,
+    password: u && u.password ? u.password : null,
+    createdAt: String((u && u.createdAt) || new Date().toISOString()),
+    bio: String((u && u.bio) || ""),
+    avatarUrl: String((u && u.avatarUrl) || ""),
+    isPrivate: !!(u && u.isPrivate),
+    isPendingVerification: !!(u && u.isPendingVerification),
+    verificationRequestAt: String((u && u.verificationRequestAt) || ""),
+    skills: asArray(u && u.skills).map(String).slice(0, 20),
+    following: asArray(u && u.following).map(String),
+    token: typeof (u && u.token) === "string" ? String(u.token) : "",
+  };
+}
+
+function normalizePostObject(p) {
+  const id = String(p && p.id ? p.id : "").trim();
+  if (!id) return null;
+
+  const author = String((p && p.author) || "");
+  const { key: authorKey } = normalizeUsername((p && (p.authorKey || p.userKey)) || author);
+
+  const likes = asArray(p && p.likes).map(String);
+  const comments = asArray(p && p.comments).filter(Boolean);
+  const media = asArray(p && p.media).filter(Boolean);
+
+  const viewedBy = asArray(p && p.viewedBy).map(String);
+  const views = Number.isFinite(Number(p && p.views)) ? Number(p.views) : viewedBy.length;
+
+  return {
+    id,
+    author,
+    authorKey,
+    text: String((p && (p.text || p.content)) || ""),
+    media: media.map((m) => ({
+      url: String(m && m.url ? m.url : ""),
+      kind: String(m && m.kind ? m.kind : ""),
+      mime: String(m && m.mime ? m.mime : ""),
+    })),
+    visibility: coerceVisibility(p && p.visibility),
+    createdAt: String((p && p.createdAt) || new Date().toISOString()),
+    likes,
+    bookmarks: asArray(p && p.bookmarks).map(String),
+    repostOf: String((p && p.repostOf) || ""),
+    quoteText: String((p && p.quoteText) || ""),
+    isRepost: !!(p && (p.isRepost || p.repostOf || p.originalId)),
+    repostType: String((p && p.repostType) || ""),
+    originalId: String((p && (p.originalId || p.repostOf)) || ""),
+    authorId: String((p && (p.authorId || p.authorKey)) || authorKey),
+    comments: comments.map((c) => ({
+      id: String((c && c.id) || crypto.randomBytes(12).toString("base64url")),
+      authorKey: String((c && c.authorKey) || normalizeUsername(c && c.author).key || ""),
+      author: String((c && c.author) || ""),
+      text: String((c && c.text) || ""),
+      parentId: String((c && c.parentId) || ""),
+      createdAt: String((c && c.createdAt) || new Date().toISOString()),
+    })),
+    views,
+    viewedBy,
+  };
+}
+
+function normalizeStoryObject(s) {
+  if (!s || typeof s !== "object") return null;
+  const id = String(s.id || "").trim() || crypto.randomBytes(12).toString("base64url");
+  const authorKey = String(s.authorKey || normalizeUsername(s.author).key || "");
+  if (!authorKey) return null;
+  const media = s.media && typeof s.media === "object" ? s.media : null;
+  const mediaUrl = String(media && media.url ? media.url : "");
+  const mediaKind = String(media && media.kind ? media.kind : "");
+  const mediaMime = String(media && media.mime ? media.mime : "");
+  if (!mediaUrl || !isAllowedMediaUrl(mediaUrl)) return null;
+  if (mediaKind !== "image" && mediaKind !== "video") return null;
+  if (!mediaMime || (!mediaMime.startsWith("image/") && !mediaMime.startsWith("video/"))) return null;
+  return {
+    id,
+    authorKey,
+    author: String(s.author || ""),
+    media: { url: mediaUrl, kind: mediaKind, mime: mediaMime },
+    createdAt: String(s.createdAt || new Date().toISOString()),
+    expiresAt: String(s.expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()),
+    seenBy: asArray(s.seenBy).map(String),
+  };
+}
+
+function getBearerToken(req) {
+  const raw = String(req.headers.authorization || "");
+  if (raw.toLowerCase().startsWith("bearer ")) return raw.slice("bearer ".length).trim();
+  return "";
+}
+
+async function authUserFromReq(req) {
+  const token = getBearerToken(req);
+  if (!token) return null;
+  return await User.findOne({ token });
+}
+
+async function requireAuth(req, res) {
+  const u = await authUserFromReq(req);
+  if (!u) {
+    res.status(401).json({ ok: false, error: "UNAUTHENTICATED" });
+    return null;
+  }
+  return u;
+}
+
+async function findUserByKey(key) {
+  const k = String(key || "");
+  return await User.findOne({ userKey: k });
+}
+
+async function findUserByKeyOrName(input) {
+  const { key } = normalizeUsername(input);
+  return await findUserByKey(key);
+}
+
+async function followerCountFor(userKey) {
+  return await User.countDocuments({ following: userKey });
+}
+
+function toPublicMe(u) {
+  const key = String(u && u.userKey ? u.userKey : normalizeUsername(u && u.username).key);
+  return {
+    key,
+    userKey: key,
+    username: String(u && u.username ? u.username : ""),
+    bio: String((u && u.bio) || ""),
+    avatarUrl: String((u && u.avatarUrl) || ""),
+    isPrivate: !!(u && u.isPrivate),
+    skills: asArray(u && u.skills).map(String),
+    verified: VERIFIED_USERS.has(key),
+  };
+}
+
+async function toPublicProfile(target, viewer) {
+  const key = String(target.userKey);
+  const isFollowing = viewer ? asArray(viewer.following).includes(key) : false;
+  return {
+    key,
+    userKey: key,
+    username: String(target.username || ""),
+    bio: String(target.bio || ""),
+    avatarUrl: String(target.avatarUrl || ""),
+    isPrivate: !!target.isPrivate,
+    skills: asArray(target.skills).map(String),
+    verified: VERIFIED_USERS.has(key),
+    followerCount: await followerCountFor(key),
+    followingCount: asArray(target.following).length,
+    isFollowing,
+  };
+}
+
+async function toPublicStory(s, viewer) {
+  const author = await findUserByKey(String(s.authorKey || ""));
+  const viewerKey = viewer ? String(viewer.userKey) : "";
+  const seenBy = asArray(s.seenBy).map(String);
+  return {
+    id: String(s.id || ""),
+    authorKey: String(s.authorKey || ""),
+    author: String((author && author.username) || s.author || ""),
+    authorAvatar: String((author && author.avatarUrl) || ""),
+    media: s.media || null,
+    createdAt: String(s.createdAt || ""),
+    expiresAt: String(s.expiresAt || ""),
+    seen: !!(viewerKey && seenBy.includes(viewerKey)),
+  };
+}
+
+async function toPublicComment(c) {
+  const authorKey = String((c && c.authorKey) || normalizeUsername(c && c.author).key || "");
+  const authorUser = await findUserByKey(authorKey);
+  return {
+    id: String((c && c.id) || ""),
+    authorKey,
+    author: String((authorUser && authorUser.username) || (c && c.author) || ""),
+    authorAvatar: String((authorUser && authorUser.avatarUrl) || ""),
+    text: String((c && c.text) || ""),
+    parentId: String((c && c.parentId) || ""),
+    createdAt: String((c && c.createdAt) || new Date().toISOString()),
+  };
+}
+
+function nestComments(flatComments) {
+  const byId = new Map();
+  const roots = [];
+  for (const c of flatComments) {
+    byId.set(String(c.id), { ...c, replies: [] });
+  }
+  for (const c of byId.values()) {
+    const parentId = String(c.parentId || "");
+    if (parentId && byId.has(parentId)) byId.get(parentId).replies.push(c);
+    else roots.push(c);
+  }
+  return roots;
+}
+
+async function toPublicPost(p, viewer) {
+  const authorKey = String(p.authorKey || normalizeUsername(p.author).key || "");
+  const author = await findUserByKey(authorKey);
+  const likes = asArray(p.likes).map(String);
+  const bookmarks = asArray(p.bookmarks).map(String);
+  const viewerKey = viewer ? String(viewer.userKey) : "";
+  const likedByMe = !!(viewerKey && likes.includes(viewerKey));
+  const bookmarkedByMe = !!(viewerKey && bookmarks.includes(viewerKey));
+  const comments = asArray(p.comments);
+  const viewCount = Number.isFinite(Number(p.views)) ? Number(p.views) : 0;
+  const id = String(p.id);
+  const repostCount = await Post.countDocuments({ repostOf: id });
+  const repostedByMe = viewerKey ? !!(await Post.findOne({ repostOf: id, authorKey: viewerKey })) : false;
+  let quotedPost = null;
+  const repostOf = String(p.repostOf || "");
+  if (repostOf) {
+    const original = await Post.findOne({ id: repostOf });
+    if (original && await canViewerSeePost(original, viewer)) {
+      const originalAuthorKey = String(original.authorKey || normalizeUsername(original.author).key || "");
+      const originalAuthor = await findUserByKey(originalAuthorKey);
+      quotedPost = {
+        id: String(original.id),
+        authorKey: originalAuthorKey,
+        author: String((originalAuthor && originalAuthor.username) || original.author || ""),
+        authorAvatar: String((originalAuthor && originalAuthor.avatarUrl) || ""),
+        verified: VERIFIED_USERS.has(originalAuthorKey),
+        text: String(original.text || ""),
+        media: asArray(original.media),
+        createdAt: String(original.createdAt || ""),
+      };
+    }
+  }
+
+  return {
+    id,
+    authorKey,
+    authorId: String(p.authorId || authorKey),
+    author: String((author && author.username) || p.author || ""),
+    authorAvatar: String((author && author.avatarUrl) || ""),
+    verified: VERIFIED_USERS.has(authorKey),
+    text: String(p.text || ""),
+    content: String(p.text || ""),
+    media: asArray(p.media),
+    repostOf,
+    quoteText: String(p.quoteText || ""),
+    isRepost: !!(p.isRepost || repostOf || p.originalId),
+    repostType: String(p.repostType || ""),
+    originalId: String(p.originalId || repostOf || ""),
+    quotedPost,
+    visibility: coerceVisibility(p.visibility),
+    createdAt: String(p.createdAt || new Date().toISOString()),
+    likeCount: likes.length,
+    commentCount: comments.length,
+    viewCount,
+    repostCount,
+    bookmarkCount: bookmarks.length,
+    likedByMe,
+    bookmarkedByMe,
+    repostedByMe,
+  };
+}
+
+function conversationKey(a, b) {
+  const x = String(a || "");
+  const y = String(b || "");
+  return x < y ? `${x}:${y}` : `${y}:${x}`;
+}
+
+async function visiblePostsForViewer(viewer) {
+  const viewerKey = viewer ? String(viewer.userKey) : "";
+  const viewerFollowing = asArray(viewer && viewer.following).map(String);
+  const privateUsers = await User.find({ isPrivate: true }).select("userKey");
+  const hiddenAuthors = privateUsers
+    .map((u) => String(u.userKey || ""))
+    .filter((k) => k && k !== viewerKey && !viewerFollowing.includes(k));
+  return await Post.find({
+    authorKey: { $nin: hiddenAuthors },
+    $or: [
+      { visibility: "public" },
+      { authorKey: viewerKey },
+      { authorKey: { $in: viewerFollowing } }
+    ]
+  }).sort({ createdAt: -1, id: -1 });
+}
+
+async function canViewerSeePost(post, viewer) {
+  if (!post || !viewer) return false;
+  const viewerKey = String(viewer.userKey || "");
+  const authorKey = String(post.authorKey || normalizeUsername(post.author).key || "");
+  if (!authorKey) return false;
+  if (authorKey === viewerKey) return true;
+  const followsAuthor = asArray(viewer.following).map(String).includes(authorKey);
+  if (coerceVisibility(post.visibility) === "private" && !followsAuthor) return false;
+  const author = await findUserByKey(authorKey);
+  if (author && author.isPrivate && !followsAuthor) return false;
+  return true;
+}
+
+async function nextPostId() {
+  const posts = await Post.find().select("id");
+  const maxId = posts.reduce((max, p) => Math.max(max, Number.parseInt(String(p.id || ""), 10) || 0), 0);
+  return String(maxId + 1);
+}
+
+function validateMediaList(media) {
+  const list = asArray(media);
+  if (list.length > 4) return { ok: false, error: "INVALID_MEDIA" };
+  for (const m of list) {
+    const url = String(m && m.url ? m.url : "");
+    const kind = String(m && m.kind ? m.kind : "");
+    const mime = String(m && m.mime ? m.mime : "");
+    if (!url || !isAllowedMediaUrl(url)) return { ok: false, error: "INVALID_MEDIA" };
+    if (kind !== "image" && kind !== "video") return { ok: false, error: "INVALID_MEDIA" };
+    if (!mime || (!mime.startsWith("image/") && !mime.startsWith("video/"))) return { ok: false, error: "INVALID_MEDIA" };
+  }
+  return { ok: true, media: list.map((m) => ({ url: String(m.url), kind: String(m.kind), mime: String(m.mime) })) };
+}
+
+function isAllowedMediaUrl(url) {
+  const s = String(url || "");
+  return /^data:(image|video|audio)\/[a-z0-9.+-]+;base64,/i.test(s);
+}
+
+function validateDmMediaList(media) {
+  const list = asArray(media);
+  if (list.length > 4) return { ok: false, error: "INVALID_MEDIA" };
+  for (const m of list) {
+    const url = String(m && m.url ? m.url : "");
+    const kind = String(m && m.kind ? m.kind : "");
+    const mime = String(m && m.mime ? m.mime : "");
+    if (!url || !isAllowedMediaUrl(url)) return { ok: false, error: "INVALID_MEDIA" };
+    if (!["image", "video", "audio"].includes(kind)) return { ok: false, error: "INVALID_MEDIA" };
+    if (!mime || !mime.startsWith(`${kind}/`)) return { ok: false, error: "INVALID_MEDIA" };
+  }
+  return { ok: true, media: list.map((m) => ({ url: String(m.url), kind: String(m.kind), mime: String(m.mime) })) };
+}
+
+function parseDataUrl(dataUrl) {
+  const s = String(dataUrl || "");
+  const m = /^data:([^;]+);base64,([\s\S]+)$/.exec(s);
+  if (!m) return null;
+  const mime = String(m[1] || "");
+  const b64 = String(m[2] || "").replace(/\s+/g, "");
+  return { mime, b64 };
+}
+
+function extForMime(mime) {
+  const map = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+    "video/quicktime": "mov",
+    "audio/webm": "webm",
+    "audio/ogg": "ogg",
+    "audio/mpeg": "mp3",
+    "audio/mp4": "m4a",
+    "audio/wav": "wav",
+  };
+  return map[mime] || "";
+}
+
+function readDataFile() {
+  const fallback = { users: {}, posts: [], stories: [], dms: [], nextPostId: 1, reports: [], notifications: [] };
+  try {
+    if (!isFile(DATA_FILE)) return fallback;
+    const parsed = safeJsonParse(fs.readFileSync(DATA_FILE, "utf8"));
+    if (!parsed || typeof parsed !== "object") return fallback;
+    return {
+      users: parsed.users && typeof parsed.users === "object" ? parsed.users : {},
+      posts: Array.isArray(parsed.posts) ? parsed.posts : [],
+      stories: Array.isArray(parsed.stories) ? parsed.stories : [],
+      dms: Array.isArray(parsed.dms) ? parsed.dms : [],
+      nextPostId: Number(parsed.nextPostId || 1) || 1,
+      reports: Array.isArray(parsed.reports) ? parsed.reports : [],
+      notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+async function writeDataFile(data) {
+  await fsp.writeFile(DATA_FILE, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+}
+
+async function upsertPostInDataFile(post) {
+  const data = readDataFile();
+  const plain = {
+    id: String(post.id || ""),
+    authorKey: String(post.authorKey || ""),
+    author: String(post.author || ""),
+    text: String(post.text || ""),
+    media: asArray(post.media).map((m) => ({
+      url: String(m && m.url ? m.url : ""),
+      kind: String(m && m.kind ? m.kind : ""),
+      mime: String(m && m.mime ? m.mime : ""),
+    })),
+    visibility: coerceVisibility(post.visibility),
+    createdAt: String(post.createdAt || new Date().toISOString()),
+    likes: asArray(post.likes).map(String),
+    bookmarks: asArray(post.bookmarks).map(String),
+    repostOf: String(post.repostOf || ""),
+    quoteText: String(post.quoteText || ""),
+    isRepost: !!(post.isRepost || post.repostOf || post.originalId),
+    repostType: String(post.repostType || ""),
+    originalId: String(post.originalId || post.repostOf || ""),
+    authorId: String(post.authorId || post.authorKey || ""),
+    comments: asArray(post.comments),
+    views: Number(post.views || 0) || 0,
+    viewedBy: asArray(post.viewedBy).map(String),
+  };
+  const idx = data.posts.findIndex((p) => String(p && p.id) === plain.id);
+  if (idx >= 0) data.posts[idx] = { ...data.posts[idx], ...plain };
+  else data.posts.push(plain);
+  const numericId = Number.parseInt(plain.id, 10);
+  if (Number.isFinite(numericId)) data.nextPostId = Math.max(Number(data.nextPostId || 1), numericId + 1);
+  await writeDataFile(data);
+}
+
+async function syncDataJson() {
+  const current = readDataFile();
+  const users = {};
+  const dbUsers = await User.find();
+  for (const u of dbUsers) {
+    const key = String(u.userKey || normalizeUsername(u.username).key || "");
+    if (!key) continue;
+    users[key] = {
+      userKey: key,
+      username: String(u.username || ""),
+      password: u.password || null,
+      createdAt: String(u.createdAt || ""),
+      bio: String(u.bio || ""),
+      avatarUrl: String(u.avatarUrl || ""),
+      isPrivate: !!u.isPrivate,
+      isPendingVerification: !!u.isPendingVerification,
+      verificationRequestAt: String(u.verificationRequestAt || ""),
+      skills: asArray(u.skills).map(String),
+      following: asArray(u.following).map(String),
+      token: String(u.token || ""),
+    };
+  }
+  const dbPosts = await Post.find().sort({ createdAt: 1, id: 1 });
+  const posts = dbPosts.map((p) => ({
+    id: String(p.id || ""),
+    authorKey: String(p.authorKey || ""),
+    authorId: String(p.authorId || p.authorKey || ""),
+    author: String(p.author || ""),
+    text: String(p.text || ""),
+    media: asArray(p.media),
+    visibility: coerceVisibility(p.visibility),
+    createdAt: String(p.createdAt || ""),
+    likes: asArray(p.likes).map(String),
+    bookmarks: asArray(p.bookmarks).map(String),
+    isRepost: !!(p.isRepost || p.repostOf || p.originalId),
+    repostType: String(p.repostType || ""),
+    originalId: String(p.originalId || p.repostOf || ""),
+    repostOf: String(p.repostOf || p.originalId || ""),
+    quoteText: String(p.quoteText || ""),
+    comments: asArray(p.comments),
+    views: Number(p.views || 0) || 0,
+    viewedBy: asArray(p.viewedBy).map(String),
+  }));
+  const dbStories = await Story.find().sort({ createdAt: 1 });
+  const stories = dbStories.map((s) => ({
+    id: String(s.id || ""),
+    authorKey: String(s.authorKey || ""),
+    author: String(s.author || ""),
+    media: s.media || null,
+    createdAt: String(s.createdAt || ""),
+    expiresAt: String(s.expiresAt || ""),
+    seenBy: asArray(s.seenBy).map(String),
+  }));
+  const dbDms = await DM.find().sort({ createdAt: 1 });
+  const dms = dbDms.map((m) => ({
+    id: String(m.id || ""),
+    from: String(m.from || ""),
+    to: String(m.to || ""),
+    text: String(m.text || ""),
+    media: asArray(m.media),
+    createdAt: String(m.createdAt || ""),
+    readBy: asArray(m.readBy).map(String),
+  }));
+  const reports = await Report.find().sort({ createdAt: 1 });
+  await writeDataFile({
+    ...current,
+    users,
+    posts,
+    stories,
+    dms,
+    nextPostId: posts.reduce((max, p) => Math.max(max, (Number.parseInt(p.id, 10) || 0) + 1), 1),
+    reports: reports.map((r) => (typeof r.toObject === "function" ? r.toObject() : r)),
+    notifications: asArray(current.notifications),
+  });
+}
+
+async function addNotification({ userKey, type, actorKey, postId = "", commentId = "" }) {
+  const target = String(userKey || "");
+  if (!target || target === String(actorKey || "")) return;
+  const data = readDataFile();
+  data.notifications = asArray(data.notifications);
+  data.notifications.unshift({
+    id: crypto.randomBytes(12).toString("base64url"),
+    userKey: target,
+    type: String(type || ""),
+    actorKey: String(actorKey || ""),
+    postId: String(postId || ""),
+    commentId: String(commentId || ""),
+    read: false,
+    createdAt: new Date().toISOString(),
+  });
+  data.notifications = data.notifications.slice(0, 500);
+  await writeDataFile(data);
+}
+
+// -----------------------------
+// Express app
+// -----------------------------
+
+const app = express();
+app.disable("x-powered-by");
+const httpServer = http.createServer(app);
+
+function wrapAsyncRoute(handler) {
+  if (typeof handler !== "function" || handler.length >= 4) return handler;
+  return function wrappedRoute(req, res, next) {
+    Promise.resolve(handler(req, res, next)).catch(next);
+  };
+}
+
+for (const method of ["get", "post", "put", "patch", "delete"]) {
+  const original = app[method].bind(app);
+  app[method] = (path, ...handlers) => original(path, ...handlers.map(wrapAsyncRoute));
+}
+
+// JSON/Body parsing middleware - MUST be first for Base64 data handling
+app.use(express.json({ limit: JSON_LIMIT }));
+app.use(express.urlencoded({ limit: JSON_LIMIT, extended: true }));
+
+// (Optional) CORS for debugging / split deployments.
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS");
+  if (req.method === "OPTIONS") return res.status(204).end();
+  return next();
+});
+
+// PeerJS server with error handling
+try {
+  const peerServer = ExpressPeerServer(httpServer, { path: "/peerjs", proxied: true });
+  app.use("/peerjs", peerServer);
+  console.log("[PeerJS] Server initialized successfully");
+} catch (err) {
+  console.warn("[PeerJS] Failed to initialize:", err.message);
+}
+
+// Health check for Render
+app.get("/healthz", (req, res) => res.status(200).send("ok"));
+
+// -----------------------------
+// API
+// -----------------------------
+
+app.get("/api/version", (req, res) => res.status(200).json({ ok: true, version: "hysa1-json-2026-04-28" }));
+
+async function handleRegister(req, res) {
+  const body = req.body || {};
+  const { display, key } = normalizeUsername(body.username);
+  const usernameErr = validateUsername(display);
+  if (usernameErr) return res.status(400).json({ ok: false, error: usernameErr });
+  const passErr = validatePassword(body.password);
+  if (passErr) return res.status(400).json({ ok: false, error: passErr });
+
+  if (await findUserByKey(key)) return res.status(409).json({ ok: false, error: "USERNAME_TAKEN" });
+
+  const u = normalizeUserObject(
+    {
+      userKey: key,
+      username: display,
+      password: hashPassword(body.password),
+      createdAt: new Date().toISOString(),
+      bio: "",
+      avatarUrl: "",
+      following: [],
+      token: newToken(),
+    },
+    key,
+  );
+  await User.create(u);
+  await syncDataJson();
+  return res.status(200).json({ ok: true, token: u.token, me: toPublicMe(u) });
+}
+
+app.post("/api/register", handleRegister);
+app.post("/api/signup", handleRegister);
+
+app.post("/api/login", async (req, res) => {
+  const body = req.body || {};
+  const { key } = normalizeUsername(body.username);
+  const password = String(body.password ?? "");
+
+  const u = await findUserByKey(key);
+  if (!u || !verifyPassword(password, u.password)) {
+    return res.status(401).json({ ok: false, error: "INVALID_CREDENTIALS" });
+  }
+
+  u.token = newToken();
+  await u.save();
+  await syncDataJson();
+  return res.status(200).json({ ok: true, token: u.token, me: toPublicMe(u) });
+});
+
+app.post("/api/logout", async (req, res) => {
+  const u = await requireAuth(req, res);
+  if (!u) return;
+  u.token = "";
+  await u.save();
+  await syncDataJson();
+  return res.status(200).json({ ok: true });
+});
+
+app.get("/api/me", async (req, res) => {
+  const u = await requireAuth(req, res);
+  if (!u) return;
+  return res.status(200).json({ ok: true, me: toPublicMe(u) });
+});
+
+app.get("/api/feed", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const limitRaw = Number.parseInt(String(req.query.limit || "20"), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(50, limitRaw)) : 20;
+  const cursorRaw = Number.parseInt(String(req.query.cursor || "0"), 10);
+  const cursor = Number.isFinite(cursorRaw) && cursorRaw >= 0 ? cursorRaw : 0;
+
+  const posts = await visiblePostsForViewer(viewer);
+  const slice = await Promise.all(posts.slice(cursor, cursor + limit).map((p) => toPublicPost(p, viewer)));
+  const nextCursor = cursor + slice.length < posts.length ? String(cursor + slice.length) : null;
+  return res.status(200).json({ ok: true, posts: slice, nextCursor });
+});
+
+app.get("/api/reels", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const limitRaw = Number.parseInt(String(req.query.limit || "15"), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(40, limitRaw)) : 15;
+  const all = await visiblePostsForViewer(viewer);
+  const reels = await Promise.all(all
+    .filter((p) => asArray(p.media).some((m) => String(m.kind) === "video"))
+    .slice(0, limit)
+    .map((p) => toPublicPost(p, viewer)));
+  return res.status(200).json({ ok: true, reels });
+});
+
+app.get("/api/trends", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const posts = await visiblePostsForViewer(viewer);
+  const counts = new Map();
+  for (const p of posts) {
+    const text = String(p.text || "");
+    for (const match of text.matchAll(/(^|\s)#([a-z0-9_]{2,30})/gi)) {
+      const tag = `#${String(match[2] || "").toLowerCase()}`;
+      counts.set(tag, (counts.get(tag) || 0) + 1);
+    }
+  }
+  const trends = Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 8)
+    .map(([tag, count]) => ({ tag, count }));
+  return res.status(200).json({ ok: true, trends });
+});
+
+// Trending Hashtags - Top 5 from last 100 posts
+app.get("/api/trending/hashtags", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const posts = await Post.find().sort({ createdAt: -1 }).limit(100);
+  const counts = new Map();
+  for (const p of posts) {
+    const text = String(p.text || "");
+    for (const match of text.matchAll(/(^|\s)#([a-z0-9_]{2,30})/gi)) {
+      const tag = `#${String(match[2] || "").toLowerCase()}`;
+      counts.set(tag, (counts.get(tag) || 0) + 1);
+    }
+  }
+  const trending = Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([tag, count]) => ({ tag, count }));
+  return res.status(200).json({ ok: true, trending });
+});
+
+// Verification Request
+app.post("/api/verification/request", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  viewer.isPendingVerification = true;
+  viewer.verificationRequestAt = new Date().toISOString();
+  await viewer.save();
+  await syncDataJson();
+  return res.status(200).json({ ok: true, pending: true, requestedAt: viewer.verificationRequestAt });
+});
+
+// Get Verification Status
+app.get("/api/verification/status", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  return res.status(200).json({ 
+    ok: true, 
+    verified: VERIFIED_USERS.has(String(viewer.userKey)),
+    pending: !!viewer.isPendingVerification,
+    requestedAt: viewer.verificationRequestAt || ""
+  });
+});
+
+// Trending Hashtags - Top 5 from last 100 posts
+app.get("/api/trending/hashtags", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const posts = await Post.find().sort({ createdAt: -1 }).limit(100);
+  const counts = new Map();
+  for (const p of posts) {
+    const text = String(p.text || "");
+    for (const match of text.matchAll(/(^|\s)#([a-z0-9_]{2,30})/gi)) {
+      const tag = `#${String(match[2] || "").toLowerCase()}`;
+      counts.set(tag, (counts.get(tag) || 0) + 1);
+    }
+  }
+  const trending = Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([tag, count]) => ({ tag, count }));
+  return res.status(200).json({ ok: true, trending });
+});
+
+// Verification Request
+app.post("/api/verification/request", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  viewer.isPendingVerification = true;
+  viewer.verificationRequestAt = new Date().toISOString();
+  await viewer.save();
+  await syncDataJson();
+  return res.status(200).json({ ok: true, pending: true, requestedAt: viewer.verificationRequestAt });
+});
+
+// Get Verification Status
+app.get("/api/verification/status", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  return res.status(200).json({ 
+    ok: true, 
+    verified: VERIFIED_USERS.has(String(viewer.userKey)),
+    pending: !!viewer.isPendingVerification,
+    requestedAt: viewer.verificationRequestAt || ""
+  });
+});
+
+app.get("/api/stories", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const now = Date.now();
+  const list = await Story.find({ expiresAt: { $gt: new Date(now).toISOString() } }).sort({ createdAt: -1 });
+  const stories = await Promise.all(list.map((s) => toPublicStory(s, viewer)));
+  return res.status(200).json({ ok: true, stories });
+});
+
+app.post("/api/stories", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const media = req.body && req.body.media ? req.body.media : null;
+  const mediaUrl = String(media && media.url ? media.url : "");
+  const mediaKind = String(media && media.kind ? media.kind : "");
+  const mediaMime = String(media && media.mime ? media.mime : "");
+  if (!mediaUrl || !isAllowedMediaUrl(mediaUrl)) return res.status(400).json({ ok: false, error: "INVALID_MEDIA" });
+  if (mediaKind !== "image" && mediaKind !== "video") return res.status(400).json({ ok: false, error: "INVALID_MEDIA" });
+  if (!mediaMime || (!mediaMime.startsWith("image/") && !mediaMime.startsWith("video/"))) {
+    return res.status(400).json({ ok: false, error: "INVALID_MEDIA" });
+  }
+  const story = {
+    id: crypto.randomBytes(12).toString("base64url"),
+    authorKey: String(viewer.userKey),
+    author: String(viewer.username),
+    media: { url: mediaUrl, kind: mediaKind, mime: mediaMime },
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    seenBy: [String(viewer.userKey)],
+  };
+  await Story.create(story);
+  await syncDataJson();
+  return res.status(200).json({ ok: true, story: await toPublicStory(story, viewer) });
+});
+
+app.get("/api/user/:key", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const raw = String(req.params.key || "");
+  const target = await findUserByKeyOrName(raw);
+  if (!target) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+  const isMe = String(target.userKey) === String(viewer.userKey);
+  const followsTarget = asArray(viewer.following).map(String).includes(String(target.userKey));
+  if (target.isPrivate && !isMe && !followsTarget) {
+    return res.status(200).json({ ok: true, profile: await toPublicProfile(target, viewer), posts: [], private: true });
+  }
+
+  const list = await Post.find({
+    $or: [
+      { authorKey: String(target.userKey) },
+      { authorId: String(target.userKey) },
+    ],
+  }).sort({ createdAt: -1 });
+
+  const visible = [];
+  for (const post of list) {
+    if (await canViewerSeePost(post, viewer)) visible.push(post);
+  }
+  const posts = await Promise.all(visible.map((p) => toPublicPost(p, viewer)));
+  return res.status(200).json({ ok: true, profile: await toPublicProfile(target, viewer), posts });
+});
+
+app.post("/api/follow/:key", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const raw = String(req.params.key || "");
+  const target = await findUserByKeyOrName(raw);
+  if (!target) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (String(target.userKey) === String(viewer.userKey)) return res.status(400).json({ ok: false, error: "REPORT_INVALID" });
+
+  if (!Array.isArray(viewer.following)) viewer.following = [];
+  const idx = viewer.following.indexOf(String(target.userKey));
+  let following = false;
+  if (idx >= 0) {
+    viewer.following.splice(idx, 1);
+    following = false;
+  } else {
+    viewer.following.push(String(target.userKey));
+    following = true;
+  }
+  await viewer.save();
+  await syncDataJson();
+  if (following) {
+    await addNotification({ userKey: String(target.userKey), type: "new_follower", actorKey: String(viewer.userKey) });
+  }
+  return res.status(200).json({ ok: true, following, followerCount: await followerCountFor(String(target.userKey)) });
+});
+
+app.get("/api/posts/:id", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const id = String(req.params.id || "");
+  const post = await Post.findOne({ id });
+  if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+  if (!await canViewerSeePost(post, viewer)) {
+    return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  }
+  return res.status(200).json({ ok: true, post: await toPublicPost(post, viewer) });
+});
+
+app.post("/api/posts", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const body = req.body || {};
+  const text = String(body.text ?? body.content ?? "").trim();
+  const visibility = coerceVisibility(body.visibility);
+
+  const mediaCheck = validateMediaList(body.media);
+  if (!mediaCheck.ok) return res.status(400).json({ ok: false, error: mediaCheck.error });
+
+  const hasText = !!text.trim();
+  const hasMedia = mediaCheck.media.length > 0;
+  if (!hasText && !hasMedia) return res.status(400).json({ ok: false, error: "INVALID_POST" });
+  if (text.length > 280) return res.status(400).json({ ok: false, error: "INVALID_POST" });
+
+  const post = {
+    id: await nextPostId(),
+    authorKey: String(viewer.userKey),
+    author: String(viewer.username),
+    text,
+    media: mediaCheck.media,
+    visibility,
+    createdAt: new Date().toISOString(),
+    likes: [],
+    bookmarks: [],
+    repostOf: "",
+    quoteText: "",
+    isRepost: false,
+    repostType: "",
+    originalId: "",
+    authorId: String(viewer.userKey),
+    comments: [],
+    views: 0,
+    viewedBy: [],
+  };
+  await Post.create(post);
+  await syncDataJson();
+  return res.status(200).json({ ok: true, post: await toPublicPost(post, viewer) });
+});
+
+app.post("/api/posts/:id/like", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const id = String(req.params.id || "");
+  const post = await Post.findOne({ id });
+  if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+  if (!await canViewerSeePost(post, viewer)) {
+    return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  }
+
+  if (!Array.isArray(post.likes)) post.likes = [];
+  const k = String(viewer.userKey);
+  const idx = post.likes.indexOf(k);
+  let liked = false;
+  if (idx >= 0) {
+    post.likes.splice(idx, 1);
+    liked = false;
+  } else {
+    post.likes.push(k);
+    liked = true;
+  }
+  await post.save();
+  await syncDataJson();
+  if (liked) {
+    await addNotification({ userKey: String(post.authorKey), type: "like", actorKey: String(viewer.userKey), postId: id });
+  }
+  return res.status(200).json({ ok: true, liked, likeCount: asArray(post.likes).length });
+});
+
+app.post("/api/posts/:id/bookmark", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const id = String(req.params.id || "");
+  const post = await Post.findOne({ id });
+  if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+  if (!await canViewerSeePost(post, viewer)) {
+    return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  }
+
+  if (!Array.isArray(post.bookmarks)) post.bookmarks = [];
+  const k = String(viewer.userKey);
+  const idx = post.bookmarks.indexOf(k);
+  let bookmarked = false;
+  if (idx >= 0) {
+    post.bookmarks.splice(idx, 1);
+  } else {
+    post.bookmarks.push(k);
+    bookmarked = true;
+  }
+  await post.save();
+  await syncDataJson();
+  return res.status(200).json({ ok: true, bookmarked, bookmarkCount: asArray(post.bookmarks).length });
+});
+
+app.post("/api/posts/:id/repost", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const id = String(req.params.id || "");
+  const post = await Post.findOne({ id });
+  if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (!await canViewerSeePost(post, viewer)) {
+    return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  }
+
+  const quoteText = String((req.body && req.body.quoteText) || "").trim();
+  if (quoteText.length > 280) return res.status(400).json({ ok: false, error: "INVALID_POST" });
+  const requestedType = String((req.body && req.body.repostType) || "").toLowerCase();
+  const inferredType = asArray(post.media).some((m) => String(m && m.kind) === "video") ? "video" : "post";
+  const repostType = ["post", "video", "comment"].includes(requestedType) ? requestedType : inferredType;
+
+  const existing = await Post.findOne({ repostOf: id, authorKey: String(viewer.userKey), quoteText: "" });
+  if (existing && !quoteText) {
+    await Post.deleteOne({ _id: existing._id });
+    await syncDataJson();
+    const repostCount = await Post.countDocuments({ repostOf: id });
+    return res.status(200).json({ ok: true, reposted: false, repostCount });
+  }
+
+  const repost = {
+    id: await nextPostId(),
+    authorKey: String(viewer.userKey),
+    author: String(viewer.username),
+    text: quoteText,
+    media: [],
+    visibility: "public",
+    createdAt: new Date().toISOString(),
+    likes: [],
+    bookmarks: [],
+    repostOf: id,
+    quoteText,
+    isRepost: true,
+    repostType,
+    originalId: id,
+    authorId: String(viewer.userKey),
+    comments: [],
+    views: 0,
+    viewedBy: [],
+  };
+  const created = await Post.create(repost);
+  await syncDataJson();
+  await addNotification({ userKey: String(post.authorKey), type: "repost", actorKey: String(viewer.userKey), postId: id });
+  const repostCount = await Post.countDocuments({ repostOf: id });
+  return res.status(200).json({ ok: true, reposted: true, repostCount, post: await toPublicPost(created, viewer) });
+});
+
+app.get("/api/posts/:id/comments", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const id = String(req.params.id || "");
+  const post = await Post.findOne({ id });
+  if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+  if (!await canViewerSeePost(post, viewer)) {
+    return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  }
+
+  const limitRaw = Number.parseInt(String(req.query.limit || "50"), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, limitRaw)) : 50;
+  const comments = await Promise.all(asArray(post.comments).slice(-limit).map(toPublicComment));
+  return res.status(200).json({ ok: true, comments: nestComments(comments), commentCount: asArray(post.comments).length });
+});
+
+app.post("/api/posts/:id/comments", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const id = String(req.params.id || "");
+  const post = await Post.findOne({ id });
+  if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+  if (!await canViewerSeePost(post, viewer)) {
+    return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  }
+
+  const text = String((req.body && req.body.text) || "").trim();
+  const filteredText = filterProfanity(text);
+  const parentId = String((req.body && req.body.parentId) || "");
+  if (!text || text.length > 200) return res.status(400).json({ ok: false, error: "INVALID_COMMENT" });
+
+  if (!Array.isArray(post.comments)) post.comments = [];
+  const comment = {
+    id: crypto.randomBytes(12).toString("base64url"),
+    authorKey: String(viewer.userKey),
+    text,
+    parentId,
+    createdAt: new Date().toISOString(),
+  };
+  post.comments.push(comment);
+  await post.save();
+  await syncDataJson();
+  return res.status(200).json({ ok: true, comment: await toPublicComment(comment), commentCount: asArray(post.comments).length });
+});
+
+app.post("/api/posts/:id/comments/:commentId/replies", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const id = String(req.params.id || "");
+  const post = await Post.findOne({ id });
+  if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (!await canViewerSeePost(post, viewer)) {
+    return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  }
+  const text = String((req.body && req.body.text) || "").trim();
+  const filteredText = filterProfanity(text);
+  const parentId = String(req.params.commentId || "");
+  if (!text || text.length > 200 || !parentId) return res.status(400).json({ ok: false, error: "INVALID_COMMENT" });
+  if (!Array.isArray(post.comments)) post.comments = [];
+  const comment = {
+    id: crypto.randomBytes(12).toString("base64url"),
+    authorKey: String(viewer.userKey),
+    text: filteredText,
+    parentId,
+    createdAt: new Date().toISOString(),
+  };
+  post.comments.push(comment);
+  await post.save();
+  await syncDataJson();
+  return res.status(200).json({ ok: true, comment: await toPublicComment(comment), commentCount: asArray(post.comments).length });
+});
+
+app.delete("/api/posts/:id/comments/:commentId", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const id = String(req.params.id || "");
+  const commentId = String(req.params.commentId || "");
+  const post = await Post.findOne({ id });
+  if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (!await canViewerSeePost(post, viewer)) {
+    return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  }
+
+  const viewerKey = String(viewer.userKey);
+  const comments = asArray(post.comments);
+  const target = comments.find((c) => String(c && c.id) === commentId);
+  if (!target) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  const ownsComment = String(target.authorKey || "") === viewerKey;
+  const ownsPost = String(post.authorKey || "") === viewerKey || String(post.authorId || "") === viewerKey;
+  if (!ownsComment && !ownsPost) return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+
+  post.comments = comments.filter((c) => {
+    const currentId = String(c && c.id || "");
+    const parentId = String(c && c.parentId || "");
+    return currentId !== commentId && parentId !== commentId;
+  });
+  await post.save();
+  await syncDataJson();
+  return res.status(200).json({ ok: true, commentCount: asArray(post.comments).length });
+});
+
+app.delete("/api/posts/:id", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const id = String(req.params.id || "");
+  const post = await Post.findOne({ id });
+  if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+  const viewerKey = String(viewer.userKey);
+  const ownsPost = String(post.authorKey || "") === viewerKey || String(post.authorId || "") === viewerKey;
+  if (!ownsPost) return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+
+  await Post.deleteOne({ _id: post._id });
+  await Post.updateMany({ repostOf: id }, { $set: { originalId: "", repostOf: "" } });
+  await syncDataJson();
+  return res.status(200).json({ ok: true });
+});
+
+app.post("/api/posts/:id/view", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const id = String(req.params.id || "");
+  const post = await Post.findOne({ id });
+  if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+  if (!await canViewerSeePost(post, viewer)) {
+    return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  }
+
+  if (!Array.isArray(post.viewedBy)) post.viewedBy = [];
+  const viewerKey = String(viewer.userKey);
+  if (!post.viewedBy.includes(viewerKey)) {
+    post.viewedBy.push(viewerKey);
+    post.views = Number.isFinite(Number(post.views)) ? Number(post.views) + 1 : 1;
+    await post.save();
+    await syncDataJson();
+  }
+  const viewCount = Number.isFinite(Number(post.views)) ? Number(post.views) : 0;
+  return res.status(200).json({ ok: true, viewCount });
+});
+
+app.post("/api/profile", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const body = req.body || {};
+  const bioCheck = sanitizeBio(body.bio);
+  if (!bioCheck.ok) return res.status(400).json({ ok: false, error: bioCheck.error });
+
+  const avatarUrl = String(body.avatarUrl || "");
+  if (avatarUrl && !isAllowedMediaUrl(avatarUrl)) return res.status(400).json({ ok: false, error: "UPLOAD_INVALID" });
+
+  viewer.bio = bioCheck.bio;
+  viewer.avatarUrl = avatarUrl;
+  viewer.isPrivate = body.isPrivate === true || String(body.isPrivate || "").toLowerCase() === "true";
+  viewer.skills = sanitizeSkills(body.skills);
+  await viewer.save();
+  await syncDataJson();
+  return res.status(200).json({ ok: true, me: toPublicMe(viewer) });
+});
+
+app.get("/api/insights", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const posts = await Post.find({ authorKey: String(viewer.userKey) });
+  const views = posts.reduce((acc, p) => acc + (Number.isFinite(Number(p.views)) ? Number(p.views) : 0), 0);
+  const likes = posts.reduce((acc, p) => acc + asArray(p.likes).length, 0);
+  const saves = posts.reduce((acc, p) => acc + asArray(p.bookmarks).length, 0);
+  return res.status(200).json({ ok: true, insights: { posts: posts.length, views, likes, saves } });
+});
+
+// Post Insights - individual post performance
+app.get("/api/posts/:id/insights", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const id = String(req.params.id || "");
+  const post = await Post.findOne({ id });
+  if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+  const authorKey = String(post.authorKey || "");
+  if (authorKey !== String(viewer.userKey)) {
+    return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+  }
+
+  const viewCount = Number.isFinite(Number(post.views)) ? Number(post.views) : 0;
+  const likeCount = asArray(post.likes).length;
+  const commentCount = asArray(post.comments).length;
+  const saveCount = asArray(post.bookmarks).length;
+  const repostCount = await Post.countDocuments({ repostOf: id });
+
+  return res.status(200).json({ 
+    ok: true, 
+    insights: { 
+      postId: id,
+      views: viewCount,
+      likes: likeCount,
+      comments: commentCount,
+      saves: saveCount,
+      reposts: repostCount,
+      createdAt: post.createdAt
+    } 
+  });
+});
+
+app.get("/api/notifications", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const data = readDataFile();
+  const viewerKey = String(viewer.userKey);
+  const list = asArray(data.notifications)
+    .filter((n) => String(n && n.userKey) === viewerKey)
+    .slice(0, 100);
+  return res.status(200).json({ ok: true, notifications: list });
+});
+
+app.post("/api/notifications/read", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const data = readDataFile();
+  const viewerKey = String(viewer.userKey);
+  data.notifications = asArray(data.notifications).map((n) => {
+    if (String(n && n.userKey) !== viewerKey) return n;
+    return { ...n, read: true };
+  });
+  await writeDataFile(data);
+  return res.status(200).json({ ok: true });
+});
+
+app.get("/api/search", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const q = String(req.query.q || "").trim().toLowerCase();
+  if (!q) return res.status(200).json({ ok: true, results: [] });
+  const safeQ = escapeRegex(q);
+
+  if (q.startsWith("#")) {
+    const tag = q.replace(/^#+/, "").replace(/[^a-z0-9_]/gi, "").slice(0, 30);
+    if (!tag) return res.status(200).json({ ok: true, results: [] });
+    const tagRe = new RegExp(`(^|\\s)#${escapeRegex(tag)}\\b`, "i");
+    const posts = await visiblePostsForViewer(viewer);
+    const results = (await Promise.all(posts
+      .filter((p) => tagRe.test(String(p.text || "")))
+      .slice(0, 20)
+      .map(async (p) => {
+        const author = await findUserByKey(String(p.authorKey || ""));
+        return {
+          type: "post",
+          id: String(p.id || ""),
+          hashtag: `#${tag.toLowerCase()}`,
+          text: String(p.text || "").slice(0, 120),
+          authorKey: String(p.authorKey || ""),
+          author: String((author && author.username) || p.author || ""),
+        };
+      })));
+    return res.status(200).json({ ok: true, results });
+  }
+
+  const users = await User.find({
+    $or: [
+      { userKey: { $regex: safeQ, $options: "i" } },
+      { username: { $regex: safeQ, $options: "i" } },
+    ],
+  }).limit(12);
+
+  const results = users
+    .filter((u) => u && (String(u.userKey).includes(q) || String(u.username).toLowerCase().includes(q)))
+    .map((u) => ({
+      type: "user",
+      key: String(u.userKey),
+      username: String(u.username),
+      verified: VERIFIED_USERS.has(String(u.userKey)),
+      isPrivate: !!u.isPrivate,
+      skills: asArray(u.skills).map(String),
+    }));
+
+  return res.status(200).json({ ok: true, results });
+});
+
+app.get("/api/dm/threads", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+
+  // Fetch all DMs involving the viewer
+  const allDms = await DM.find({ $or: [{ from: viewerKey }, { to: viewerKey }] });
+
+  const threadMap = new Map();
+  for (const msg of allDms) {
+    const from = String(msg.from || "");
+    const to = String(msg.to || "");
+    
+    const peerKey = from === viewerKey ? to : from;
+    if (!peerKey) continue;
+    
+    const k = conversationKey(viewerKey, peerKey);
+    const current = threadMap.get(k);
+    if (!current || String(current.createdAt || "") < String(msg.createdAt || "")) {
+      threadMap.set(k, msg);
+    }
+  }
+  const threads = await Promise.all(Array.from(threadMap.values()).map(async (msg) => {
+      const peerKey = String(msg.from) === viewerKey ? String(msg.to) : String(msg.from);
+      const peer = await findUserByKey(peerKey);
+
+      // Direct query for unread count to avoid legacy data.dms reference
+      const unreadCount = await DM.countDocuments({
+        from: peerKey,
+        to: viewerKey,
+        readBy: { $ne: viewerKey }
+      });
+
+      return {
+        peerKey,
+        peerUsername: String((peer && peer.username) || peerKey),
+        peerAvatar: String((peer && peer.avatarUrl) || ""),
+        lastMessage: String(msg.text || "") || (asArray(msg.media).length ? `[${String(asArray(msg.media)[0].kind || "media")}]` : ""),
+        createdAt: String(msg.createdAt || ""),
+        unreadCount,
+      };
+  }));
+
+  threads.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  return res.status(200).json({ ok: true, threads });
+});
+
+app.get("/api/dm/:key", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const peer = await findUserByKeyOrName(String(req.params.key || ""));
+  if (!peer) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  
+  const viewerKey = String(viewer.userKey);
+  const peerKey = String(peer.userKey);
+
+  const list = await DM.find({
+    $or: [
+      { from: viewerKey, to: peerKey },
+      { from: peerKey, to: viewerKey }
+    ]
+  }).sort({ createdAt: 1 });
+
+  const messages = list.map((m) => ({
+    id: String(m.id || ""),
+    from: String(m.from || ""),
+    to: String(m.to || ""),
+    text: String(m.text || ""),
+    media: asArray(m.media).map((x) => ({
+      url: String(x && x.url ? x.url : ""),
+      kind: String(x && x.kind ? x.kind : ""),
+      mime: String(x && x.mime ? x.mime : ""),
+    })).filter((x) => x.url && x.kind && x.mime),
+    createdAt: String(m.createdAt || ""),
+    mine: String(m.from) === viewerKey,
+  }));
+
+  // Mark incoming messages as read in DB
+  await DM.updateMany(
+    { from: peerKey, to: viewerKey, readBy: { $ne: viewerKey } },
+    { $push: { readBy: viewerKey } }
+  );
+  await syncDataJson();
+
+  return res.status(200).json({
+    ok: true,
+    peer: { key: peerKey, username: String(peer.username || ""), avatarUrl: String(peer.avatarUrl || "") },
+    messages,
+  });
+});
+
+app.post("/api/dm/:key", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const peer = await findUserByKeyOrName(String(req.params.key || ""));
+  if (!peer) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (String(peer.userKey) === String(viewer.userKey)) return res.status(400).json({ ok: false, error: "INVALID_MESSAGE" });
+  
+  const text = String((req.body && req.body.text) || "").trim();
+  if (text.length > 600) return res.status(400).json({ ok: false, error: "INVALID_MESSAGE" });
+  const mediaCheck = validateDmMediaList(req.body && req.body.media);
+  if (!mediaCheck.ok) return res.status(400).json({ ok: false, error: mediaCheck.error });
+  if (!text && !mediaCheck.media.length) return res.status(400).json({ ok: false, error: "INVALID_MESSAGE" });
+  
+  const message = {
+    id: crypto.randomBytes(12).toString("base64url"),
+    from: String(viewer.userKey),
+    to: String(peer.userKey),
+    text,
+    media: mediaCheck.media,
+    createdAt: new Date().toISOString(),
+    readBy: [String(viewer.userKey)],
+  };
+  await DM.create(message);
+  await syncDataJson();
+  return res.status(200).json({ ok: true, message: { ...message, mine: true } });
+});
+
+app.post("/api/report", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const body = req.body || {};
+  const type = String(body.type || "");
+  const targetId = String(body.targetId || "");
+  const reason = String(body.reason || "");
+  const note = String(body.note || "");
+  const validReasons = new Set(["spam", "abuse", "fake", "other"]);
+  if (type !== "post" || !targetId || !validReasons.has(reason) || note.length > 300) {
+    return res.status(400).json({ ok: false, error: "REPORT_INVALID" });
+  }
+
+  const post = await Post.findOne({ id: targetId });
+  if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+  const report = {
+    id: crypto.randomBytes(12).toString("base64url"),
+    reporter: String(viewer.userKey),
+    type,
+    targetId,
+    reason,
+    note,
+    createdAt: new Date().toISOString(),
+  };
+  const content = `${String(post.text || "")} ${asArray(post.comments).map((c) => String(c.text || "")).join(" ")}`.toLowerCase();
+  const bannedSignals = ["abuse", "hate", "kill", "spam", "scam", "nude"];
+  const hit = bannedSignals.some((w) => content.includes(w));
+  report.ai = {
+    status: hit ? "flagged" : "clean",
+    confidence: hit ? 0.86 : 0.19,
+    action: hit ? "limit_visibility" : "allow",
+    reviewedAt: new Date().toISOString(),
+  };
+  await Report.create(report);
+  await syncDataJson();
+  return res.status(200).json({ ok: true, report });
+});
+
+app.get("/api/moderation/reports", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const list = await Report.find().sort({ createdAt: -1 }).limit(100);
+  return res.status(200).json({ ok: true, reports: list });
+});
+
+app.post("/api/upload", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const body = req.body || {};
+  const parsed = parseDataUrl(body.dataUrl);
+  if (!parsed) return res.status(400).json({ ok: false, error: "UPLOAD_INVALID" });
+  const { mime, b64 } = parsed;
+
+  const ext = extForMime(mime);
+  const kind = mime.startsWith("video/") ? "video" : mime.startsWith("image/") ? "image" : mime.startsWith("audio/") ? "audio" : "";
+  if (!ext || !kind) return res.status(400).json({ ok: false, error: "UPLOAD_INVALID" });
+
+  let buf;
+  try {
+    buf = Buffer.from(b64, "base64");
+  } catch {
+    return res.status(400).json({ ok: false, error: "UPLOAD_INVALID" });
+  }
+  if (!buf || !buf.length) return res.status(400).json({ ok: false, error: "UPLOAD_INVALID" });
+  if (buf.length > MAX_UPLOAD_BYTES) return res.status(413).json({ ok: false, error: "UPLOAD_TOO_LARGE" });
+
+  const media = { url: String(body.dataUrl), kind, mime };
+  return res.status(200).json({ ok: true, media });
+});
+
+// Messages API - POST /api/messages and GET /api/messages/:userId
+app.post("/api/messages", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const body = req.body || {};
+  const to = String(body.to || "").trim();
+  const peer = await findUserByKeyOrName(to);
+  if (!peer) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (String(peer.userKey) === String(viewer.userKey)) {
+    return res.status(400).json({ ok: false, error: "INVALID_MESSAGE" });
+  }
+
+  const text = String(body.text || "").trim();
+  if (text.length > 600) return res.status(400).json({ ok: false, error: "INVALID_MESSAGE" });
+  const mediaCheck = validateDmMediaList(body.media);
+  if (!mediaCheck.ok) return res.status(400).json({ ok: false, error: mediaCheck.error });
+  if (!text && !mediaCheck.media.length) {
+    return res.status(400).json({ ok: false, error: "INVALID_MESSAGE" });
+  }
+
+  const message = {
+    id: crypto.randomBytes(12).toString("base64url"),
+    from: String(viewer.userKey),
+    to: String(peer.userKey),
+    text,
+    media: mediaCheck.media,
+    createdAt: new Date().toISOString(),
+    readBy: [String(viewer.userKey)],
+  };
+  await DM.create(message);
+  await syncDataJson();
+  return res.status(200).json({ ok: true, message: { ...message, mine: true } });
+});
+
+app.get("/api/messages/:userId", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const peer = await findUserByKeyOrName(String(req.params.userId || ""));
+  if (!peer) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+  const viewerKey = String(viewer.userKey);
+  const peerKey = String(peer.userKey);
+
+  const list = await DM.find({
+    $or: [
+      { from: viewerKey, to: peerKey },
+      { from: peerKey, to: viewerKey }
+    ]
+  }).sort({ createdAt: 1 });
+
+  const messages = list.map((m) => ({
+    id: String(m.id || ""),
+    from: String(m.from || ""),
+    to: String(m.to || ""),
+    text: String(m.text || ""),
+    media: asArray(m.media).map((x) => ({
+      url: String(x && x.url ? x.url : ""),
+      kind: String(x && x.kind ? x.kind : ""),
+      mime: String(x && x.mime ? x.mime : ""),
+    })).filter((x) => x.url && x.kind && x.mime),
+    createdAt: String(m.createdAt || ""),
+    mine: String(m.from) === viewerKey,
+  }));
+
+  // Mark incoming as read
+  await DM.updateMany(
+    { from: peerKey, to: viewerKey, readBy: { $ne: viewerKey } },
+    { $push: { readBy: viewerKey } }
+  );
+  await syncDataJson();
+
+  return res.status(200).json({
+    ok: true,
+    peer: { key: peerKey, username: String(peer.username || ""), avatarUrl: String(peer.avatarUrl || "") },
+    messages,
+  });
+});
+
+// Typing status endpoint (long polling simulation)
+app.post("/api/messages/typing", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const to = String(req.body && req.body.to || "").trim();
+  // In a real implementation, this would use Socket.io or similar
+  // For now, we just acknowledge the typing indicator
+  return res.status(200).json({ ok: true, typing: true, from: String(viewer.userKey), to });
+});
+
+// -----------------------------
+// Static files
+// -----------------------------
+
+app.use(express.static(path.resolve(PUBLIC_DIR)));
+app.use("/uploads", express.static(path.resolve(UPLOADS_DIR)));
+
+// Health Check route
+app.get('/healthz', (req, res) => res.sendStatus(200));
+
+// SPA fallback (works in Express 4 and 5 without wildcard syntax)
+app.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  if (String(req.path || "").startsWith("/api/")) return next();
+  if (path.extname(String(req.path || ""))) return next();
+  if (isFile(INDEX_HTML)) return res.sendFile(INDEX_HTML);
+  return res
+    .status(500)
+    .type("text/plain")
+    .send(
+      [
+        "public/index.html is missing.",
+        `INDEX_HTML=${INDEX_HTML}`,
+        `PUBLIC_DIR=${PUBLIC_DIR}`,
+        `CWD=${process.cwd()}`,
+        "If you're on Render and using Root Directory (monorepo), ensure the selected Root Directory includes the public/ folder.",
+      ].join("\n"),
+    );
+});
+
+// Error handler (JSON for API)
+app.use((err, req, res, next) => {
+  if (!err) return next();
+  const isApi = String(req.path || "").startsWith("/api/");
+  const status = Number(err.status || err.statusCode || 500);
+
+  if (isApi) {
+    // body-parser / raw-body errors
+    if (status === 413 || err.type === "entity.too.large") {
+      return res.status(413).json({ ok: false, error: "UPLOAD_TOO_LARGE" });
+    }
+    if (err.type === "entity.parse.failed") {
+      return res.status(400).json({ ok: false, error: "BAD_JSON" });
+    }
+    console.error("[api] error:", err);
+    return res.status(500).json({ ok: false, error: "SERVER_ERROR" });
+  }
+
+  console.error("[server] error:", err);
+  return res.status(500).send("Server error");
+});
+
+async function start() {
+  await connectDataFile();
+
+  try {
+    const pubOk = fs.existsSync(PUBLIC_DIR);
+    const idxOk = fs.existsSync(INDEX_HTML);
+    console.log("[startup] paths", {
+      publicDir: PUBLIC_DIR,
+      publicExists: pubOk,
+      indexExists: idxOk,
+      storageDir: STORAGE_DIR,
+      dataFile: DATA_FILE,
+      dataMode: "data.json",
+    });
+    if (!pubOk) console.error(`[startup] public folder not found. Checked: ${PUBLIC_DIR}`);
+    if (pubOk && !idxOk) console.error(`[startup] index.html not found at: ${INDEX_HTML}`);
+  } catch (err) {
+    console.error("[startup] path check failed:", err);
+  }
+
+  httpServer.listen(PORT, HOST, () => {
+    console.log(`[server] listening on http://${HOST}:${PORT}`);
+    console.log("[peerjs] signaling mounted at /peerjs");
+  });
+  httpServer.on("error", (err) => {
+    console.error("[server] failed to start:", err);
+    process.exit(1);
+  });
+}
+
+process.on("unhandledRejection", (err) => console.error("[server] unhandledRejection:", err));
+process.on("uncaughtException", (err) => {
+  console.error("[server] uncaughtException:", err);
+  process.exit(1);
+});
+
+start();
