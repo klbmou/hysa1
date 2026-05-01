@@ -4,7 +4,10 @@ const tokenKey = "token";
 const legacyTokenKey = "hysa_token";
 const langKey = "hysa_lang";
 const themeKey = "hysa_theme";
-const googleClientId = "75355529073-7tg1pfu787c3n7arvuft014tllch5at9.apps.googleusercontent.com";
+const googleClientId = "75355529073-toirg33tfpvdjie4vl3h2sclh673esfr.apps.googleusercontent.com";
+if (/^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)) {
+  console.log("[HYSA Google Auth] client_id:", googleClientId);
+}
 
 function getToken() {
   return localStorage.getItem("token");
