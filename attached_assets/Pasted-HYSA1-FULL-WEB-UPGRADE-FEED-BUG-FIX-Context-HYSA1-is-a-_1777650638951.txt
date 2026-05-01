@@ -1,0 +1,275 @@
+HYSA1 – FULL WEB UPGRADE + FEED BUG FIX
+
+Context:
+HYSA1 is a social media web app like Twitter/LinkedIn/Instagram.
+Backend: Node.js/Express.
+Frontend: frontend-web/public.
+Database: PostgreSQL/Neon using DATABASE_URL.
+Media: Cloudinary.
+Deployment: Render.
+The site is working, but there is a critical bug and the UI needs a full modern redesign.
+
+MAIN RULES:
+- Do not touch mobile app.
+- Do not rewrite the whole project from scratch.
+- Make safe, organized changes.
+- Keep existing routes working.
+- Use same-origin /api/... paths.
+- Do not reintroduce MongoDB.
+- Do not use local uploads in production.
+- After changes, run syntax checks.
+- Show changed files and test results.
+
+=====================================
+PART 1 — FIX CRITICAL FEED BUG FIRST
+=====================================
+
+Problem:
+When I create a post with text or image, it appears temporarily or on one page, but after refresh it does not appear in the home feed.
+The image also does not persist/show correctly in the main feed.
+
+Tasks:
+1. Inspect backend post creation route.
+2. Inspect GET /api/feed.
+3. Inspect GET /api/posts if used.
+4. Confirm posts are actually inserted into PostgreSQL.
+5. Confirm media URL from Cloudinary is saved into PostgreSQL with the post.
+6. Confirm /api/feed reads from PostgreSQL, not data.json.
+7. Confirm /api/feed returns newly created posts after refresh.
+8. Fix any mismatch between:
+   - post fields stored in DB
+   - post fields expected by frontend
+   - media array structure
+   - authorKey / author / username
+9. If feed filtering hides posts accidentally, fix it.
+10. If visibility defaults are wrong, default posts to public.
+11. Add backend logs for post creation and feed loading.
+12. Do not show “No posts yet” if posts exist in database.
+
+Verification:
+- Create text post.
+- Refresh page.
+- Post remains visible in home feed.
+- Create image post.
+- Refresh page.
+- Image post remains visible.
+- /api/feed returns 200 with posts.
+
+=====================================
+PART 2 — MODERN 3D GLASS UI REDESIGN
+=====================================
+
+Goal:
+Redesign the web UI to feel modern, youthful, premium, soft, and glassy.
+Style inspiration:
+- Apple glassmorphism
+- iOS blur
+- modern social media
+- soft cyan / light blue / violet accents
+- smooth rounded cards
+- 3D-like floating icons
+
+Design requirements:
+1. Replace old-looking icons/buttons with modern glassy 3D-style UI.
+2. Use soft colors:
+   - light cyan
+   - sky blue
+   - soft violet
+   - white glow
+   - subtle gradients
+3. Bottom navigation:
+   - glass blur pill
+   - floating center plus button
+   - active tab glow
+   - smooth hover/tap animation
+4. Post cards:
+   - glass background
+   - soft border
+   - rounded corners
+   - better spacing
+   - premium shadows
+5. Top bar:
+   - cleaner search bar
+   - modern buttons
+   - better Arabic/RTL alignment
+6. Profile/story avatar:
+   - proper circular sizing
+   - gradient ring
+   - no stretched images
+7. Add micro animations:
+   - button hover
+   - card fade-in
+   - like animation
+   - tab transition
+
+=====================================
+PART 3 — THEME SYSTEM
+=====================================
+
+Problem:
+The app is only dark. I want light mode too.
+
+Tasks:
+1. Add theme settings:
+   - Dark
+   - Light
+   - System
+2. Store preference in localStorage.
+3. Add CSS variables for colors.
+4. Make entire UI support both themes.
+5. Light mode should be clean, soft, modern, not plain white.
+6. Dark mode should stay premium/glass.
+7. Add theme toggle in settings.
+
+=====================================
+PART 4 — SETTINGS PAGE LIKE FACEBOOK/INSTAGRAM
+=====================================
+
+Add a full modern settings area.
+
+Settings groups:
+1. Account
+   - username
+   - bio
+   - avatar
+   - profile visibility
+2. Appearance
+   - dark/light/system theme
+   - accent color
+   - compact/comfortable layout
+3. Language
+   - Arabic
+   - English
+   - auto/system
+4. Privacy
+   - private account
+   - who can message me
+   - who can see posts
+5. Notifications
+   - likes
+   - comments
+   - follows
+   - messages
+6. Media
+   - upload quality
+   - autoplay videos
+   - reduce motion
+7. AI Assistant
+   - enable/disable assistant
+   - AI personality
+   - clear AI chat
+8. Security
+   - logout
+   - active session info placeholder
+
+UI style:
+- cards
+- icons
+- sections
+- modern switches
+- clean Arabic RTL support
+
+=====================================
+PART 5 — BETTER AI ASSISTANT
+=====================================
+
+Problem:
+The AI assistant feels dumb. It cannot answer basic things like “hi”.
+
+Goal:
+Make it useful even without a real paid AI API.
+
+Tasks:
+1. Improve backend /api/ai/chat mock logic.
+2. If no real AI key exists, return smart local responses:
+   - greetings
+   - app help
+   - explain HYSA features
+   - help user write posts
+   - suggest hashtags
+   - help with profile bio
+   - answer simple questions
+3. Add Arabic support.
+4. If user says:
+   - hi / hello / مرحبا / السلام عليكم
+   respond naturally.
+5. If user asks to generate image/video:
+   - if no provider configured, return a helpful placeholder response.
+6. Add better frontend AI chat UI:
+   - typing indicator
+   - bot avatar
+   - user bubbles
+   - error states
+   - clear chat button
+7. Do not hardcode API keys.
+8. Keep AI isolated from feed/login.
+
+=====================================
+PART 6 — MEDIA UPLOAD IMPROVEMENTS
+=====================================
+
+Tasks:
+1. Ensure image and video upload works with Cloudinary.
+2. Add upload preview before posting.
+3. Add loading progress state.
+4. Validate file size/type.
+5. If upload fails, show friendly error.
+6. Support media in posts and stories.
+7. Ensure media remains visible after refresh.
+
+=====================================
+PART 7 — STORIES IMPROVEMENT
+=====================================
+
+Tasks:
+1. Improve story row design.
+2. Add plus button on current user story.
+3. Support image/video story.
+4. Story viewer:
+   - full screen
+   - 9:16 aspect ratio
+   - progress bar
+   - close button
+   - author info
+5. Add filters:
+   - normal
+   - warm
+   - cool
+   - contrast
+   - grayscale
+   - glow
+6. Ensure stories persist in PostgreSQL and media in Cloudinary.
+
+=====================================
+PART 8 — FINAL TESTS
+=====================================
+
+Run:
+- node --check backend/server.js
+- node --check frontend-web/public/app.js
+
+Test:
+1. Login.
+2. Create text post.
+3. Refresh: post remains.
+4. Create image post.
+5. Refresh: image remains.
+6. Create story.
+7. Refresh: story remains.
+8. Switch dark/light mode.
+9. Open settings.
+10. Change language.
+11. Open AI assistant and say:
+   - hi
+   - مرحبا
+   - ساعدني أكتب منشور
+12. No 500 errors.
+13. No infinite loading.
+14. Console has no critical errors except existing PeerJS warnings if video-call server is not configured.
+
+Output:
+- Explain root cause of feed bug.
+- List changed files.
+- Summarize UI changes.
+- Summarize storage verification.
+- Do not commit until tests pass.

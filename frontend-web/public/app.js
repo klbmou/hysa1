@@ -81,7 +81,7 @@ const I18N = {
     searchPlaceholder: "ابحث عن مستخدم...",
     logout: "تسجيل خروج",
     startNow: "ابدأ الآن",
-    authBlurb: 'هذا مشروع تجريبي سريع. البيانات تُحفظ في <span class="mono">data.json</span>.',
+    authBlurb: 'تواصل مع الأصدقاء. شارك لحظاتك. اكتشف مجتمعك.',
     login: "دخول",
     register: "تسجيل",
     username: "اسم المستخدم",
@@ -171,7 +171,7 @@ const I18N = {
     searchPlaceholder: "Search users...",
     logout: "Log out",
     startNow: "Get started",
-    authBlurb: 'Quick demo project. Data is stored in <span class="mono">data.json</span>.',
+    authBlurb: 'Connect with friends. Share your moments. Discover your community.',
     login: "Login",
     register: "Register",
     username: "Username",
@@ -409,7 +409,9 @@ function applyI18n() {
   }
 
   if (el.langSelect) el.langSelect.value = lang;
-  if (el.langToggle) el.langToggle.textContent = (lang || "ar").toUpperCase();
+  if (el.langToggleLabel) el.langToggleLabel.textContent = (lang || "ar").toUpperCase();
+  if (el.settingsLang) el.settingsLang.value = lang;
+  if (el.settingsPrivate && me) el.settingsPrivate.checked = !!me.isPrivate;
 }
 
 function fmtTime(iso) {
@@ -1208,6 +1210,15 @@ function showAuth() {
   location.hash = "#home";
 }
 
+function updateNavAvatar() {
+  if (!el.navAvatar) return;
+  if (me && me.avatarUrl) {
+    el.navAvatar.innerHTML = `<img src="${me.avatarUrl}" alt="${me.username}" loading="lazy">`;
+  } else if (me) {
+    el.navAvatar.textContent = (me.username || "?")[0].toUpperCase();
+  }
+}
+
 function showApp() {
   if (el.authView) el.authView.hidden = true;
   if (el.appView) el.appView.hidden = false;
@@ -1219,7 +1230,7 @@ function showApp() {
   if (el.composeFab) el.composeFab.hidden = false;
   if (el.mobileNav) el.mobileNav.hidden = false;
   if (el.aiFab) el.aiFab.hidden = false;
-  if (el.meBtn) el.meBtn.textContent = me ? `@${me.username}` : "@me";
+  updateNavAvatar();
   if (me) ensurePeerClient().catch(() => {});
 }
 
@@ -3138,17 +3149,20 @@ async function openInsights() {
   if (el.insightsPosts) el.insightsPosts.textContent = "…";
   if (el.insightsViews) el.insightsViews.textContent = "…";
   if (el.insightsLikes) el.insightsLikes.textContent = "…";
+  if (el.insightsSaves) el.insightsSaves.textContent = "…";
   try {
     const r = await api("/api/insights", { method: "GET" });
     const ins = r.insights || {};
     if (el.insightsPosts) el.insightsPosts.textContent = String(ins.posts ?? 0);
     if (el.insightsViews) el.insightsViews.textContent = String(ins.views ?? 0);
     if (el.insightsLikes) el.insightsLikes.textContent = String(ins.likes ?? 0);
+    if (el.insightsSaves) el.insightsSaves.textContent = String(ins.saves ?? 0);
   } catch (err) {
     setMsg(el.insightsMsg, humanizeError(err?.message), true);
     if (el.insightsPosts) el.insightsPosts.textContent = "0";
     if (el.insightsViews) el.insightsViews.textContent = "0";
     if (el.insightsLikes) el.insightsLikes.textContent = "0";
+    if (el.insightsSaves) el.insightsSaves.textContent = "0";
   }
 }
 
@@ -3384,6 +3398,7 @@ async function boot() {
     insightsPosts: document.getElementById("insightsPosts"),
     insightsViews: document.getElementById("insightsViews"),
     insightsLikes: document.getElementById("insightsLikes"),
+    insightsSaves: document.getElementById("insightsSaves"),
     insightsMsg: document.getElementById("insightsMsg"),
 
     toast: document.getElementById("toast"),
@@ -3392,21 +3407,43 @@ async function boot() {
     sheetBody: document.getElementById("sheetBody"),
     sheetCancel: document.getElementById("sheetCancel"),
     mobileNav: document.getElementById("mobileNav"),
+
+    // Settings
+    settingsView: document.getElementById("settingsView"),
+    settingsBtn: document.getElementById("settingsBtn"),
+    settingsClose: document.getElementById("settingsClose"),
+    darkModeToggle: document.getElementById("darkModeToggle"),
+    settingsLang: document.getElementById("settingsLang"),
+    settingsPrivate: document.getElementById("settingsPrivate"),
+    settingsEditProfile: document.getElementById("settingsEditProfile"),
+    settingsInsights: document.getElementById("settingsInsights"),
+    settingsLogout: document.getElementById("settingsLogout"),
+    accentPicker: document.getElementById("accentPicker"),
+
+    // Nav
+    notifBtn: document.getElementById("notifBtn"),
+    notifDot: document.getElementById("notifDot"),
+    navAvatar: document.getElementById("navAvatar"),
+    langToggleLabel: document.getElementById("langToggleLabel"),
+    themeToggle: document.getElementById("themeToggle"),
+    themeIconDark: document.getElementById("themeIconDark"),
+    themeIconLight: document.getElementById("themeIconLight"),
   };
 
   applyI18n();
   switchAuthTab("login");
   ensureAiAssistant();
 
-  if (el.langSelect) {
-    on(el.langSelect, "change", () => {
-      lang = el.langSelect.value || "ar";
-      if (!["ar", "en", "fr"].includes(lang)) lang = "ar";
-      localStorage.setItem(langKey, lang);
-      applyI18n();
-      if (me) route();
-    });
+  function applyLang(newLang) {
+    if (!["ar", "en", "fr"].includes(newLang)) newLang = "ar";
+    lang = newLang;
+    localStorage.setItem(langKey, lang);
+    applyI18n();
+    if (el.langToggleLabel) el.langToggleLabel.textContent = lang.toUpperCase();
+    if (el.settingsLang) el.settingsLang.value = lang;
+    if (me) route();
   }
+
   if (el.langToggle && el.langMenu) {
     on(el.langToggle, "click", () => {
       const next = !el.langMenu.hidden;
@@ -3416,11 +3453,17 @@ async function boot() {
     for (const option of el.langMenu.querySelectorAll(".langOption")) {
       on(option, "click", () => {
         const value = option.getAttribute("data-lang") || "ar";
-        el.langSelect.value = value;
-        el.langSelect.dispatchEvent(new Event("change"));
+        applyLang(value);
         el.langMenu.hidden = true;
       });
     }
+  }
+
+  if (el.settingsLang) {
+    el.settingsLang.value = lang;
+    on(el.settingsLang, "change", () => {
+      applyLang(el.settingsLang.value || "ar");
+    });
   }
 
   if (location.protocol === "file:") {
@@ -3596,6 +3639,9 @@ async function boot() {
         else if (nav === "create") openCompose();
         else if (nav === "reels") location.hash = "#reels";
         else if (nav === "profile" && me) location.hash = `#u/${encodeURIComponent(me.username.toLowerCase())}`;
+        else if (nav === "aiChat") {
+          if (el.aiFab) el.aiFab.click();
+        }
       });
     }
   }
@@ -3762,8 +3808,137 @@ async function boot() {
     }
   });
 
+  // =====================
+  // SETTINGS PANEL
+  // =====================
+  function openSettings() {
+    if (!el.settingsView) return;
+    // Sync toggles to current state
+    if (el.darkModeToggle) el.darkModeToggle.checked = (theme !== "light");
+    if (el.settingsPrivate && me) el.settingsPrivate.checked = !!me.isPrivate;
+    if (el.settingsLang) el.settingsLang.value = lang;
+    el.settingsView.hidden = false;
+  }
+  function closeSettings() {
+    if (el.settingsView) el.settingsView.hidden = true;
+  }
+
+  // Wire up the top-nav theme toggle button
+  if (el.themeToggle) {
+    on(el.themeToggle, "click", () => {
+      setTheme(theme === "light" ? "dark" : "light");
+      if (el.themeIconDark) el.themeIconDark.hidden = theme === "light";
+      if (el.themeIconLight) el.themeIconLight.hidden = theme === "dark";
+      if (el.darkModeToggle) el.darkModeToggle.checked = (theme !== "light");
+    });
+    // Initialize icon state
+    if (el.themeIconDark) el.themeIconDark.hidden = theme === "light";
+    if (el.themeIconLight) el.themeIconLight.hidden = theme === "dark";
+  }
+
+  if (el.settingsBtn) on(el.settingsBtn, "click", openSettings);
+  if (el.settingsClose) on(el.settingsClose, "click", closeSettings);
+  if (el.settingsView) {
+    on(el.settingsView, "click", (e) => {
+      if (e.target === el.settingsView) closeSettings();
+    });
+  }
+
+  if (el.darkModeToggle) {
+    el.darkModeToggle.checked = (theme !== "light");
+    on(el.darkModeToggle, "change", () => {
+      setTheme(el.darkModeToggle.checked ? "dark" : "light");
+      // Sync the top-nav theme icon
+      if (el.themeIconDark) el.themeIconDark.hidden = theme === "light";
+      if (el.themeIconLight) el.themeIconLight.hidden = theme === "dark";
+    });
+  }
+
+  if (el.accentPicker) {
+    const savedAccent = localStorage.getItem("hysa_accent") || "blue";
+    document.documentElement.setAttribute("data-accent", savedAccent);
+    const swatches = el.accentPicker.querySelectorAll(".accent-swatch");
+    for (const swatch of swatches) {
+      if (swatch.dataset.accent === savedAccent) swatch.classList.add("active");
+      on(swatch, "click", () => {
+        const accent = swatch.dataset.accent || "blue";
+        localStorage.setItem("hysa_accent", accent);
+        document.documentElement.setAttribute("data-accent", accent);
+        for (const s of swatches) s.classList.toggle("active", s.dataset.accent === accent);
+      });
+    }
+  }
+
+  if (el.settingsPrivate && me) {
+    el.settingsPrivate.checked = !!me.isPrivate;
+    on(el.settingsPrivate, "change", async () => {
+      try {
+        const r = await api("/api/profile", {
+          method: "POST",
+          body: JSON.stringify({ bio: me.bio || "", avatarUrl: me.avatarUrl || "", isPrivate: el.settingsPrivate.checked }),
+        });
+        me = r.me;
+        showToast(t("saved"));
+      } catch (err) {
+        showToast(humanizeError(err?.message), true);
+        if (el.settingsPrivate) el.settingsPrivate.checked = !!me.isPrivate;
+      }
+    });
+  }
+
+  if (el.settingsEditProfile) {
+    on(el.settingsEditProfile, "click", () => {
+      closeSettings();
+      openProfileEdit();
+    });
+  }
+
+  if (el.settingsInsights) {
+    on(el.settingsInsights, "click", async () => {
+      closeSettings();
+      try {
+        const r = await api("/api/insights", { method: "GET" });
+        if (el.insightsPosts) el.insightsPosts.textContent = String(r.insights?.posts ?? 0);
+        if (el.insightsViews) el.insightsViews.textContent = String(r.insights?.views ?? 0);
+        if (el.insightsLikes) el.insightsLikes.textContent = String(r.insights?.likes ?? 0);
+        if (el.insightsSaves) el.insightsSaves.textContent = String(r.insights?.saves ?? 0);
+        if (el.insightsModal) el.insightsModal.hidden = false;
+      } catch (err) {
+        showToast(humanizeError(err?.message), true);
+      }
+    });
+  }
+
+  if (el.settingsLogout) {
+    on(el.settingsLogout, "click", async () => {
+      closeSettings();
+      try { await api("/api/logout", { method: "POST" }); } catch {}
+      clearSession();
+      showAuth();
+    });
+  }
+
+  // Notifications dot
+  async function checkNotifDot() {
+    if (!getToken() || !el.notifDot) return;
+    try {
+      const r = await api("/api/notifications", { method: "GET" });
+      const hasUnread = (r.notifications || []).some((n) => !n.read);
+      el.notifDot.hidden = !hasUnread;
+    } catch {}
+  }
+  if (el.notifBtn) {
+    on(el.notifBtn, "click", () => {
+      if (el.notifDot) el.notifDot.hidden = true;
+      showToast("الإشعارات قادمة قريبًا!");
+    });
+    // Poll every 60s
+    setInterval(checkNotifDot, 60000);
+  }
+
   on(window, "keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (el.settingsView && !el.settingsView.hidden) { closeSettings(); return; }
     if (el.composeModal && !el.composeModal.hidden) closeCompose();
     if (el.profileModal && !el.profileModal.hidden) closeProfileEdit();
     if (el.reportModal && !el.reportModal.hidden) closeReport();

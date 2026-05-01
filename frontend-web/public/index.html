@@ -1,79 +1,105 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title data-t="pageTitle">HYSA - Mini Social</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <link rel="icon" href="favicon.svg">
 </head>
 <body>
+  <!-- Auth Screen -->
   <div id="authView" class="auth-container" hidden>
+    <div class="auth-bg-orbs">
+      <div class="orb orb-1"></div>
+      <div class="orb orb-2"></div>
+      <div class="orb orb-3"></div>
+    </div>
     <div class="glass card auth-card">
-      <h1 class="brand">HYSA</h1>
-      <p class="muted" data-t-html="authBlurbNode"></p>
+      <div class="auth-logo">
+        <div class="logo-icon">H</div>
+        <h1 class="brand">HYSA</h1>
+      </div>
+      <p class="auth-tagline muted" data-t-html="authBlurb">تواصل. شارك. اكتشف.</p>
       <div class="tabs">
-        <button id="tabLogin" class="active" data-t="login"></button>
-        <button id="tabRegister" data-t="register"></button>
+        <button id="tabLogin" class="active" data-t="login">دخول</button>
+        <button id="tabRegister" data-t="register">تسجيل</button>
       </div>
       <form id="loginForm">
-        <input type="text" name="username" data-t-placeholder="username" required>
-        <input type="password" name="password" data-t-placeholder="password" required>
-        <button type="submit" class="btn primary full" data-t="login"></button>
+        <div class="input-group">
+          <svg class="input-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <input type="text" name="username" data-t-placeholder="username" autocomplete="username" required>
+        </div>
+        <div class="input-group">
+          <svg class="input-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <input type="password" name="password" data-t-placeholder="password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn primary full" data-t="login">دخول</button>
         <div id="loginMsg" class="msg"></div>
       </form>
       <form id="registerForm" hidden>
-        <input type="text" name="username" data-t-placeholder="username" required>
-        <input type="password" name="password" data-t-placeholder="password" required>
-        <button type="submit" class="btn primary full" data-t="register"></button>
+        <div class="input-group">
+          <svg class="input-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <input type="text" name="username" data-t-placeholder="username" autocomplete="username" required>
+        </div>
+        <div class="input-group">
+          <svg class="input-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <input type="password" name="password" data-t-placeholder="password" autocomplete="new-password" required>
+        </div>
+        <button type="submit" class="btn primary full" data-t="register">تسجيل</button>
         <div id="registerMsg" class="msg"></div>
       </form>
       <footer class="auth-footer">
-        <div class="lang-selector">
-          <select id="langSelect">
-            <option value="en">English</option>
-            <option value="ar">Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©</option>
-            <option value="fr">FranÃ§ais</option>
-          </select>
-        </div>
         <div class="lang-toggle-wrap">
-          <button id="langToggle" aria-expanded="false"></button>
+          <button id="langToggle" class="lang-btn" aria-expanded="false">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+            <span id="langToggleLabel">AR</span>
+          </button>
           <div id="langMenu" class="drop-menu" hidden>
-            <button class="langOption" data-lang="en">English</button>
-            <button class="langOption" data-lang="ar">Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©</button>
-            <button class="langOption" data-lang="fr">FranÃ§ais</button>
+            <button class="langOption" data-lang="en">🇺🇸 English</button>
+            <button class="langOption" data-lang="ar">🇸🇦 العربية</button>
+            <button class="langOption" data-lang="fr">🇫🇷 Français</button>
           </div>
         </div>
       </footer>
     </div>
   </div>
 
+  <!-- Main App -->
   <div id="appView" hidden>
+    <!-- Top Navigation -->
     <nav class="glass top-nav">
       <div class="nav-content">
         <h2 id="homeBrand" class="brand clickable">HYSA</h2>
         <div id="viewTitle" class="view-title" hidden></div>
         <div class="search-wrap">
-          <input type="text" id="searchInput" data-t-placeholder="searchPlaceholder" class="glass">
+          <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="text" id="searchInput" data-t-placeholder="searchPlaceholder" class="search-input" autocomplete="off">
           <div id="searchResults" class="glass drop-menu" hidden></div>
         </div>
         <div class="nav-actions">
-          <button id="themeToggle" class="theme-toggle" aria-label="Toggle theme" title="Toggle theme">
-            <svg id="themeIconDark" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-            <svg id="themeIconLight" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+          <button id="themeToggle" class="nav-icon-btn" aria-label="Toggle theme" title="Toggle theme">
+            <svg id="themeIconDark" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+            <svg id="themeIconLight" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" hidden><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
           </button>
-          <button id="refreshBtn" class="nav-item" aria-label="Refresh" title="Refresh">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 1-9 9 9.8 9.8 0 0 1-6.7-2.7L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 9-9 9.8 9.8 0 0 1 6.7 2.7L21 8"/><path d="M21 3v5h-5"/></svg>
+          <button id="notifBtn" class="nav-icon-btn notif-btn" aria-label="Notifications" title="Notifications">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+            <span id="notifDot" class="notif-dot" hidden></span>
           </button>
-          <button id="reelsBtn" class="nav-item" aria-label="Reels" title="Reels">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="m9 8 6 4-6 4Z"/></svg>
+          <button id="dmBtn" class="nav-icon-btn" aria-label="Direct messages" title="Direct messages">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
           </button>
-          <button id="dmBtn" class="nav-item" aria-label="Direct messages" title="Direct messages">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+          <button id="settingsBtn" class="nav-icon-btn" aria-label="Settings" title="Settings">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
-          <button id="meBtn" class="btn ghost sm">@me</button>
-          <button id="logoutBtn" class="nav-item" aria-label="Log out" title="Log out">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg>
+          <button id="meBtn" class="me-btn">
+            <div id="navAvatar" class="nav-avatar"></div>
+          </button>
+          <button id="logoutBtn" class="nav-icon-btn" aria-label="Log out" title="Log out">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg>
           </button>
         </div>
       </div>
@@ -85,29 +111,38 @@
       <header id="profileHeader" hidden></header>
       <div id="feed"></div>
       <section id="reelsView" aria-label="Reels" hidden></section>
-      <div id="feedLoader" class="muted" hidden data-t="loading"></div>
+      <div id="feedLoader" class="muted feed-loader" hidden data-t="loading">جاري التحميل...</div>
       <div id="feedSentinel"></div>
     </main>
 
+    <!-- Bottom Nav -->
     <nav id="mobileNav" class="glass bottom-nav">
-      <button class="nav-item active" data-nav="home">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <button class="nav-item active" data-nav="home" aria-label="Home">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span class="nav-label">Home</span>
       </button>
-      <button class="nav-item" data-nav="reels">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><polyline points="9 3 9 21"/><polyline points="15 3 15 21"/><line x1="3" x2="9" y1="9" y2="9"/><line x1="3" x2="9" y1="15" y2="15"/><line x1="15" x2="21" y1="9" y2="9"/><line x1="15" x2="21" y1="15" y2="15"/></svg>
+      <button class="nav-item" data-nav="reels" aria-label="Reels">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><polyline points="9 3 9 21"/><polyline points="15 3 15 21"/><line x1="3" x2="9" y1="9" y2="9"/><line x1="3" x2="9" y1="15" y2="15"/><line x1="15" x2="21" y1="9" y2="9"/><line x1="15" x2="21" y1="15" y2="15"/></svg>
+        <span class="nav-label">Reels</span>
       </button>
-      <button id="composeFab" class="nav-item plus" data-nav="create">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
+      <button id="composeFab" class="nav-item fab" data-nav="create" aria-label="Create post">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
       </button>
-      <button class="nav-item" data-nav="profile">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <button class="nav-item" data-nav="profile" aria-label="Profile">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span class="nav-label">Profile</span>
+      </button>
+      <button class="nav-item" data-nav="aiChat" aria-label="AI Assistant">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+        <span class="nav-label">AI</span>
       </button>
     </nav>
 
+    <!-- DM Panel -->
     <section id="dmModal" class="dm-view" hidden>
       <header class="dm-view-header glass">
-        <button id="dmBack" class="iconBtn" aria-label="Back" title="Back">
-          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+        <button id="dmBack" class="iconBtn" aria-label="Back">
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         </button>
         <div id="dmHeaderAvatar" class="avatar sm"></div>
         <div class="dm-header-copy">
@@ -120,40 +155,138 @@
         <section class="dm-main">
           <div id="dmMessages" class="dm-messages"></div>
           <div class="dm-input-bar glass">
-            <button id="dmAttach" class="iconBtn" aria-label="Attach media" title="Attach media">
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 1 1-2.83-2.83l8.49-8.48"/></svg>
+            <button id="dmAttach" class="iconBtn" aria-label="Attach media">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 1 1-2.83-2.83l8.49-8.48"/></svg>
             </button>
             <input type="file" id="dmFiles" accept="image/*,video/*,audio/*" multiple hidden>
-            <input type="text" id="dmText" placeholder="Message...">
-            <button id="dmRecord" class="iconBtn" aria-label="Record voice message" title="Record voice message">
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+            <input type="text" id="dmText" placeholder="رسالة...">
+            <button id="dmRecord" class="iconBtn" aria-label="Record voice message">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
             </button>
-            <button id="dmSend" class="btn primary">Send</button>
+            <button id="dmSend" class="btn primary sm">إرسال</button>
           </div>
         </section>
       </div>
     </section>
+
+    <!-- Settings Panel -->
+    <div id="settingsView" class="settings-overlay" hidden>
+      <div class="settings-panel glass">
+        <div class="settings-header">
+          <h2 class="settings-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            الإعدادات
+          </h2>
+          <button id="settingsClose" class="iconBtn" aria-label="Close settings">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="settings-body">
+          <!-- Theme Section -->
+          <div class="settings-section">
+            <h3 class="settings-section-title">المظهر</h3>
+            <div class="settings-option">
+              <div class="settings-option-info">
+                <span class="settings-option-label">الوضع الليلي</span>
+                <span class="settings-option-desc muted">خلفية داكنة مريحة للعينين</span>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="darkModeToggle" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="settings-option">
+              <div class="settings-option-info">
+                <span class="settings-option-label">لون التمييز</span>
+                <span class="settings-option-desc muted">اختر لون التمييز المفضل</span>
+              </div>
+              <div class="accent-picker" id="accentPicker">
+                <button class="accent-swatch active" data-accent="blue" style="background:#2f9bff" title="Blue"></button>
+                <button class="accent-swatch" data-accent="purple" style="background:#a855f7" title="Purple"></button>
+                <button class="accent-swatch" data-accent="green" style="background:#22c55e" title="Green"></button>
+                <button class="accent-swatch" data-accent="rose" style="background:#f43f5e" title="Rose"></button>
+                <button class="accent-swatch" data-accent="orange" style="background:#f97316" title="Orange"></button>
+                <button class="accent-swatch" data-accent="teal" style="background:#14b8a6" title="Teal"></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Language Section -->
+          <div class="settings-section">
+            <h3 class="settings-section-title">اللغة</h3>
+            <div class="settings-option">
+              <div class="settings-option-info">
+                <span class="settings-option-label">لغة التطبيق</span>
+              </div>
+              <select id="settingsLang" class="settings-select">
+                <option value="ar">🇸🇦 العربية</option>
+                <option value="en">🇺🇸 English</option>
+                <option value="fr">🇫🇷 Français</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Privacy Section -->
+          <div class="settings-section">
+            <h3 class="settings-section-title">الخصوصية</h3>
+            <div class="settings-option">
+              <div class="settings-option-info">
+                <span class="settings-option-label">حساب خاص</span>
+                <span class="settings-option-desc muted">يرى منشوراتك المتابعون فقط</span>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="settingsPrivate">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Account Section -->
+          <div class="settings-section">
+            <h3 class="settings-section-title">الحساب</h3>
+            <button class="settings-action-btn" id="settingsEditProfile">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              تعديل الملف الشخصي
+            </button>
+            <button class="settings-action-btn" id="settingsInsights">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
+              إحصائيات الحساب
+            </button>
+            <button class="settings-action-btn danger" id="settingsLogout">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg>
+              تسجيل الخروج
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Post Creator Modal -->
-  <div id="composeModal" class="overlay glass" hidden>
-    <div class="modal card">
+  <div id="composeModal" class="overlay" hidden>
+    <div class="modal card glass-strong">
       <div class="modal-header">
-        <h3 data-t="composeTitle"></h3>
+        <h3 data-t="composeTitle">منشور جديد</h3>
         <button id="composeClose" class="iconBtn" aria-label="Close">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
         </button>
       </div>
-      <textarea id="composeText" data-t-placeholder="composePlaceholder" maxlength="280"></textarea>
+      <textarea id="composeText" data-t-placeholder="composePlaceholder" maxlength="280" placeholder="ماذا يدور في ذهنك؟"></textarea>
       <div id="composeMedia" class="media-preview" hidden></div>
-      <div class="modal-footer">
-        <div id="composeCount" class="muted">0/280</div>
-        <button id="composeAddMedia" class="btn ghost" data-t="addMedia"></button>
-        <select id="composeVisibility">
-          <option value="public" data-t="visibilityPublic"></option>
-          <option value="private" data-t="visibilityPrivate"></option>
-        </select>
-        <button id="composeSend" class="btn primary" data-t="post"></button>
+      <div class="compose-toolbar">
+        <button id="composeAddMedia" class="compose-tool-btn" data-t="addMedia" title="إضافة صورة أو فيديو">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+          <span>صورة / فيديو</span>
+        </button>
+        <div class="compose-toolbar-right">
+          <span id="composeCount" class="char-count muted">0/280</span>
+          <select id="composeVisibility" class="visibility-select">
+            <option value="public" data-t="visibilityPublic">🌍 عام</option>
+            <option value="private" data-t="visibilityPrivate">🔒 خاص</option>
+          </select>
+          <button id="composeSend" class="btn primary" data-t="post">نشر</button>
+        </div>
       </div>
       <div id="composeMsg" class="msg"></div>
       <input type="file" id="composeFiles" multiple accept="image/*,video/*" hidden>
@@ -161,63 +294,94 @@
   </div>
 
   <!-- Profile Edit Modal -->
-  <div id="profileModal" class="overlay glass" hidden>
-    <div class="modal card">
+  <div id="profileModal" class="overlay" hidden>
+    <div class="modal card glass-strong">
       <div class="modal-header">
-        <h3 data-t="editProfile"></h3>
+        <h3 data-t="editProfile">تعديل الملف</h3>
         <button id="profileClose" class="iconBtn" aria-label="Close">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
         </button>
       </div>
       <div class="avatar-edit">
-        <div id="avatarPreview"></div>
-        <button id="avatarPick" class="btn ghost sm" data-t="changePhoto"></button>
-        <button id="avatarRemove" class="btn ghost sm danger" data-t="removePhoto"></button>
+        <div id="avatarPreview" class="avatar-preview-wrap"></div>
+        <div class="avatar-edit-btns">
+          <button id="avatarPick" class="btn ghost sm" data-t="changePhoto">تغيير الصورة</button>
+          <button id="avatarRemove" class="btn ghost sm danger" data-t="removePhoto">حذف الصورة</button>
+        </div>
       </div>
-      <textarea id="profileBio" data-t-placeholder="bioPlaceholder" maxlength="160"></textarea>
-      <button id="profileSave" class="btn primary full" data-t="save"></button>
+      <textarea id="profileBio" data-t-placeholder="bioPlaceholder" maxlength="160" placeholder="نبذة عنك..."></textarea>
+      <button id="profileSave" class="btn primary full" data-t="save">حفظ</button>
       <div id="profileMsg" class="msg"></div>
       <input type="file" id="avatarFile" accept="image/*" hidden>
     </div>
   </div>
 
   <!-- Report Modal -->
-  <div id="reportModal" class="overlay glass" hidden>
-    <div class="modal card">
-      <h3 data-t="report"></h3>
-      <select id="reportReason">
-        <option value="spam" data-t="reasonSpam"></option>
-        <option value="abuse" data-t="reasonAbuse"></option>
-        <option value="fake" data-t="reasonFake"></option>
-        <option value="other" data-t="reasonOther"></option>
+  <div id="reportModal" class="overlay" hidden>
+    <div class="modal card glass-strong">
+      <div class="modal-header">
+        <h3 data-t="report">الإبلاغ</h3>
+        <button id="reportClose" class="iconBtn" aria-label="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <select id="reportReason" class="settings-select" style="width:100%;margin-bottom:12px">
+        <option value="spam" data-t="reasonSpam">بريد مزعج</option>
+        <option value="abuse" data-t="reasonAbuse">إساءة</option>
+        <option value="fake" data-t="reasonFake">حساب مزيف</option>
+        <option value="other" data-t="reasonOther">أخرى</option>
       </select>
-      <textarea id="reportNote" data-t-placeholder="notePlaceholder"></textarea>
-      <button id="reportSend" class="btn primary full" data-t="sendReport"></button>
-      <button id="reportClose" class="btn ghost full">Cancel</button>
+      <textarea id="reportNote" data-t-placeholder="notePlaceholder" placeholder="تفاصيل إضافية..."></textarea>
+      <button id="reportSend" class="btn primary full" data-t="sendReport">إرسال البلاغ</button>
       <div id="reportMsg" class="msg"></div>
     </div>
   </div>
 
   <!-- Insights Modal -->
-  <div id="insightsModal" class="overlay glass" hidden>
-    <div class="modal card">
-      <h3 data-t="insights"></h3>
-      <div class="insight-row">Posts: <span id="insightsPosts">0</span></div>
-      <div class="insight-row">Views: <span id="insightsViews">0</span></div>
-      <div class="insight-row">Likes: <span id="insightsLikes">0</span></div>
-      <button id="insightsClose" class="btn ghost full">Close</button>
+  <div id="insightsModal" class="overlay" hidden>
+    <div class="modal card glass-strong">
+      <div class="modal-header">
+        <h3 data-t="insights">الإحصائيات</h3>
+        <button id="insightsClose" class="iconBtn" aria-label="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="insights-grid">
+        <div class="insight-card">
+          <div class="insight-icon">📝</div>
+          <div class="insight-val" id="insightsPosts">0</div>
+          <div class="insight-label muted">منشورات</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-icon">👁️</div>
+          <div class="insight-val" id="insightsViews">0</div>
+          <div class="insight-label muted">مشاهدات</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-icon">❤️</div>
+          <div class="insight-val" id="insightsLikes">0</div>
+          <div class="insight-label muted">إعجابات</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-icon">🔖</div>
+          <div class="insight-val" id="insightsSaves">0</div>
+          <div class="insight-label muted">محفوظ</div>
+        </div>
+      </div>
       <div id="insightsMsg" class="msg"></div>
     </div>
   </div>
 
+  <!-- Toast -->
   <div id="toast" class="glass toast" hidden></div>
 
+  <!-- Action Sheet -->
   <div id="actionSheet" class="sheet-backdrop" hidden>
     <section class="action-sheet glass" role="dialog" aria-modal="true" aria-label="Post actions">
       <div class="sheet-handle"></div>
-      <div id="sheetTitle" class="sheet-title">Repost</div>
+      <div id="sheetTitle" class="sheet-title">إجراء</div>
       <div id="sheetBody" class="sheet-body"></div>
-      <button id="sheetCancel" class="sheet-cancel" type="button">Cancel</button>
+      <button id="sheetCancel" class="sheet-cancel" type="button">إلغاء</button>
     </section>
   </div>
 

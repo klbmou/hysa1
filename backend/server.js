@@ -516,43 +516,44 @@ async function pgFindUserByKey(key) {
   const res = await pgPool.query("SELECT * FROM users WHERE user_key = $1", [key]);
   if (!res.rows.length) return null;
   const row = res.rows[0];
-  return {
+  const obj = {
     ...row,
     userKey: row.user_key,
     avatarUrl: row.avatar_url,
     isPrivate: row.is_private,
     isPendingVerification: row.is_pending_verification,
     verificationRequestAt: row.verification_request_at,
-    save: async () => {
-      await pgPool.query(
-        `UPDATE users SET
-          username = $2,
-          password = $3,
-          bio = $4,
-          avatar_url = $5,
-          is_private = $6,
-          is_pending_verification = $7,
-          verification_request_at = $8,
-          skills = $9,
-          following = $10,
-          token = $11
-        WHERE user_key = $1`,
-        [
-          row.user_key,
-          row.username,
-          row.password,
-          row.bio,
-          row.avatar_url,
-          row.is_private,
-          row.is_pending_verification,
-          row.verification_request_at,
-          row.skills,
-          row.following,
-          row.token,
-        ]
-      );
-    },
   };
+  obj.save = async () => {
+    await pgPool.query(
+      `UPDATE users SET
+        username = $2,
+        password = $3,
+        bio = $4,
+        avatar_url = $5,
+        is_private = $6,
+        is_pending_verification = $7,
+        verification_request_at = $8,
+        skills = $9,
+        following = $10,
+        token = $11
+      WHERE user_key = $1`,
+      [
+        obj.user_key || obj.userKey,
+        obj.username,
+        obj.password,
+        obj.bio,
+        obj.avatar_url || obj.avatarUrl,
+        obj.is_private ?? obj.isPrivate,
+        obj.is_pending_verification ?? obj.isPendingVerification,
+        obj.verification_request_at || obj.verificationRequestAt,
+        obj.skills,
+        obj.following,
+        obj.token,
+      ]
+    );
+  };
+  return obj;
 }
 
 async function pgFindUserByToken(token) {
@@ -848,6 +849,143 @@ async function pgCreateNotification(notification) {
       notification.createdAt,
     ]
   );
+}
+
+// ============================
+// PG-aware model wrappers
+// ============================
+
+async function findPostById(id) {
+  const k = String(id || "");
+  if (USE_POSTGRES) return pgFindPostById(k);
+  return Post.findOne({ id: k });
+}
+
+async function createPostRecord(post) {
+  if (USE_POSTGRES) return pgCreatePost(post);
+  return Post.create(post);
+}
+
+async function deletePostById(id) {
+  const k = String(id || "");
+  if (USE_POSTGRES) return pgDeletePost(k);
+  return Post.deleteOne({ id: k });
+}
+
+async function countReposts(originalId) {
+  const k = String(originalId || "");
+  if (USE_POSTGRES) return pgCountReposts(k);
+  return Post.countDocuments({ repostOf: k });
+}
+
+async function findRepostByAuthorSimple(originalId, authorKey) {
+  const oid = String(originalId || "");
+  const ak = String(authorKey || "");
+  if (USE_POSTGRES) return pgFindRepostByAuthor(oid, ak);
+  return Post.findOne({ repostOf: oid, authorKey: ak, quoteText: "" });
+}
+
+async function clearRepostLinks(originalId) {
+  const k = String(originalId || "");
+  if (USE_POSTGRES) {
+    await pgPool.query(
+      "UPDATE posts SET repost_of = '', original_id = '' WHERE repost_of = $1",
+      [k]
+    );
+    return;
+  }
+  await Post.updateMany({ repostOf: k }, { $set: { originalId: "", repostOf: "" } });
+}
+
+async function findPostsByUser(authorKey) {
+  const k = String(authorKey || "");
+  if (USE_POSTGRES) {
+    const all = await pgFindAllPosts();
+    return all
+      .filter((p) => String(p.authorKey || "") === k || String(p.authorId || "") === k)
+      .sort((a, b) => String(b.createdAt || "") > String(a.createdAt || "") ? 1 : -1);
+  }
+  const results = await Post.find({ $or: [{ authorKey: k }, { authorId: k }] });
+  return results.sort((a, b) => String(b.createdAt || "") > String(a.createdAt || "") ? 1 : -1);
+}
+
+async function findAllPostsForInsights(authorKey) {
+  const k = String(authorKey || "");
+  if (USE_POSTGRES) {
+    const all = await pgFindAllPosts();
+    return all.filter((p) => String(p.authorKey || "") === k);
+  }
+  return Post.find({ authorKey: k });
+}
+
+async function findAllPostsForTrending() {
+  if (USE_POSTGRES) {
+    const all = await pgFindAllPosts();
+    return all.slice(0, 100);
+  }
+  return Post.find().sort({ createdAt: -1 }).limit(100);
+}
+
+// --- Story helpers ---
+
+function normalizeStoryRow(row) {
+  let media = row.media;
+  if (typeof media === "string") {
+    try { media = JSON.parse(media); } catch { media = null; }
+  }
+  return {
+    id: row.id,
+    authorKey: row.author_key || row.authorKey || "",
+    author: row.author || "",
+    media,
+    filter: row.filter || "normal",
+    createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+    expiresAt: row.expires_at || row.expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    seenBy: Array.isArray(row.seen_by) ? row.seen_by : (Array.isArray(row.seenBy) ? row.seenBy : []),
+  };
+}
+
+async function pgFindAllStoriesFromDB() {
+  if (!pgPool) return [];
+  const res = await pgPool.query("SELECT * FROM stories ORDER BY created_at DESC");
+  return res.rows.map(normalizeStoryRow);
+}
+
+async function pgFindStoryByIdFromDB(id) {
+  if (!pgPool) return null;
+  const res = await pgPool.query("SELECT * FROM stories WHERE id = $1", [id]);
+  if (!res.rows.length) return null;
+  const story = normalizeStoryRow(res.rows[0]);
+  story.save = async () => {
+    await pgPool.query(
+      "UPDATE stories SET seen_by = $2 WHERE id = $1",
+      [story.id, story.seenBy || []]
+    );
+  };
+  return story;
+}
+
+async function findActiveStories() {
+  const now = new Date().toISOString();
+  if (USE_POSTGRES) {
+    const all = await pgFindAllStoriesFromDB();
+    return all.filter((s) => String(s.expiresAt || "") > now);
+  }
+  return Story.find({ expiresAt: { $gt: now } }).sort({ createdAt: -1 });
+}
+
+async function findStoryById(id) {
+  const k = String(id || "");
+  if (USE_POSTGRES) return pgFindStoryByIdFromDB(k);
+  return Story.findOne({ id: k });
+}
+
+async function createStoryRecord(story) {
+  if (USE_POSTGRES) {
+    await pgCreateStory(story);
+    return story;
+  }
+  return Story.create(story);
 }
 
 function normalizeUsername(input) {
@@ -1467,6 +1605,7 @@ async function upsertPostInDataFile(post) {
 }
 
 async function syncDataJson() {
+  if (USE_POSTGRES) return; // PostgreSQL manages its own state
   const current = readDataFile();
   const users = {};
   const dbUsers = await User.find();
@@ -1744,50 +1883,7 @@ app.get("/api/trends", async (req, res) => {
 app.get("/api/trending/hashtags", async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
-  const posts = await Post.find().sort({ createdAt: -1 }).limit(100);
-  const counts = new Map();
-  for (const p of posts) {
-    const text = String(p.text || "");
-    for (const match of text.matchAll(/(^|\s)#([a-z0-9_]{2,30})/gi)) {
-      const tag = `#${String(match[2] || "").toLowerCase()}`;
-      counts.set(tag, (counts.get(tag) || 0) + 1);
-    }
-  }
-  const trending = Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([tag, count]) => ({ tag, count }));
-  return res.status(200).json({ ok: true, trending });
-});
-
-// Verification Request
-app.post("/api/verification/request", async (req, res) => {
-  const viewer = await requireAuth(req, res);
-  if (!viewer) return;
-  viewer.isPendingVerification = true;
-  viewer.verificationRequestAt = new Date().toISOString();
-  await viewer.save();
-  await syncDataJson();
-  return res.status(200).json({ ok: true, pending: true, requestedAt: viewer.verificationRequestAt });
-});
-
-// Get Verification Status
-app.get("/api/verification/status", async (req, res) => {
-  const viewer = await requireAuth(req, res);
-  if (!viewer) return;
-  return res.status(200).json({ 
-    ok: true, 
-    verified: VERIFIED_USERS.has(String(viewer.userKey)),
-    pending: !!viewer.isPendingVerification,
-    requestedAt: viewer.verificationRequestAt || ""
-  });
-});
-
-// Trending Hashtags - Top 5 from last 100 posts
-app.get("/api/trending/hashtags", async (req, res) => {
-  const viewer = await requireAuth(req, res);
-  if (!viewer) return;
-  const posts = await Post.find().sort({ createdAt: -1 }).limit(100);
+  const posts = await findAllPostsForTrending();
   const counts = new Map();
   for (const p of posts) {
     const text = String(p.text || "");
@@ -1830,7 +1926,7 @@ app.get("/api/stories", async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
   const now = Date.now();
-  const list = await Story.find({ expiresAt: { $gt: new Date(now).toISOString() } }).sort({ createdAt: -1 });
+  const list = await findActiveStories();
   const stories = await Promise.all(list.map((s) => toPublicStory(s, viewer)));
   return res.status(200).json({ ok: true, stories });
 });
@@ -1857,7 +1953,7 @@ app.post("/api/stories", async (req, res) => {
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     seenBy: [String(viewer.userKey)],
   };
-  await Story.create(story);
+  await createStoryRecord(story);
   await syncDataJson();
   return res.status(200).json({ ok: true, story: await toPublicStory(story, viewer) });
 });
@@ -1866,7 +1962,7 @@ app.post("/api/stories/:id/view", async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
   const id = String(req.params.id || "");
-  const story = await Story.findOne({ id });
+  const story = await findStoryById(id);
   if (!story) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
   if (String(story.expiresAt || "") <= new Date().toISOString()) {
     return res.status(404).json({ ok: false, error: "NOT_FOUND" });
@@ -1895,12 +1991,7 @@ app.get("/api/user/:key", async (req, res) => {
     return res.status(200).json({ ok: true, profile: await toPublicProfile(target, viewer), posts: [], private: true });
   }
 
-  const list = await Post.find({
-    $or: [
-      { authorKey: String(target.userKey) },
-      { authorId: String(target.userKey) },
-    ],
-  }).sort({ createdAt: -1 });
+  const list = await findPostsByUser(String(target.userKey));
 
   const visible = [];
   for (const post of list) {
@@ -1942,7 +2033,7 @@ app.get("/api/posts/:id", async (req, res) => {
   if (!viewer) return;
 
   const id = String(req.params.id || "");
-  const post = await Post.findOne({ id });
+  const post = await findPostById(id);
   if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
 
   if (!await canViewerSeePost(post, viewer)) {
@@ -1987,8 +2078,9 @@ app.post("/api/posts", async (req, res) => {
     views: 0,
     viewedBy: [],
   };
-  await Post.create(post);
+  await createPostRecord(post);
   await syncDataJson();
+  console.log(`[post] created id=${post.id} author=${post.author} media=${post.media.length}`);
   return res.status(200).json({ ok: true, post: await toPublicPost(post, viewer) });
 });
 
@@ -1997,7 +2089,7 @@ app.post("/api/posts/:id/like", async (req, res) => {
   if (!viewer) return;
 
   const id = String(req.params.id || "");
-  const post = await Post.findOne({ id });
+  const post = await findPostById(id);
   if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
 
   if (!await canViewerSeePost(post, viewer)) {
@@ -2028,7 +2120,7 @@ app.post("/api/posts/:id/bookmark", async (req, res) => {
   if (!viewer) return;
 
   const id = String(req.params.id || "");
-  const post = await Post.findOne({ id });
+  const post = await findPostById(id);
   if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
 
   if (!await canViewerSeePost(post, viewer)) {
@@ -2055,7 +2147,7 @@ app.post("/api/posts/:id/repost", async (req, res) => {
   if (!viewer) return;
 
   const id = String(req.params.id || "");
-  const post = await Post.findOne({ id });
+  const post = await findPostById(id);
   if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
   if (!await canViewerSeePost(post, viewer)) {
     return res.status(404).json({ ok: false, error: "NOT_FOUND" });
@@ -2067,11 +2159,11 @@ app.post("/api/posts/:id/repost", async (req, res) => {
   const inferredType = asArray(post.media).some((m) => String(m && m.kind) === "video") ? "video" : "post";
   const repostType = ["post", "video", "comment"].includes(requestedType) ? requestedType : inferredType;
 
-  const existing = await Post.findOne({ repostOf: id, authorKey: String(viewer.userKey), quoteText: "" });
+  const existing = await findRepostByAuthorSimple(id, String(viewer.userKey));
   if (existing && !quoteText) {
-    await Post.deleteOne({ _id: existing._id });
+    await deletePostById(existing.id || existing._id);
     await syncDataJson();
-    const repostCount = await Post.countDocuments({ repostOf: id });
+    const repostCount = await countReposts(id);
     return res.status(200).json({ ok: true, reposted: false, repostCount });
   }
 
@@ -2095,10 +2187,10 @@ app.post("/api/posts/:id/repost", async (req, res) => {
     views: 0,
     viewedBy: [],
   };
-  const created = await Post.create(repost);
+  const created = await createPostRecord(repost);
   await syncDataJson();
   await addNotification({ userKey: String(post.authorKey), type: "repost", actorKey: String(viewer.userKey), postId: id });
-  const repostCount = await Post.countDocuments({ repostOf: id });
+  const repostCount = await countReposts(id);
   return res.status(200).json({ ok: true, reposted: true, repostCount, post: await toPublicPost(created, viewer) });
 });
 
@@ -2107,7 +2199,7 @@ app.get("/api/posts/:id/comments", async (req, res) => {
   if (!viewer) return;
 
   const id = String(req.params.id || "");
-  const post = await Post.findOne({ id });
+  const post = await findPostById(id);
   if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
 
   if (!await canViewerSeePost(post, viewer)) {
@@ -2125,7 +2217,7 @@ app.post("/api/posts/:id/comments", async (req, res) => {
   if (!viewer) return;
 
   const id = String(req.params.id || "");
-  const post = await Post.findOne({ id });
+  const post = await findPostById(id);
   if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
 
   if (!await canViewerSeePost(post, viewer)) {
@@ -2155,7 +2247,7 @@ app.post("/api/posts/:id/comments/:commentId/replies", async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
   const id = String(req.params.id || "");
-  const post = await Post.findOne({ id });
+  const post = await findPostById(id);
   if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
   if (!await canViewerSeePost(post, viewer)) {
     return res.status(404).json({ ok: false, error: "NOT_FOUND" });
@@ -2184,7 +2276,7 @@ app.delete("/api/posts/:id/comments/:commentId", async (req, res) => {
 
   const id = String(req.params.id || "");
   const commentId = String(req.params.commentId || "");
-  const post = await Post.findOne({ id });
+  const post = await findPostById(id);
   if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
   if (!await canViewerSeePost(post, viewer)) {
     return res.status(404).json({ ok: false, error: "NOT_FOUND" });
@@ -2213,15 +2305,15 @@ app.delete("/api/posts/:id", async (req, res) => {
   if (!viewer) return;
 
   const id = String(req.params.id || "");
-  const post = await Post.findOne({ id });
+  const post = await findPostById(id);
   if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
 
   const viewerKey = String(viewer.userKey);
   const ownsPost = String(post.authorKey || "") === viewerKey || String(post.authorId || "") === viewerKey;
   if (!ownsPost) return res.status(403).json({ ok: false, error: "FORBIDDEN" });
 
-  await Post.deleteOne({ _id: post._id });
-  await Post.updateMany({ repostOf: id }, { $set: { originalId: "", repostOf: "" } });
+  await deletePostById(post.id || post._id);
+  await clearRepostLinks(id);
   await syncDataJson();
   return res.status(200).json({ ok: true });
 });
@@ -2231,7 +2323,7 @@ app.post("/api/posts/:id/view", async (req, res) => {
   if (!viewer) return;
 
   const id = String(req.params.id || "");
-  const post = await Post.findOne({ id });
+  const post = await findPostById(id);
   if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
 
   if (!await canViewerSeePost(post, viewer)) {
@@ -2274,7 +2366,7 @@ app.get("/api/insights", async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
 
-  const posts = await Post.find({ authorKey: String(viewer.userKey) });
+  const posts = await findAllPostsForInsights(String(viewer.userKey));
   const views = posts.reduce((acc, p) => acc + (Number.isFinite(Number(p.views)) ? Number(p.views) : 0), 0);
   const likes = posts.reduce((acc, p) => acc + asArray(p.likes).length, 0);
   const saves = posts.reduce((acc, p) => acc + asArray(p.bookmarks).length, 0);
@@ -2287,7 +2379,7 @@ app.get("/api/posts/:id/insights", async (req, res) => {
   if (!viewer) return;
 
   const id = String(req.params.id || "");
-  const post = await Post.findOne({ id });
+  const post = await findPostById(id);
   if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
 
   const authorKey = String(post.authorKey || "");
@@ -2299,7 +2391,7 @@ app.get("/api/posts/:id/insights", async (req, res) => {
   const likeCount = asArray(post.likes).length;
   const commentCount = asArray(post.comments).length;
   const saveCount = asArray(post.bookmarks).length;
-  const repostCount = await Post.countDocuments({ repostOf: id });
+  const repostCount = await countReposts(id);
 
   return res.status(200).json({ 
     ok: true, 
@@ -2518,7 +2610,7 @@ app.post("/api/report", async (req, res) => {
     return res.status(400).json({ ok: false, error: "REPORT_INVALID" });
   }
 
-  const post = await Post.findOne({ id: targetId });
+  const post = await findPostById(targetId);
   if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
 
   const report = {
@@ -2551,12 +2643,69 @@ app.get("/api/moderation/reports", async (req, res) => {
   return res.status(200).json({ ok: true, reports: list });
 });
 
+function aiSmartReply(message) {
+  const m = String(message || "").trim().toLowerCase();
+
+  // Greetings
+  if (/^(hi|hello|hey|howdy|hiya|سلام|مرحبا|السلام عليكم|أهلا|هلا|مرحبًا|bonjour|salut)/.test(m)) {
+    const greetings = [
+      "مرحباً! 👋 أنا مساعد HYSA. كيف يمكنني مساعدتك اليوم؟",
+      "أهلاً وسهلاً! 😊 يسعدني مساعدتك. هل تريد كتابة منشور؟ أو لديك سؤال؟",
+      "Hello! 👋 I'm the HYSA assistant. How can I help you today?",
+    ];
+    return greetings[Math.floor(Math.random() * greetings.length)];
+  }
+
+  // Help with posts (Arabic)
+  if (/منشور|نشر|اكتب لي|كتابة/.test(m)) {
+    return "يمكنني مساعدتك في كتابة منشور! 📝 أخبرني:\n• ما الموضوع الذي تريد الكتابة عنه؟\n• ما الشعور الذي تريد نقله؟\n• هل تريد إضافة هاشتاقات؟";
+  }
+
+  // Hashtag suggestions
+  if (/هاشتاق|hashtag|وسم/.test(m)) {
+    return "إليك بعض الهاشتاقات الشائعة على HYSA 🏷️:\n#تقنية #ترفيه #رياضة #أخبار #صور #فيديو #حياة #ثقافة #سفر #طعام\n\nأخبرني بموضوع منشورك وسأقترح هاشتاقات مناسبة!";
+  }
+
+  // Help with bio
+  if (/bio|نبذة|بايو|profile|بروفايل/.test(m)) {
+    return "لكتابة نبذة احترافية على ملفك الشخصي 📋، اتبع هذه النصيحة:\n1. اذكر اهتماماتك الرئيسية\n2. أضف مجالك أو تخصصك\n3. اكتب جملة مميزة تعبر عنك\n\nمثال: \"مهتم بالتقنية والتصميم | أشارك يومياتي وأفكاري 🌟\"";
+  }
+
+  // What is HYSA
+  if (/what is hysa|ما هو hysa|ما هي hysa|عن التطبيق|about/.test(m)) {
+    return "HYSA هي شبكة تواصل اجتماعي مصغّرة 🌐\n\nيمكنك:\n• نشر منشورات نصية وصور ومقاطع فيديو\n• متابعة الأصدقاء\n• الإعجاب والتعليق وإعادة النشر\n• مشاركة القصص\n• إرسال رسائل مباشرة\n• البحث عن مستخدمين";
+  }
+
+  // How to post
+  if (/كيف|how to|post|upload/.test(m)) {
+    return "لإنشاء منشور جديد ✏️:\n1. اضغط على زر ＋ في الأسفل\n2. اكتب نصك (حتى 280 حرف)\n3. يمكنك إضافة صورة أو فيديو\n4. اختر الخصوصية (عام أو خاص)\n5. اضغط \"نشر\"!\n\nمنشورك سيظهر في الصفحة الرئيسية فور نشره 🚀";
+  }
+
+  // Generate post idea
+  if (/فكرة|idea|اقتراح|suggest/.test(m)) {
+    const ideas = [
+      "💡 فكرة منشور: شارك شيئاً تعلمته اليوم مع هاشتاق #تعلمت_اليوم",
+      "💡 فكرة منشور: ما هو أفضل شيء حدث معك هذا الأسبوع؟ شاركه مع متابعيك!",
+      "💡 فكرة منشور: ضع صورة من يومك مع وصف قصير — الناس تحب التفاصيل البسيطة!",
+      "💡 Post idea: Share a tip from your field of expertise with #tips hashtag",
+    ];
+    return ideas[Math.floor(Date.now() / 1000) % ideas.length];
+  }
+
+  // Default helpful response
+  const defaults = [
+    "يمكنني مساعدتك في:\n• كتابة منشورات\n• اقتراح هاشتاقات\n• كتابة نبذة للملف الشخصي\n• الإجابة على أسئلة عن HYSA\n\nماذا تحتاج؟ 😊",
+    "أنا هنا للمساعدة! 🤖 يمكنني مساعدتك في كتابة المحتوى واقتراح الأفكار والإجابة على أسئلتك عن التطبيق.",
+  ];
+  return defaults[Math.floor(Math.random() * defaults.length)];
+}
+
 function aiNotConfigured(kind, prompt) {
   const trimmed = String(prompt || "").trim();
   if (kind === "image") {
     return {
       configured: false,
-      message: "AI image generation is not configured yet.",
+      message: "لم يتم تكوين توليد الصور بعد. أضف مفتاح API على الخادم لتفعيل هذه الميزة.",
       media: null,
       prompt: trimmed,
     };
@@ -2564,7 +2713,7 @@ function aiNotConfigured(kind, prompt) {
   if (kind === "video") {
     return {
       configured: false,
-      message: "AI video generation is not configured yet.",
+      message: "لم يتم تكوين توليد الفيديو بعد. أضف مفتاح API على الخادم لتفعيل هذه الميزة.",
       media: null,
       prompt: trimmed,
       status: "placeholder",
@@ -2572,9 +2721,7 @@ function aiNotConfigured(kind, prompt) {
   }
   return {
     configured: false,
-    reply: trimmed
-      ? `AI is not configured yet, but I can still help you shape this idea: "${trimmed.slice(0, 160)}". Add an AI API key on the backend to enable live responses.`
-      : "AI is not configured yet. Add an AI API key on the backend to enable live responses.",
+    reply: aiSmartReply(trimmed),
   };
 }
 
