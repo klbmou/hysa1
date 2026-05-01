@@ -17,6 +17,7 @@ const os = require("os");
 const http = require("http");
 const express = require("express");
 const { ExpressPeerServer } = require("peer");
+const { OAuth2Client } = require("google-auth-library");
 
 // Optional pg and cloudinary (loaded only if needed)
 let Pool, cloudinary;
@@ -49,6 +50,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY;
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
+const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || "").trim();
 
 const USE_POSTGRES = !!process.env.DATABASE_URL;
 const USE_CLOUDINARY = !!(
@@ -57,6 +59,7 @@ const USE_CLOUDINARY = !!(
   process.env.CLOUDINARY_API_SECRET
 );
 const OWNER_USER_KEY = "france";
+const googleOAuthClient = new OAuth2Client(GOOGLE_CLIENT_ID || undefined);
 
 // Enforce production behavior
 if (NODE_ENV === "production") {
@@ -521,12 +524,15 @@ async function pgFindUserByKey(key) {
     ...row,
     userKey: row.user_key,
     avatarUrl: row.avatar_url,
+    avatar: row.avatar || row.avatar_url,
     isPrivate: row.is_private,
     isPendingVerification: row.is_pending_verification,
     verificationRequestAt: row.verification_request_at,
     displayName: row.display_name,
     verified: !!row.verified || row.user_key === OWNER_USER_KEY,
     role: row.user_key === OWNER_USER_KEY ? "owner" : String(row.role || ""),
+    googleId: row.google_id,
+    authProvider: row.auth_provider,
   };
   obj.save = async () => {
     await pgPool.query(
@@ -544,7 +550,10 @@ async function pgFindUserByKey(key) {
         email = $12,
         display_name = $13,
         verified = $14,
-        role = $15
+        role = $15,
+        google_id = $16,
+        auth_provider = $17,
+        avatar = $18
       WHERE user_key = $1`,
       [
         obj.user_key || obj.userKey,
@@ -562,6 +571,9 @@ async function pgFindUserByKey(key) {
         obj.display_name || obj.displayName || "",
         !!(obj.verified || obj.userKey === OWNER_USER_KEY || obj.user_key === OWNER_USER_KEY),
         (obj.userKey === OWNER_USER_KEY || obj.user_key === OWNER_USER_KEY) ? "owner" : String(obj.role || ""),
+        obj.google_id || obj.googleId || "",
+        obj.auth_provider || obj.authProvider || "password",
+        obj.avatar || obj.avatar_url || obj.avatarUrl || "",
       ]
     );
   };
@@ -579,8 +591,8 @@ async function pgCreateUser(user) {
     `INSERT INTO users (
       user_key, username, password, created_at, bio, avatar_url,
       is_private, is_pending_verification, verification_request_at,
-      skills, following, token, email, display_name, verified, role
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      skills, following, token, email, display_name, verified, role, google_id, auth_provider, avatar
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
     ON CONFLICT (user_key) DO UPDATE SET
       username = EXCLUDED.username,
       password = EXCLUDED.password,
@@ -592,7 +604,10 @@ async function pgCreateUser(user) {
       email = EXCLUDED.email,
       display_name = EXCLUDED.display_name,
       verified = EXCLUDED.verified,
-      role = EXCLUDED.role`,
+      role = EXCLUDED.role,
+      google_id = EXCLUDED.google_id,
+      auth_provider = EXCLUDED.auth_provider,
+      avatar = EXCLUDED.avatar`,
     [
       user.userKey,
       user.username,
@@ -610,6 +625,9 @@ async function pgCreateUser(user) {
       user.displayName || "",
       !!(user.verified || user.userKey === OWNER_USER_KEY),
       user.userKey === OWNER_USER_KEY ? "owner" : String(user.role || ""),
+      user.googleId || user.google_id || "",
+      user.authProvider || user.auth_provider || "password",
+      user.avatar || user.avatarUrl || "",
     ]
   );
   return pgFindUserByKey(user.userKey);
@@ -799,6 +817,22 @@ async function pgFindAllDMs() {
     readBy: row.read_by,
     reactions: row.reactions,
   }));
+}
+
+async function pgFindUserByGoogleId(googleId) {
+  const id = String(googleId || "");
+  if (!id) return null;
+  const res = await pgPool.query("SELECT user_key FROM users WHERE google_id = $1 LIMIT 1", [id]);
+  if (!res.rows.length) return null;
+  return pgFindUserByKey(res.rows[0].user_key);
+}
+
+async function pgFindUserByEmail(email) {
+  const value = String(email || "").trim().toLowerCase();
+  if (!value) return null;
+  const res = await pgPool.query("SELECT user_key FROM users WHERE LOWER(email) = $1 LIMIT 1", [value]);
+  if (!res.rows.length) return null;
+  return pgFindUserByKey(res.rows[0].user_key);
 }
 
 async function pgCreateDM(dm) {
@@ -1176,6 +1210,8 @@ function normalizeUserObject(u, fallbackKey) {
     displayName: String((u && (u.displayName || u.display_name)) || ""),
     verified: !!(u && u.verified) || userKey === OWNER_USER_KEY,
     role: userKey === OWNER_USER_KEY ? "owner" : String((u && u.role) || ""),
+    googleId: String((u && (u.googleId || u.google_id)) || ""),
+    authProvider: String((u && (u.authProvider || u.auth_provider)) || "password"),
     skills: asArray(u && u.skills).map(String).slice(0, 20),
     following: asArray(u && u.following).map(String),
     token: typeof (u && u.token) === "string" ? String(u.token) : "",
@@ -1326,6 +1362,23 @@ function toPublicMe(u) {
     role,
     createdAt: String((u && (u.createdAt || u.created_at)) || ""),
   };
+}
+
+function slugFromGoogleProfile(email, name) {
+  const source = String((email && email.split("@")[0]) || name || "google_user").toLowerCase();
+  const slug = source.replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 18);
+  return slug || "google_user";
+}
+
+async function uniqueGoogleUsername(email, name) {
+  const base = slugFromGoogleProfile(email, name);
+  for (let i = 0; i < 50; i += 1) {
+    const candidate = i === 0 ? base : `${base.slice(0, Math.max(3, 18 - String(i).length - 1))}_${i}`;
+    const err = validateUsername(candidate);
+    if (err) continue;
+    if (!await findUserByKey(candidate)) return candidate;
+  }
+  return `user_${crypto.randomBytes(5).toString("hex")}`;
 }
 
 async function toPublicProfile(target, viewer) {
@@ -1923,6 +1976,85 @@ app.post("/api/login", async (req, res) => {
     await syncDataJson();
   }
   return res.status(200).json({ ok: true, token: u.token, me: toPublicMe(u) });
+});
+
+app.post("/api/auth/google", async (req, res) => {
+  if (!GOOGLE_CLIENT_ID) {
+    return res.status(503).json({ ok: false, error: "GOOGLE_AUTH_NOT_CONFIGURED" });
+  }
+  const credential = String((req.body && req.body.credential) || "").trim();
+  if (!credential) return res.status(400).json({ ok: false, error: "INVALID_GOOGLE_CREDENTIAL" });
+
+  let payload;
+  try {
+    const ticket = await googleOAuthClient.verifyIdToken({
+      idToken: credential,
+      audience: GOOGLE_CLIENT_ID,
+    });
+    payload = ticket.getPayload();
+  } catch {
+    return res.status(401).json({ ok: false, error: "INVALID_GOOGLE_CREDENTIAL" });
+  }
+
+  const googleId = String(payload && payload.sub || "");
+  const email = String(payload && payload.email || "").trim().toLowerCase();
+  const emailVerified = payload && payload.email_verified === true;
+  const displayName = String(payload && payload.name || "").trim();
+  const picture = String(payload && payload.picture || "").trim();
+  if (!googleId || !email || !emailVerified) {
+    return res.status(401).json({ ok: false, error: "INVALID_GOOGLE_CREDENTIAL" });
+  }
+
+  let user = USE_POSTGRES
+    ? await pgFindUserByGoogleId(googleId)
+    : await User.findOne({ googleId });
+
+  if (!user) {
+    user = USE_POSTGRES
+      ? await pgFindUserByEmail(email)
+      : await User.findOne({ email });
+  }
+
+  if (user) {
+    user.googleId = googleId;
+    user.google_id = googleId;
+    user.authProvider = user.authProvider || user.auth_provider || "google";
+    user.auth_provider = user.authProvider;
+    user.email = email;
+    if (displayName) user.displayName = displayName;
+    if (picture) {
+      user.avatarUrl = picture;
+      user.avatar_url = picture;
+      user.avatar = picture;
+    }
+    user.token = newToken();
+    await user.save();
+    if (!USE_POSTGRES) await syncDataJson();
+    return res.status(200).json({ ok: true, token: user.token, me: toPublicMe(user) });
+  }
+
+  const username = await uniqueGoogleUsername(email, displayName);
+  const created = normalizeUserObject({
+    userKey: username,
+    username,
+    password: hashPassword(crypto.randomBytes(18).toString("base64url")),
+    createdAt: new Date().toISOString(),
+    bio: "",
+    avatarUrl: picture,
+    avatar: picture,
+    email,
+    displayName,
+    googleId,
+    authProvider: "google",
+    isPrivate: false,
+    skills: [],
+    following: [],
+    token: newToken(),
+  }, username);
+
+  const saved = USE_POSTGRES ? await pgCreateUser(created) : await User.create(created);
+  if (!USE_POSTGRES) await syncDataJson();
+  return res.status(200).json({ ok: true, token: saved.token, me: toPublicMe(saved) });
 });
 
 app.post("/api/logout", async (req, res) => {

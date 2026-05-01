@@ -3157,6 +3157,70 @@ select:focus {
   align-items: center;
   justify-content: flex-start;
 }
+
+.googleAuthWrap {
+  display: grid;
+  gap: 10px;
+}
+
+.authDivider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.authDivider::before,
+.authDivider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.googleAuthButton {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: transform 140ms ease, background 180ms ease, border-color 180ms ease;
+}
+
+.googleAuthButton:hover {
+  border-color: rgba(98, 240, 200, 0.34);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.googleAuthButton:active {
+  transform: scale(0.98);
+}
+
+.googleAuthButton:disabled {
+  opacity: 0.62;
+  cursor: wait;
+}
+
+.googleMark {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #1a73e8;
+  background: #fff;
+  font-weight: 900;
+}
 .lang-toggle-wrap {
   position: relative;
 }

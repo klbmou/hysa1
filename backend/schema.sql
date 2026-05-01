@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   bio TEXT DEFAULT '',
   avatar_url TEXT DEFAULT '',
+  avatar TEXT DEFAULT '',
   is_private BOOLEAN DEFAULT FALSE,
   is_pending_verification BOOLEAN DEFAULT FALSE,
   verification_request_at TIMESTAMPTZ,
@@ -16,6 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
   display_name TEXT DEFAULT '',
   verified BOOLEAN DEFAULT FALSE,
   role VARCHAR(30) DEFAULT '',
+  google_id TEXT DEFAULT '',
+  auth_provider VARCHAR(30) DEFAULT 'password',
   skills TEXT[] DEFAULT '{}',
   following TEXT[] DEFAULT '{}',
   token TEXT
@@ -23,8 +26,11 @@ CREATE TABLE IF NOT EXISTS users (
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(30) DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(30) DEFAULT 'password';
 
 UPDATE users
 SET verified = TRUE, role = 'owner'
@@ -125,3 +131,5 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user_key ON notifications(user_key)
 CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_story_reactions_story_id ON story_reactions(story_id);
 CREATE INDEX IF NOT EXISTS idx_story_reactions_owner_key ON story_reactions(owner_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id_unique ON users(google_id) WHERE google_id <> '';
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(LOWER(email));

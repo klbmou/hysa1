@@ -4,6 +4,7 @@ const tokenKey = "token";
 const legacyTokenKey = "hysa_token";
 const langKey = "hysa_lang";
 const themeKey = "hysa_theme";
+const googleClientId = "75355529073-7tg1pfu787c3n7arvuft014tllch5at9.apps.googleusercontent.com";
 
 function getToken() {
   return localStorage.getItem("token");
@@ -99,6 +100,7 @@ const I18N = {
     authBlurb: 'تواصل مع الأصدقاء. شارك لحظاتك. اكتشف مجتمعك.',
     login: "دخول",
     register: "تسجيل",
+    continueWithGoogle: "المتابعة بواسطة Google",
     username: "اسم المستخدم",
     password: "كلمة المرور",
     feedTitle: "المنشورات",
@@ -166,6 +168,8 @@ const I18N = {
     error_upload_invalid: "ملف/رفع غير صالح.",
     error_report_invalid: "الإبلاغ غير صالح.",
     error_unknown: "حدث خطأ غير متوقع.",
+    error_google_auth_not_configured: "تسجيل الدخول بواسطة Google غير مفعّل بعد.",
+    error_invalid_google_credential: "تعذر التحقق من حساب Google.",
     error_upload_missing: "ميزة رفع الملفات غير متوفرة في السيرفر الحالي. أوقف السيرفر ثم شغّل node server.js من جديد.",
     // New features
     stories: "القصص",
@@ -189,6 +193,7 @@ const I18N = {
     authBlurb: 'Connect with friends. Share your moments. Discover your community.',
     login: "Login",
     register: "Register",
+    continueWithGoogle: "Continue with Google",
     username: "Username",
     password: "Password",
     feedTitle: "Posts",
@@ -256,6 +261,8 @@ const I18N = {
     error_upload_invalid: "Invalid upload.",
     error_report_invalid: "Invalid report.",
     error_unknown: "Something went wrong.",
+    error_google_auth_not_configured: "Google login is not configured yet.",
+    error_invalid_google_credential: "Could not verify your Google account.",
     error_upload_missing: "Upload is not available on the running server. Restart node server.js.",
   },
   fr: {
@@ -691,6 +698,8 @@ function humanizeError(message, fallback) {
   if (m === "UPLOAD_INVALID") return t("error_upload_invalid");
   if (m === "UPLOAD_ENDPOINT_MISSING") return t("error_upload_missing");
   if (m === "REPORT_INVALID") return t("error_report_invalid");
+  if (m === "GOOGLE_AUTH_NOT_CONFIGURED") return t("error_google_auth_not_configured");
+  if (m === "INVALID_GOOGLE_CREDENTIAL") return t("error_invalid_google_credential");
   if (m && m !== "SERVER_ERROR") return m;
   return fallback || t("error_unknown");
 }
@@ -702,6 +711,108 @@ function clearSession({ clearToken = true } = {}) {
   peerReadyPromise = null;
   if (clearToken) clearStoredToken();
   me = null;
+}
+
+let googleAuthReady = false;
+let googleAuthInitializing = false;
+
+function loadGoogleIdentityScript() {
+  if (window.google?.accounts?.id) return Promise.resolve();
+  const existing = document.querySelector("script[src*='accounts.google.com/gsi/client']");
+  if (existing) {
+    return new Promise((resolve, reject) => {
+      existing.addEventListener("load", resolve, { once: true });
+      existing.addEventListener("error", reject, { once: true });
+      window.setTimeout(() => {
+        if (window.google?.accounts?.id) resolve();
+      }, 800);
+    });
+  }
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+async function finishGoogleLogin(response) {
+  const credential = String(response?.credential || "");
+  if (!credential) throw new Error("INVALID_GOOGLE_CREDENTIAL");
+  const r = await api("/api/auth/google", {
+    method: "POST",
+    body: JSON.stringify({ credential }),
+  });
+  saveToken(r.token);
+  authFailureCount = 0;
+  me = r.me;
+  showApp();
+  route();
+}
+
+async function initGoogleAuth() {
+  if (googleAuthReady || googleAuthInitializing) return;
+  googleAuthInitializing = true;
+  try {
+    await loadGoogleIdentityScript();
+    if (!window.google?.accounts?.id) throw new Error("GOOGLE_AUTH_NOT_CONFIGURED");
+    window.google.accounts.id.initialize({
+      client_id: googleClientId,
+      callback: (response) => {
+        const msg = document.getElementById("googleAuthMsg");
+        setMsg(msg, t("loading"));
+        finishGoogleLogin(response)
+          .catch((err) => setMsg(msg, humanizeError(err?.message), true));
+      },
+    });
+    googleAuthReady = true;
+  } finally {
+    googleAuthInitializing = false;
+  }
+}
+
+function ensureGoogleAuthButton() {
+  if (document.getElementById("googleAuthButton")) return;
+  const target = el.registerForm || el.loginForm;
+  if (!target || !target.parentElement) return;
+  const wrap = document.createElement("div");
+  wrap.className = "googleAuthWrap";
+  const divider = document.createElement("div");
+  divider.className = "authDivider";
+  divider.textContent = "or";
+  const button = document.createElement("button");
+  button.id = "googleAuthButton";
+  button.type = "button";
+  button.className = "googleAuthButton";
+  button.innerHTML = '<span class="googleMark">G</span><span data-t="continueWithGoogle"></span>';
+  const label = button.querySelector("[data-t]");
+  if (label) label.textContent = t("continueWithGoogle");
+  const msg = document.createElement("div");
+  msg.id = "googleAuthMsg";
+  msg.className = "msg";
+  on(button, "click", async () => {
+    setMsg(msg, t("loading"));
+    button.disabled = true;
+    try {
+      await initGoogleAuth();
+      window.google.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          setMsg(msg, "Use the Google popup or allow popups for this site.", true);
+        }
+      });
+    } catch (err) {
+      setMsg(msg, humanizeError(err?.message), true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  wrap.appendChild(divider);
+  wrap.appendChild(button);
+  wrap.appendChild(msg);
+  target.parentElement.insertBefore(wrap, target.nextSibling);
 }
 
 function hideAllOverlays() {
@@ -4430,6 +4541,7 @@ async function boot() {
 
   on(el.tabLogin, "click", () => switchAuthTab("login"));
   on(el.tabRegister, "click", () => switchAuthTab("register"));
+  ensureGoogleAuthButton();
 
   on(el.loginForm, "submit", async (e) => {
     e.preventDefault();
