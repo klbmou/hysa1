@@ -85,6 +85,19 @@ if (USE_CLOUDINARY && cloudinary) {
   });
 }
 
+async function initPostgresSchema() {
+  if (!pgPool) return;
+  try {
+    const schemaPath = path.join(__dirname, "schema.sql");
+    const schemaSql = fs.readFileSync(schemaPath, "utf8");
+    await pgPool.query(schemaSql);
+    console.log("[postgres] Schema initialized (CREATE TABLE IF NOT EXISTS)");
+  } catch (err) {
+    console.error("[postgres] Schema initialization failed:", err.message);
+    throw err;
+  }
+}
+
 function safeJsonParse(text) {
   try {
     return JSON.parse(text);
@@ -2828,7 +2841,9 @@ async function start() {
   console.log(`Uploads path: ${UPLOADS_DIR}`);
   console.log("----------------------------------------");
 
-  if (!USE_POSTGRES) {
+  if (USE_POSTGRES) {
+    await initPostgresSchema();
+  } else {
     await connectDataFile();
   }
 
