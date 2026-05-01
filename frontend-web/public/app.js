@@ -54,6 +54,11 @@ let storyDraftPreviewUrl = "";
 let storyDraftFilter = "normal";
 let activeDmPeer = null;
 let activeDmPeerProfile = null;
+let storyProgressStartedAt = 0;
+let storyProgressDuration = 0;
+let storyProgressRemaining = 0;
+let activeStoryVideo = null;
+let mediaPickerTarget = null;
 let dmThreadPollTimer = null;
 let dmInboxPollTimer = null;
 let dmPollGeneration = 0;
@@ -1581,7 +1586,27 @@ function storyNode(group) {
   wrap.title = `Story by @${storyLabel(story)}`;
   const ring = document.createElement("div");
   ring.className = `storyRing ${allSeen ? "seen" : ""}`.trim();
+  ring.style.setProperty("--story-count", String(Math.max(1, stories.length || 1)));
+  if (stories.length > 1) {
+    ring.classList.add("segmented");
+    const segments = document.createElement("div");
+    segments.className = "storySegments";
+    stories.slice(0, 8).forEach((item, index) => {
+      const segment = document.createElement("span");
+      segment.className = item.seen ? "seen" : "";
+      segment.style.setProperty("--i", String(index));
+      segment.style.setProperty("--n", String(Math.min(stories.length, 8)));
+      segments.appendChild(segment);
+    });
+    ring.appendChild(segments);
+  }
   ring.appendChild(avatarNode(story.authorAvatar, storyLabel(story)));
+  if (stories.length > 1) {
+    const count = document.createElement("span");
+    count.className = "storyCountBadge";
+    count.textContent = String(stories.length);
+    ring.appendChild(count);
+  }
   const label = document.createElement("div");
   label.className = "storyLabel";
   label.textContent = `@${storyLabel(story)}`;
@@ -1699,7 +1724,7 @@ function ensureStoryComposer() {
   el.storyMsg = overlay.querySelector("#storyMsg");
 
   on(el.storyClose, "click", closeStoryComposer);
-  on(el.storyPick, "click", () => ensureStoryFileInput().click());
+  on(el.storyPick, "click", () => openMediaPicker("story"));
   on(el.storyShare, "click", publishStory);
   bindOverlayClose(overlay, closeStoryComposer);
 }
@@ -1718,6 +1743,7 @@ function openStoryComposer() {
   ensureStoryComposer();
   resetStoryDraft();
   showOverlay(el.storyComposer);
+  window.setTimeout(() => openMediaPicker("story"), 120);
 }
 
 function closeStoryComposer() {
@@ -1752,8 +1778,10 @@ function renderStoryDraft() {
   } else if (/^video\//.test(storyDraftFile.type)) {
     const video = document.createElement("video");
     video.src = storyDraftPreviewUrl;
-    video.controls = true;
+    video.controls = false;
     video.playsInline = true;
+    video.muted = true;
+    video.loop = true;
     video.className = `storyDraftMedia story-filter-${storyDraftFilter}`;
     el.storyPreview.appendChild(video);
   } else {
@@ -1806,15 +1834,19 @@ function ensureStoryViewer() {
   overlay.hidden = true;
   overlay.innerHTML = `
     <section class="storyViewerShell" role="dialog" aria-modal="true" aria-label="Story viewer">
-      <div class="storyProgress"><span id="storyProgressFill"></span></div>
+      <div id="storyProgress" class="storyProgress"></div>
       <header class="storyViewerHeader">
         <div id="storyViewerAuthor" class="storyViewerAuthor"></div>
+        <button id="storyMute" class="storyMute" type="button" aria-label="Mute story">Muted</button>
         <button id="storyViewerClose" class="iconBtn" type="button" aria-label="Close">X</button>
       </header>
       <div id="storyViewerMedia" class="storyViewerMedia"></div>
       <footer class="storyViewerFooter">
         <div id="storyViewerReactions" class="storyViewerReactions"></div>
-        <button id="storyReplyBtn" class="storyReplyBtn" type="button">Reply</button>
+        <form id="storyReplyForm" class="storyReplyForm">
+          <input id="storyReplyInput" type="text" maxlength="280" placeholder="Send message...">
+          <button id="storyReplyBtn" class="storyReplyBtn" type="submit">Send</button>
+        </form>
       </footer>
       <button id="storyPrev" class="storyTapZone prev" type="button" aria-label="Previous story"></button>
       <button id="storyNext" class="storyTapZone next" type="button" aria-label="Next story"></button>
@@ -1822,45 +1854,50 @@ function ensureStoryViewer() {
   `;
   document.body.appendChild(overlay);
   el.storyViewer = overlay;
-  el.storyProgressFill = overlay.querySelector("#storyProgressFill");
+  el.storyProgress = overlay.querySelector("#storyProgress");
   el.storyViewerAuthor = overlay.querySelector("#storyViewerAuthor");
   el.storyViewerMedia = overlay.querySelector("#storyViewerMedia");
   el.storyViewerReactions = overlay.querySelector("#storyViewerReactions");
   el.storyViewerClose = overlay.querySelector("#storyViewerClose");
+  el.storyMute = overlay.querySelector("#storyMute");
+  el.storyReplyForm = overlay.querySelector("#storyReplyForm");
+  el.storyReplyInput = overlay.querySelector("#storyReplyInput");
   el.storyReplyBtn = overlay.querySelector("#storyReplyBtn");
   el.storyPrev = overlay.querySelector("#storyPrev");
   el.storyNext = overlay.querySelector("#storyNext");
   on(el.storyViewerClose, "click", closeStoryViewer);
   on(el.storyPrev, "click", previousStory);
   on(el.storyNext, "click", nextStory);
-  on(el.storyReplyBtn, "click", () => {
+  on(el.storyMute, "click", () => {
+    if (!activeStoryVideo) return;
+    activeStoryVideo.muted = !activeStoryVideo.muted;
+    el.storyMute.textContent = activeStoryVideo.muted ? "Muted" : "Sound";
+  });
+  const pausePress = () => pauseStoryPlayback();
+  const resumePress = () => resumeStoryPlayback();
+  on(overlay, "pointerdown", (e) => {
+    if (e.target && e.target.closest && e.target.closest("button, input, form")) return;
+    pausePress();
+  });
+  on(overlay, "pointerup", resumePress);
+  on(overlay, "pointercancel", resumePress);
+  on(el.storyReplyForm, "submit", (event) => {
+    event.preventDefault();
     const story = storyCache[activeStoryIndex];
     if (!story || !story.authorKey || isMineKey(story.authorKey)) return;
-    showActionSheet("Reply to story", (body) => {
-      const input = document.createElement("textarea");
-      input.className = "sheet-textarea";
-      input.maxLength = 280;
-      input.placeholder = "Send a reply...";
-      const sendBtn = sheetButton("Send", "primary");
-      on(sendBtn, "click", async () => {
-        const text = String(input.value || "").trim();
-        if (!text) return;
-        sendBtn.disabled = true;
-        try {
-          await api(`/api/dm/${encodeURIComponent(story.authorKey)}`, {
-            method: "POST",
-            body: JSON.stringify({ text }),
-          });
-          hideActionSheet();
-          showToast("Reply sent.");
-        } catch (err) {
-          showToast(humanizeError(err?.message), true);
-        } finally {
-          sendBtn.disabled = false;
-        }
-      });
-      body.appendChild(input);
-      body.appendChild(sendBtn);
+    const text = String(el.storyReplyInput?.value || "").trim();
+    if (!text) return;
+    el.storyReplyBtn.disabled = true;
+    api(`/api/dm/${encodeURIComponent(story.authorKey)}`, {
+      method: "POST",
+      body: JSON.stringify({ text: `Reply to your story: ${text}` }),
+    }).then(() => {
+      if (el.storyReplyInput) el.storyReplyInput.value = "";
+      showToast("Reply sent.");
+    }).catch((err) => {
+      showToast(humanizeError(err?.message), true);
+    }).finally(() => {
+      el.storyReplyBtn.disabled = false;
     });
   });
   on(document, "keydown", (e) => {
@@ -1874,21 +1911,84 @@ function ensureStoryViewer() {
 function clearStoryProgress() {
   if (storyProgressTimer) window.clearTimeout(storyProgressTimer);
   storyProgressTimer = null;
-  if (el.storyProgressFill) {
-    el.storyProgressFill.style.transition = "none";
-    el.storyProgressFill.style.width = "0%";
+  storyProgressStartedAt = 0;
+  storyProgressDuration = 0;
+  storyProgressRemaining = 0;
+  for (const fill of Array.from(el.storyProgress?.querySelectorAll(".storyProgressFill") || [])) {
+    fill.style.transition = "none";
+    fill.style.width = "0%";
   }
+}
+
+function activeStoryGroupContext() {
+  const story = storyCache[activeStoryIndex];
+  const key = storyOwnerKey(story);
+  const group = storyGroups.find((item) => item.key === key || String(item.authorKey).toLowerCase() === key);
+  const stories = Array.isArray(group?.stories) && group.stories.length ? group.stories : (story ? [story] : []);
+  const index = Math.max(0, stories.findIndex((item) => String(item.id) === String(story?.id)));
+  return { group, stories, index };
+}
+
+function renderStoryProgressSegments() {
+  if (!el.storyProgress) return null;
+  const { stories, index } = activeStoryGroupContext();
+  el.storyProgress.textContent = "";
+  let activeFill = null;
+  stories.forEach((_, i) => {
+    const bar = document.createElement("span");
+    bar.className = "storyProgressSegment";
+    const fill = document.createElement("span");
+    fill.className = "storyProgressFill";
+    fill.style.width = i < index ? "100%" : "0%";
+    bar.appendChild(fill);
+    el.storyProgress.appendChild(bar);
+    if (i === index) activeFill = fill;
+  });
+  return activeFill;
 }
 
 function startStoryProgress(durationMs) {
   clearStoryProgress();
-  if (!el.storyProgressFill) return;
+  const activeFill = renderStoryProgressSegments();
+  if (!activeFill) return;
+  storyProgressDuration = durationMs;
+  storyProgressRemaining = durationMs;
+  storyProgressStartedAt = Date.now();
   window.requestAnimationFrame(() => {
-    if (!el.storyProgressFill) return;
-    el.storyProgressFill.style.transition = `width ${durationMs}ms linear`;
-    el.storyProgressFill.style.width = "100%";
+    activeFill.style.transition = `width ${durationMs}ms linear`;
+    activeFill.style.width = "100%";
   });
   storyProgressTimer = window.setTimeout(nextStory, durationMs);
+}
+
+function pauseStoryPlayback() {
+  if (!storyProgressTimer) return;
+  window.clearTimeout(storyProgressTimer);
+  storyProgressTimer = null;
+  const elapsed = Date.now() - storyProgressStartedAt;
+  storyProgressRemaining = Math.max(250, storyProgressDuration - elapsed);
+  const activeFill = el.storyProgress?.querySelectorAll(".storyProgressFill")[activeStoryGroupContext().index];
+  if (activeFill) {
+    const pct = storyProgressDuration ? Math.min(100, (elapsed / storyProgressDuration) * 100) : 0;
+    activeFill.style.transition = "none";
+    activeFill.style.width = `${pct}%`;
+  }
+  if (activeStoryVideo) activeStoryVideo.pause();
+}
+
+function resumeStoryPlayback() {
+  if (!storyProgressRemaining || storyProgressTimer) return;
+  const activeFill = el.storyProgress?.querySelectorAll(".storyProgressFill")[activeStoryGroupContext().index];
+  storyProgressStartedAt = Date.now();
+  storyProgressDuration = storyProgressRemaining;
+  if (activeFill) {
+    window.requestAnimationFrame(() => {
+      activeFill.style.transition = `width ${storyProgressRemaining}ms linear`;
+      activeFill.style.width = "100%";
+    });
+  }
+  if (activeStoryVideo) activeStoryVideo.play().catch(() => {});
+  storyProgressTimer = window.setTimeout(nextStory, storyProgressRemaining);
 }
 
 function openStoryViewer(index) {
@@ -1901,6 +2001,7 @@ function openStoryViewer(index) {
 
 function closeStoryViewer() {
   clearStoryProgress();
+  activeStoryVideo = null;
   if (el.storyViewer) el.storyViewer.hidden = true;
   if (el.storyViewerMedia) el.storyViewerMedia.textContent = "";
   if (el.storyViewerAuthor) el.storyViewerAuthor.textContent = "";
@@ -1919,6 +2020,7 @@ function renderStoryViewer() {
   const story = storyCache[activeStoryIndex];
   if (!story || !el.storyViewerMedia || !el.storyViewerAuthor) return closeStoryViewer();
   clearStoryProgress();
+  activeStoryVideo = null;
   el.storyViewerMedia.textContent = "";
   el.storyViewerAuthor.textContent = "";
   if (el.storyViewerReactions) el.storyViewerReactions.textContent = "";
@@ -1927,6 +2029,10 @@ function renderStoryViewer() {
   name.textContent = `@${storyLabel(story)}`;
   el.storyViewerAuthor.appendChild(name);
   if (el.storyReplyBtn) el.storyReplyBtn.disabled = isMineKey(story.authorKey);
+  if (el.storyReplyInput) {
+    el.storyReplyInput.disabled = isMineKey(story.authorKey);
+    el.storyReplyInput.placeholder = isMineKey(story.authorKey) ? "Your story" : "Send message...";
+  }
 
   if (el.storyViewerReactions) {
     const reactions = ["❤️", "🔥", "😂", "😮", "😢", "👍"];
@@ -1954,9 +2060,11 @@ function renderStoryViewer() {
     video.src = story.media.url;
     video.className = mediaClass;
     video.autoplay = true;
-    video.controls = true;
-    video.muted = true;
+    video.controls = false;
+    video.muted = reelMutePreference;
     video.playsInline = true;
+    activeStoryVideo = video;
+    if (el.storyMute) el.storyMute.textContent = video.muted ? "Muted" : "Sound";
     on(video, "loadedmetadata", () => {
       const duration = Number.isFinite(video.duration) && video.duration > 0 ? Math.min(video.duration * 1000, 15000) : 8000;
       startStoryProgress(duration);
@@ -3060,10 +3168,43 @@ async function loadReels() {
           if (!reel.likedByMe) likeReel().catch(() => {});
         },
       });
+      player.classList.add("reelPlayer");
+      const progress = document.createElement("div");
+      progress.className = "reelProgress";
+      const progressFill = document.createElement("span");
+      progress.appendChild(progressFill);
+      player.appendChild(progress);
       const video = player.querySelector("video");
       if (video) {
         video.loop = true;
         video.preload = "auto";
+        let pressTimer = null;
+        let longPressPaused = false;
+        on(video, "timeupdate", () => {
+          const total = Number(video.duration || 0);
+          progressFill.style.width = `${total ? (Number(video.currentTime || 0) / total) * 100 : 0}%`;
+        });
+        on(media, "pointerdown", (event) => {
+          if (event.target && event.target.closest && event.target.closest("button, a")) return;
+          longPressPaused = false;
+          pressTimer = window.setTimeout(() => {
+            if (!video.paused) {
+              longPressPaused = true;
+              video.pause();
+            }
+          }, 420);
+        });
+        on(media, "pointerup", () => {
+          if (pressTimer) window.clearTimeout(pressTimer);
+          pressTimer = null;
+          if (longPressPaused) video.play().catch(() => {});
+          longPressPaused = false;
+        });
+        on(media, "pointercancel", () => {
+          if (pressTimer) window.clearTimeout(pressTimer);
+          pressTimer = null;
+          longPressPaused = false;
+        });
         let viewTimer = null;
         const markView = () => {
           if (!reel.id || reelViewedIds.has(String(reel.id))) return;
@@ -3745,6 +3886,78 @@ function bindOverlayClose(overlay, onClose) {
   });
 }
 
+function ensureMediaPicker() {
+  if (el.mediaPicker) return;
+  const overlay = document.createElement("div");
+  overlay.id = "mediaPicker";
+  overlay.className = "mediaPickerOverlay";
+  overlay.hidden = true;
+  overlay.innerHTML = `
+    <section class="mediaPickerSheet glass" role="dialog" aria-modal="true" aria-label="Choose media">
+      <div class="sheet-handle"></div>
+      <h3>Choose media</h3>
+      <div class="mediaPickerGrid">
+        <button type="button" data-media-choice="camera">${icon("image")}<span>Camera</span></button>
+        <button type="button" data-media-choice="gallery">${icon("image")}<span>Gallery</span></button>
+        <button type="button" data-media-choice="video">${icon("video")}<span>Video</span></button>
+        <button type="button" data-media-choice="files">${icon("plus")}<span>Files</span></button>
+      </div>
+      <button id="mediaPickerCancel" class="sheet-cancel" type="button">Cancel</button>
+    </section>
+  `;
+  document.body.appendChild(overlay);
+  el.mediaPicker = overlay;
+  el.mediaPickerCancel = overlay.querySelector("#mediaPickerCancel");
+  on(el.mediaPickerCancel, "click", closeMediaPicker);
+  bindOverlayClose(overlay, closeMediaPicker);
+  for (const btn of overlay.querySelectorAll("[data-media-choice]")) {
+    on(btn, "click", () => chooseMediaSource(btn.getAttribute("data-media-choice") || "gallery"));
+  }
+}
+
+function inputForMediaTarget(target) {
+  if (target === "story") return ensureStoryFileInput();
+  if (target === "dm") return el.dmFiles;
+  if (target === "avatar") return el.avatarFile;
+  return el.composeFiles;
+}
+
+function openMediaPicker(target) {
+  ensureMediaPicker();
+  mediaPickerTarget = target || "post";
+  if (el.mediaPicker) {
+    el.mediaPicker.hidden = false;
+    window.requestAnimationFrame(() => el.mediaPicker.classList.add("show"));
+  }
+}
+
+function closeMediaPicker() {
+  if (!el.mediaPicker) return;
+  el.mediaPicker.classList.remove("show");
+  window.setTimeout(() => {
+    if (el.mediaPicker) el.mediaPicker.hidden = true;
+  }, 180);
+}
+
+function chooseMediaSource(choice) {
+  const input = inputForMediaTarget(mediaPickerTarget);
+  if (!input) return closeMediaPicker();
+  input.removeAttribute("capture");
+  if (mediaPickerTarget === "avatar") {
+    input.accept = "image/*";
+  } else if (mediaPickerTarget === "story") {
+    input.accept = choice === "video" ? "video/*" : choice === "files" ? "image/*,video/*" : "image/*,video/*";
+  } else if (mediaPickerTarget === "dm") {
+    input.accept = choice === "files" ? "image/*,video/*,audio/*" : choice === "video" ? "video/*" : "image/*,video/*,audio/*";
+  } else {
+    input.accept = choice === "files" ? "image/*,video/*,audio/*" : choice === "video" ? "video/*" : "image/*,video/*";
+  }
+  if (choice === "camera") input.setAttribute("capture", "environment");
+  if (choice === "video") input.setAttribute("capture", "environment");
+  closeMediaPicker();
+  window.setTimeout(() => input.click(), 40);
+}
+
 function ensureAiAssistant() {
   if (el.aiFab) return;
   const fab = document.createElement("button");
@@ -4096,7 +4309,7 @@ async function boot() {
     }
   });
   on(el.dmAttach, "click", () => {
-    if (el.dmFiles && activeDmPeer) el.dmFiles.click();
+    if (el.dmFiles && activeDmPeer) openMediaPicker("dm");
   });
   on(el.dmFiles, "change", async () => {
     const files = Array.from(el.dmFiles?.files || []);
@@ -4208,7 +4421,7 @@ async function boot() {
   if (el.composeModal) bindOverlayClose(el.composeModal, () => closeCompose());
   on(el.composeText, "input", () => updateComposeCount());
   on(el.composeAddMedia, "click", () => {
-    if (el.composeFiles) el.composeFiles.click();
+    if (el.composeFiles) openMediaPicker("post");
   });
   on(el.composeFiles, "change", async () => {
     // Snapshot the FileList before clearing the input value.
@@ -4245,7 +4458,7 @@ async function boot() {
   on(el.profileClose, "click", () => closeProfileEdit());
   bindOverlayClose(el.profileModal, () => closeProfileEdit());
   on(el.avatarPick, "click", () => {
-    if (el.avatarFile) el.avatarFile.click();
+    if (el.avatarFile) openMediaPicker("avatar");
   });
   on(el.avatarRemove, "click", () => {
     pendingAvatarUrl = "";
