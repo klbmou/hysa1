@@ -3750,6 +3750,33 @@ function createSkeletonPost() {
   return node;
 }
 
+function stableFeedJitter(post) {
+  const raw = String(post && (post.id || post.createdAt || post.authorKey || post.author || ""));
+  let hash = 0;
+  for (let i = 0; i < raw.length; i++) {
+    hash = ((hash << 5) - hash + raw.charCodeAt(i)) | 0;
+  }
+  return (Math.abs(hash) % 100) / 1000;
+}
+
+function smartRankFeedPosts(posts) {
+  const now = Date.now();
+  return [...(Array.isArray(posts) ? posts : [])].sort((a, b) => {
+    const aTime = new Date(a.createdAt || a.created_at || 0).getTime() || 0;
+    const bTime = new Date(b.createdAt || b.created_at || 0).getTime() || 0;
+    const aAgeHours = aTime ? Math.max(0, (now - aTime) / 3600000) : 9999;
+    const bAgeHours = bTime ? Math.max(0, (now - bTime) / 3600000) : 9999;
+    const aEngagement = (Number(a.likeCount || a.likes || 0) * 3) + (Number(a.commentCount || a.comments || 0) * 4);
+    const bEngagement = (Number(b.likeCount || b.likes || 0) * 3) + (Number(b.commentCount || b.comments || 0) * 4);
+    const aRecency = aAgeHours <= 1 ? 120 : aAgeHours <= 24 ? 70 : aAgeHours <= 168 ? 30 : 0;
+    const bRecency = bAgeHours <= 1 ? 120 : bAgeHours <= 24 ? 70 : bAgeHours <= 168 ? 30 : 0;
+    const aScore = aRecency + aEngagement + stableFeedJitter(a);
+    const bScore = bRecency + bEngagement + stableFeedJitter(b);
+    if (bScore !== aScore) return bScore - aScore;
+    return bTime - aTime;
+  });
+}
+
 async function loadFeed({ reset = false } = {}) {
   if (!el.feed) return;
   if (!getToken()) {
@@ -3760,7 +3787,7 @@ async function loadFeed({ reset = false } = {}) {
   const cacheKey = "home:page1:limit10";
   if (reset && feedCache.key === cacheKey && feedCache.payload && Date.now() - feedCache.timestamp < FEED_CACHE_TTL) {
     const cached = feedCache.payload;
-    const posts = Array.isArray(cached.posts) ? cached.posts : [];
+    const posts = smartRankFeedPosts(cached.posts);
     feedCursor = cached.nextCursor || null;
     feedPage = cached.nextPage || 2;
     el.feed.textContent = "";
@@ -3806,7 +3833,7 @@ async function loadFeed({ reset = false } = {}) {
     url.searchParams.set("page", String(feedPage));
 
     const r = await api(url.pathname + url.search, { method: "GET" });
-    const posts = Array.isArray(r.posts) ? r.posts : [];
+    const posts = smartRankFeedPosts(r.posts);
     feedCursor = r.nextCursor;
     feedPage = r.nextPage || (feedPage + 1);
     if (reset) feedCache = { key: cacheKey, timestamp: Date.now(), payload: r };
