@@ -45,11 +45,20 @@ let feedObserver = null;
 let postViewObserver = null;
 const sentViews = new Set();
 const FEED_CACHE_TTL = 30000;
+const SEEN_POSTS_KEY = "hysa_seen_posts";
+const HOME_SCROLL_KEY = "hysa_home_scroll_y";
 let feedCache = { key: "", timestamp: 0, payload: null };
 let activeProfileKey = null;
 let activePostId = null;
 let activeProfileTab = "posts";
 let storyCache = [];
+let seenPostIds = new Set();
+try {
+  const storedSeen = JSON.parse(localStorage.getItem(SEEN_POSTS_KEY) || "[]");
+  if (Array.isArray(storedSeen)) seenPostIds = new Set(storedSeen.map(String));
+} catch {
+  seenPostIds = new Set();
+}
 let storyGroups = [];
 let activeStoryIndex = 0;
 let storyProgressTimer = null;
@@ -1145,6 +1154,37 @@ function resetMainScroll() {
   if (el.feed) el.feed.scrollTop = 0;
   if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
   window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+}
+
+function currentScrollY() {
+  return window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+}
+
+function rememberHomeScroll() {
+  if (activeProfileKey || activePostId) return;
+  const hash = location.hash || "#home";
+  if (hash !== "#home" && hash !== "#") return;
+  localStorage.setItem(HOME_SCROLL_KEY, String(Math.max(0, Math.round(currentScrollY()))));
+}
+
+function restoreHomeScroll() {
+  const y = Number(localStorage.getItem(HOME_SCROLL_KEY) || 0);
+  if (!Number.isFinite(y) || y <= 0) return;
+  window.requestAnimationFrame(() => {
+    window.scrollTo({ top: y, left: 0, behavior: "auto" });
+  });
+}
+
+function rememberSeenPost(postId) {
+  if (!postId) return;
+  const id = String(postId);
+  if (seenPostIds.has(id)) return;
+  seenPostIds.add(id);
+  try {
+    localStorage.setItem(SEEN_POSTS_KEY, JSON.stringify(Array.from(seenPostIds).slice(-600)));
+  } catch {
+    // localStorage may be full or unavailable; visual state can simply remain session-only.
+  }
 }
 
 function dmMessageSignature(messages) {
@@ -3222,6 +3262,7 @@ function quotedPostNode(post) {
 function postNode(post) {
   const root = document.createElement("div");
   root.className = "post";
+  if (post && seenPostIds.has(String(post.id))) root.classList.add("post-seen");
   const postHeart = document.createElement("div");
   postHeart.className = "heartBurst";
   postHeart.textContent = "♥";
@@ -3808,6 +3849,7 @@ async function loadFeed({ reset = false } = {}) {
       window.setTimeout(wireLightboxToFeed, 80);
     }
     updateFeedSentinel();
+    if (reset) window.requestAnimationFrame(restoreHomeScroll);
     return;
   }
   feedLoading = true;
@@ -3856,6 +3898,7 @@ async function loadFeed({ reset = false } = {}) {
       observeMediaPlayback(node);
     }
     window.setTimeout(wireLightboxToFeed, 80);
+    if (reset) restoreHomeScroll();
   } catch (err) {
     showFeedError(err, { reset });
   } finally {
@@ -4717,6 +4760,8 @@ function ensurePostViewObserver() {
         const node = e.target;
         const postId = node && node.dataset ? node.dataset.postId : "";
         if (!postId) continue;
+        rememberSeenPost(postId);
+        node.classList.add("post-seen");
         if (sentViews.has(postId)) {
           postViewObserver.unobserve(node);
           continue;
@@ -4901,6 +4946,7 @@ function closeExplorePage() {
 
 function route() {
   if (!getToken()) return;
+  rememberHomeScroll();
   const h = location.hash || "#home";
   const mProfile = /^#u\/(.+)$/.exec(h);
   const mPost = /^#p\/(.+)$/.exec(h);
@@ -4954,7 +5000,7 @@ function route() {
   if (el.feed) el.feed.hidden = false;
   clearProfileHeader();
   setViewTitle(t("feedTitle"));
-  loadFeed({ reset: true }).catch(() => {});
+  loadFeed({ reset: true }).then(restoreHomeScroll).catch(() => {});
 }
 
 function debounce(fn, ms) {
