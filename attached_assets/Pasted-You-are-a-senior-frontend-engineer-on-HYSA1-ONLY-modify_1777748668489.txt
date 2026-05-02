@@ -1,0 +1,103 @@
+You are a senior frontend engineer on HYSA1.
+ONLY modify these files:
+- frontend-web/public/styles.css
+- frontend-web/public/app.js
+
+DO NOT touch backend/server.js
+DO NOT add new libraries
+DO NOT break: reels, likes, voice messages, DMs
+
+═══════════════════════════════════════
+FIX 1 — Images/Videos Zoom Issue
+═══════════════════════════════════════
+Problem: media inside reels is being cropped/zoomed.
+
+Fix in styles.css:
+- Find every rule that has object-fit: cover on 
+  reel/post images and videos
+- Change to object-fit: contain
+- Add: background: #000 (black bars on sides)
+- Ensure:
+  width: 100%
+  height: 100%
+  max-width: 100%
+  max-height: 100%
+
+Fix in app.js:
+- Find any JS that sets zoom, scale, or transform 
+  on media elements
+- Remove or disable those lines
+- Make sure no inline styles force zoom
+
+Target elements:
+.reel-video, .reel-img, .post-media, 
+video, img inside .reel-card or .post-card
+
+═══════════════════════════════════════
+FIX 2 — Comments UI (Instagram style)
+═══════════════════════════════════════
+Problem: nested comments look like boxes inside boxes.
+
+Target design: clean, minimal, like Instagram.
+
+Fix in styles.css:
+
+ROOT COMMENT:
+- No border, no box-shadow
+- padding: 12px 0
+- border-bottom: 1px solid var(--border) only
+- avatar: 36px circle
+- username: bold 14px
+- text: regular 14px, --text-primary color
+- timestamp + like count: small, --text-secondary
+
+REPLY (nested):
+- margin-left: 48px (aligned after avatar)
+- No border box around reply
+- Same clean style as root comment
+- Smaller avatar: 28px
+- "Reply" button: text only, no border, accent color
+
+REPLY TOGGLE BUTTON:
+- "View X replies" text only
+- margin-left: 48px
+- accent color, no background
+- small arrow icon
+
+REMOVE:
+- All nested border boxes
+- Heavy backgrounds on comments
+- Multiple levels of padding boxes
+
+Fix in app.js:
+- Find comment/reply render function
+- Remove any wrapper divs that create box-in-box effect
+- Simplify HTML structure to:
+
+<div class="comment">
+  <img class="comment-avatar">
+  <div class="comment-body">
+    <span class="comment-username">name</span>
+    <span class="comment-text">text</span>
+    <div class="comment-actions">
+      <span class="comment-time">2h</span>
+      <button class="comment-like">❤️ 3</button>
+      <button class="comment-reply-btn">Reply</button>
+    </div>
+  </div>
+</div>
+
+<div class="comment reply"> ← same structure, just indented
+  ...
+</div>
+
+═══════════════════════════════════════
+RULES
+═══════════════════════════════════════
+- Fix one issue at a time
+- Run node --check after each fix
+- Tell me exactly which lines changed
+- Do not change any other UI elements
+- Keep all existing functionality working
+
+START with Fix 1 (media zoom) now.
