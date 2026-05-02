@@ -97,6 +97,8 @@ async function initPostgresSchema() {
     const schemaPath = path.join(__dirname, "schema.sql");
     const schemaSql = fs.readFileSync(schemaPath, "utf8");
     await pgPool.query(schemaSql);
+    await pgPool.query("ALTER TABLE IF EXISTS reels ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0");
+    await pgPool.query("ALTER TABLE IF EXISTS reels ADD COLUMN IF NOT EXISTS viewed_by TEXT[] DEFAULT '{}'");
     console.log("[postgres] Schema initialized (CREATE TABLE IF NOT EXISTS)");
   } catch (err) {
     console.error("[postgres] Schema initialization failed:", err.message);
@@ -668,6 +670,60 @@ async function pgFindAllPosts() {
     originalId: row.original_id,
     authorId: row.author_id,
     viewedBy: row.viewed_by,
+  }));
+}
+
+async function pgFindRankedReelPosts(viewer, limit, cursor) {
+  const viewerKey = String(viewer && viewer.userKey || "");
+  const viewerFollowing = asArray(viewer && viewer.following).map(String);
+  const res = await pgPool.query(
+    `SELECT p.*,
+      (
+        (CARDINALITY(COALESCE(p.likes, '{}')) * 3) +
+        COALESCE(p.views, 0) +
+        CASE
+          WHEN p.created_at >= NOW() - INTERVAL '1 hour' THEN 500
+          WHEN p.created_at >= NOW() - INTERVAL '24 hours' THEN 200
+          WHEN p.created_at >= NOW() - INTERVAL '7 days' THEN 50
+          ELSE 0
+        END
+      ) AS reel_score,
+      CASE
+        WHEN p.author_key = ANY($2::text[]) THEN 0
+        WHEN p.author_key = $1 THEN 0
+        ELSE 1
+      END AS relationship_rank
+     FROM posts p
+     LEFT JOIN users u ON u.user_key = p.author_key
+     WHERE EXISTS (
+       SELECT 1 FROM jsonb_array_elements(COALESCE(p.media, '[]'::jsonb)) AS media_item
+       WHERE media_item->>'kind' = 'video'
+     )
+     AND (
+       p.visibility = 'public'
+       OR p.author_key = $1
+       OR p.author_key = ANY($2::text[])
+     )
+     AND (
+       COALESCE(u.is_private, FALSE) = FALSE
+       OR p.author_key = $1
+       OR p.author_key = ANY($2::text[])
+     )
+     ORDER BY relationship_rank ASC, reel_score DESC, p.created_at DESC, p.id DESC
+     OFFSET $3 LIMIT $4`,
+    [viewerKey, viewerFollowing, cursor, limit + 1],
+  );
+  return res.rows.map((row) => ({
+    ...row,
+    authorKey: row.author_key,
+    repostOf: row.repost_of,
+    quoteText: row.quote_text,
+    isRepost: row.is_repost,
+    repostType: row.repost_type,
+    originalId: row.original_id,
+    authorId: row.author_id,
+    viewedBy: row.viewed_by,
+    reelScore: Number(row.reel_score || 0),
   }));
 }
 
@@ -1604,6 +1660,7 @@ async function toPublicPost(p, viewer) {
     likeCount: likes.length,
     commentCount: comments.length,
     viewCount,
+    views: viewCount,
     repostCount,
     bookmarkCount: bookmarks.length,
     likedByMe,
@@ -1666,6 +1723,39 @@ async function canViewerSeePost(post, viewer) {
   return true;
 }
 
+function reelRecencyBonus(post) {
+  const createdAt = new Date(String(post && (post.createdAt || post.created_at) || ""));
+  const ageMs = Date.now() - createdAt.getTime();
+  if (!Number.isFinite(ageMs)) return 0;
+  if (ageMs <= 60 * 60 * 1000) return 500;
+  if (ageMs <= 24 * 60 * 60 * 1000) return 200;
+  if (ageMs <= 7 * 24 * 60 * 60 * 1000) return 50;
+  return 0;
+}
+
+function reelRankScore(post) {
+  const likes = asArray(post && post.likes).length;
+  const views = Number.isFinite(Number(post && post.views)) ? Number(post.views) : 0;
+  return (likes * 3) + views + reelRecencyBonus(post);
+}
+
+function sortReelsForViewer(posts, viewer) {
+  const viewerKey = String(viewer && viewer.userKey || "");
+  const following = asArray(viewer && viewer.following).map(String);
+  return posts.slice().sort((a, b) => {
+    const aAuthor = String(a && (a.authorKey || normalizeUsername(a.author).key) || "");
+    const bAuthor = String(b && (b.authorKey || normalizeUsername(b.author).key) || "");
+    const aFollowed = aAuthor === viewerKey || following.includes(aAuthor);
+    const bFollowed = bAuthor === viewerKey || following.includes(bAuthor);
+    if (aFollowed !== bFollowed) return aFollowed ? -1 : 1;
+    const scoreDelta = reelRankScore(b) - reelRankScore(a);
+    if (scoreDelta) return scoreDelta;
+    const aTime = new Date(String(a && (a.createdAt || a.created_at) || "")).getTime() || 0;
+    const bTime = new Date(String(b && (b.createdAt || b.created_at) || "")).getTime() || 0;
+    return bTime - aTime;
+  });
+}
+
 async function nextPostId() {
   if (USE_POSTGRES) {
     const posts = await pgFindAllPosts();
@@ -1725,6 +1815,7 @@ function toPublicMediaList(media) {
       mime: String(m && m.mime ? m.mime : ""),
       type: String(m && m.type ? m.type : ""),
       effect: String(m && m.effect ? m.effect : ""),
+      speed: Number.isFinite(Number(m && m.speed)) ? Number(m.speed) : undefined,
       duration: Number.isFinite(Number(m && m.duration)) ? Number(m.duration) : undefined,
     }))
     .filter((m) => m.kind && m.mime)
@@ -1750,6 +1841,7 @@ function validateDmMediaList(media) {
       mime: String(m.mime),
       type: String(m.type || ""),
       effect: String(m.effect || ""),
+      speed: Number.isFinite(Number(m.speed)) ? Number(m.speed) : undefined,
       duration: Number.isFinite(Number(m.duration)) ? Number(m.duration) : undefined,
     })),
   };
@@ -2234,11 +2326,23 @@ app.get("/api/reels", async (req, res) => {
   const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(40, limitRaw)) : 15;
   const cursorRaw = Number.parseInt(String(req.query.cursor || "0"), 10);
   const cursor = Number.isFinite(cursorRaw) && cursorRaw >= 0 ? cursorRaw : 0;
-  const all = await visiblePostsForViewer(viewer);
-  const candidates = all.filter((p) => asArray(p.media).some((m) => String(m.kind) === "video"));
-  const slice = candidates.slice(cursor, cursor + limit);
+  let slice;
+  let hasMore = false;
+  if (USE_POSTGRES) {
+    const ranked = await pgFindRankedReelPosts(viewer, limit, cursor);
+    slice = ranked.slice(0, limit);
+    hasMore = ranked.length > limit;
+  } else {
+    const all = await visiblePostsForViewer(viewer);
+    const candidates = sortReelsForViewer(
+      all.filter((p) => asArray(p.media).some((m) => String(m.kind) === "video")),
+      viewer,
+    );
+    slice = candidates.slice(cursor, cursor + limit);
+    hasMore = cursor + slice.length < candidates.length;
+  }
   const reels = await Promise.all(slice.map((p) => toPublicPost(p, viewer)));
-  const nextCursor = cursor + slice.length < candidates.length ? String(cursor + slice.length) : null;
+  const nextCursor = hasMore ? String(cursor + slice.length) : null;
   return res.status(200).json({ ok: true, reels, nextCursor });
 });
 
@@ -2768,7 +2872,7 @@ app.delete("/api/posts/:id", async (req, res) => {
   return res.status(200).json({ ok: true });
 });
 
-app.post("/api/posts/:id/view", async (req, res) => {
+async function handlePostView(req, res) {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
 
@@ -2790,7 +2894,11 @@ app.post("/api/posts/:id/view", async (req, res) => {
   }
   const viewCount = Number.isFinite(Number(post.views)) ? Number(post.views) : 0;
   return res.status(200).json({ ok: true, viewCount });
-});
+}
+
+app.post("/api/reels/:id/view", handlePostView);
+
+app.post("/api/posts/:id/view", handlePostView);
 
 app.post("/api/profile", async (req, res) => {
   const viewer = await requireAuth(req, res);

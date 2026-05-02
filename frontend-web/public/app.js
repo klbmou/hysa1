@@ -72,6 +72,10 @@ let lastDmInboxSignature = "";
 let aiMode = "chat";
 let reelMutePreference = localStorage.getItem("hysa_reels_muted") !== "false";
 const reelViewedIds = new Set();
+const REELS_CACHE_TTL = 60000;
+let reelsCache = { timestamp: 0, payload: null };
+let reelsLoading = false;
+let reelScrollTicking = false;
 
 const STORY_FILTERS = [
   { key: "normal", label: "Normal" },
@@ -857,6 +861,7 @@ let dmRecordingChunks = [];
 let dmRecordingStartedAt = 0;
 let dmRecordingTimer = null;
 let dmVoiceDraft = null;
+let dmRecordingStream = null;
 
 function formatDuration(seconds) {
   const n = Number.isFinite(Number(seconds)) ? Math.max(0, Math.floor(Number(seconds))) : 0;
@@ -865,14 +870,16 @@ function formatDuration(seconds) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function customAudioPlayer(url, { compact = false, effect = "" } = {}) {
+function customAudioPlayer(url, { compact = false, effect = "", speed = 1 } = {}) {
   const wrap = document.createElement("div");
   wrap.className = `voicePlayer ${compact ? "compact" : ""}`.trim();
 
   const audio = document.createElement("audio");
   audio.src = url;
   audio.preload = "metadata";
-  audio.playbackRate = effect === "deep" ? 0.78 : effect === "high" ? 1.22 : 1;
+  const speeds = [1, 1.5, 2];
+  let speedIndex = Math.max(0, speeds.indexOf(Number(speed) || 1));
+  audio.playbackRate = speeds[speedIndex] || (effect === "deep" ? 0.5 : effect === "high" ? 1.5 : 1);
 
   const play = document.createElement("button");
   play.type = "button";
@@ -891,6 +898,10 @@ function customAudioPlayer(url, { compact = false, effect = "" } = {}) {
   const time = document.createElement("span");
   time.className = "voiceTime";
   time.textContent = "0:00";
+  const speedBtn = document.createElement("button");
+  speedBtn.type = "button";
+  speedBtn.className = "voiceSpeed";
+  speedBtn.textContent = `${audio.playbackRate}x`;
 
   on(play, "click", () => {
     if (audio.paused) audio.play().catch(() => {});
@@ -910,19 +921,25 @@ function customAudioPlayer(url, { compact = false, effect = "" } = {}) {
     audio.currentTime = 0;
   });
   on(audio, "loadedmetadata", () => {
-    time.textContent = formatDuration(audio.duration);
+    time.textContent = `0:00 / ${formatDuration(audio.duration)}`;
   });
   on(audio, "timeupdate", () => {
     const total = Number(audio.duration || 0);
     const current = Number(audio.currentTime || 0);
-    time.textContent = formatDuration(total ? Math.max(0, total - current) : current);
+    time.textContent = `${formatDuration(current)} / ${formatDuration(total || current)}`;
     wrap.style.setProperty("--progress", total ? String(current / total) : "0");
+  });
+  on(speedBtn, "click", () => {
+    speedIndex = (speedIndex + 1) % speeds.length;
+    audio.playbackRate = speeds[speedIndex];
+    speedBtn.textContent = `${speeds[speedIndex]}x`;
   });
 
   wrap.appendChild(audio);
   wrap.appendChild(play);
   wrap.appendChild(wave);
   wrap.appendChild(time);
+  wrap.appendChild(speedBtn);
   return wrap;
 }
 
@@ -1069,8 +1086,16 @@ function observeMediaPlayback(root) {
         for (const entry of entries) {
           const v = entry.target;
           if (!(v instanceof HTMLVideoElement)) continue;
-          if (entry.isIntersecting) v.play().catch(() => {});
-          else v.pause();
+          if (entry.isIntersecting) {
+            if (v.closest("#reelsView")) {
+              for (const other of document.querySelectorAll("#reelsView .reelCard video")) {
+                if (other !== v) other.pause();
+              }
+            }
+            v.play().catch(() => {});
+          } else {
+            v.pause();
+          }
         }
       },
       { threshold: 0.72 },
@@ -1191,7 +1216,7 @@ function renderDmMessage(message) {
     } else if (item.kind === "video") {
       wrap.appendChild(customVideoPlayer(item.url));
     } else if (item.kind === "audio") {
-      wrap.appendChild(customAudioPlayer(item.url, { compact: true, effect: item.effect || "" }));
+      wrap.appendChild(customAudioPlayer(item.url, { compact: true, effect: item.effect || "", speed: item.speed || 1 }));
     }
     b.appendChild(wrap);
   }
@@ -1287,9 +1312,11 @@ function ensureDmRecordStatus() {
       <button type="button" data-record-stop>Stop</button>
       <button type="button" data-record-cancel>Cancel</button>
       <button type="button" data-voice-play>Play</button>
-      <button type="button" data-voice-delete>Delete</button>
-      <button type="button" data-voice-effect="deep">Deep</button>
-      <button type="button" data-voice-effect="high">High</button>
+      <button type="button" data-voice-rerecord>Re-record</button>
+      <button type="button" data-voice-speed="0.5">0.5x</button>
+      <button type="button" data-voice-speed="1">1x</button>
+      <button type="button" data-voice-speed="1.5">1.5x</button>
+      <button type="button" data-voice-speed="2">2x</button>
       <button type="button" data-voice-send>Send</button>
     </div>`;
   const wave = status.querySelector(".recordWave");
@@ -1300,10 +1327,14 @@ function ensureDmRecordStatus() {
   }
   on(status.querySelector("[data-record-stop]"), "click", () => stopDmRecording());
   on(status.querySelector("[data-record-cancel]"), "click", () => stopDmRecording({ cancel: true }));
-  on(status.querySelector("[data-voice-delete]"), "click", clearDmVoiceDraft);
+  on(status.querySelector("[data-voice-rerecord]"), "click", () => {
+    clearDmVoiceDraft();
+    startDmRecording().catch(() => showToast("Microphone permission was denied.", true));
+  });
   on(status.querySelector("[data-voice-send]"), "click", sendDmVoiceDraft);
-  on(status.querySelector("[data-voice-effect='deep']"), "click", () => setDmVoiceEffect("deep"));
-  on(status.querySelector("[data-voice-effect='high']"), "click", () => setDmVoiceEffect("high"));
+  for (const speedBtn of status.querySelectorAll("[data-voice-speed]")) {
+    on(speedBtn, "click", () => setDmVoiceSpeed(Number(speedBtn.getAttribute("data-voice-speed")) || 1));
+  }
   on(status.querySelector("[data-voice-play]"), "click", () => {
     if (!dmVoiceDraft?.audio) return;
     if (dmVoiceDraft.audio.paused) dmVoiceDraft.audio.play().catch(() => {});
@@ -1335,6 +1366,7 @@ function updateDmSendState() {
 }
 
 function clearDmVoiceDraft() {
+  document.getElementById("dmRecordStatus")?.classList.remove("sending");
   if (dmVoiceDraft?.url) URL.revokeObjectURL(dmVoiceDraft.url);
   if (dmVoiceDraft?.audio) dmVoiceDraft.audio.pause();
   dmVoiceDraft = null;
@@ -1343,14 +1375,15 @@ function clearDmVoiceDraft() {
   updateDmSendState();
 }
 
-function setDmVoiceEffect(effect) {
+function setDmVoiceSpeed(speed) {
   if (!dmVoiceDraft?.audio) return;
-  dmVoiceDraft.effect = effect;
-  dmVoiceDraft.audio.playbackRate = effect === "deep" ? 0.78 : effect === "high" ? 1.22 : 1;
+  const nextSpeed = [0.5, 1, 1.5, 2].includes(Number(speed)) ? Number(speed) : 1;
+  dmVoiceDraft.speed = nextSpeed;
+  dmVoiceDraft.audio.playbackRate = nextSpeed;
   const status = ensureDmRecordStatus();
   if (status) {
-    for (const btn of status.querySelectorAll("[data-voice-effect]")) {
-      btn.classList.toggle("active", btn.getAttribute("data-voice-effect") === effect);
+    for (const btn of status.querySelectorAll("[data-voice-speed]")) {
+      btn.classList.toggle("active", Number(btn.getAttribute("data-voice-speed")) === nextSpeed);
     }
   }
 }
@@ -1361,7 +1394,8 @@ function createDmVoiceDraft(blob, duration, mime) {
   const voiceBlob = blob.type === cleanMime ? blob : new Blob([blob], { type: cleanMime });
   const url = URL.createObjectURL(voiceBlob);
   const audio = new Audio(url);
-  dmVoiceDraft = { blob: voiceBlob, duration, mime: cleanMime, url, audio, effect: "" };
+  dmVoiceDraft = { blob: voiceBlob, duration, mime: cleanMime, url, audio, speed: 1 };
+  setDmVoiceSpeed(1);
   setDmRecordStatus("preview", formatDuration(duration));
   updateDmSendState();
 }
@@ -1377,12 +1411,14 @@ async function sendDmVoiceDraft() {
     const ext = mime.includes("mp4") ? "m4a" : mime.includes("ogg") ? "ogg" : "webm";
     const file = new File([dmVoiceDraft.blob], `voice-message-${Date.now()}.${ext}`, { type: mime });
     const media = await uploadFile(file);
+    const statusNode = ensureDmRecordStatus();
+    statusNode?.classList.add("sending");
     await sendDmMessage({
       media: [{
         ...media,
         type: "voice",
         duration: dmVoiceDraft.duration,
-        effect: dmVoiceDraft.effect || "",
+        speed: dmVoiceDraft.speed || 1,
       }],
     });
     showToast("Voice message sent.");
@@ -1393,6 +1429,58 @@ async function sendDmVoiceDraft() {
   } finally {
     if (sendBtn) sendBtn.disabled = false;
   }
+}
+
+async function startDmRecording() {
+  if (!activeDmPeer) return;
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    showToast("Voice recording is not supported in this browser.", true);
+    return;
+  }
+  clearDmVoiceDraft();
+  dmRecordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  dmRecordingChunks = [];
+  const preferredMime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"]
+    .find((type) => window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(type)) || "";
+  dmRecorder = preferredMime ? new MediaRecorder(dmRecordingStream, { mimeType: preferredMime }) : new MediaRecorder(dmRecordingStream);
+  dmRecorder.ondataavailable = (event) => {
+    if (event.data && event.data.size) dmRecordingChunks.push(event.data);
+  };
+  dmRecorder.onstop = () => {
+    if (dmRecordingStream) dmRecordingStream.getTracks().forEach((track) => track.stop());
+    dmRecordingStream = null;
+    if (dmRecordingTimer) window.clearInterval(dmRecordingTimer);
+    dmRecordingTimer = null;
+    el.dmRecord?.classList.remove("recording");
+    if (dmRecorder._hysaCancel) {
+      dmRecordingChunks = [];
+      setDmRecordStatus("idle");
+      showToast("Recording cancelled.");
+      dmRecorder = null;
+      return;
+    }
+    try {
+      const duration = Math.max(1, Math.round((Date.now() - dmRecordingStartedAt) / 1000));
+      const mime = dmRecorder.mimeType || "audio/webm";
+      const blob = new Blob(dmRecordingChunks, { type: mime });
+      if (!blob.size) throw new Error("UPLOAD_INVALID");
+      createDmVoiceDraft(blob, duration, mime);
+      showToast("Voice preview ready.");
+    } catch (err) {
+      setDmRecordStatus("error", humanizeError(err?.message, t("error_upload_invalid")));
+      showToast(humanizeError(err?.message, t("error_upload_invalid")), true);
+    } finally {
+      dmRecorder = null;
+    }
+  };
+  dmRecorder.start(250);
+  el.dmRecord?.classList.add("recording");
+  dmRecordingStartedAt = Date.now();
+  setDmRecordStatus("recording", "0:00");
+  dmRecordingTimer = window.setInterval(() => {
+    setDmRecordStatus("recording", formatDuration((Date.now() - dmRecordingStartedAt) / 1000));
+  }, 250);
+  showToast("Recording... tap Stop to preview.");
 }
 
 async function refreshDmInbox({ silent = false } = {}) {
@@ -3466,6 +3554,8 @@ async function loadFeed({ reset = false } = {}) {
 
 async function loadReels() {
   if (!el.reelsView || !el.feed) return;
+  if (reelsLoading) return;
+  reelsLoading = true;
   el.reelsView.hidden = false;
   el.feed.hidden = true;
   resetMainScroll();
@@ -3484,10 +3574,20 @@ async function loadReels() {
   });
   el.reelsView.appendChild(exit);
   const loading = document.createElement("div");
-  loading.className = "reelsLoading";
+  loading.className = "reelsLoading reelsSkeleton";
   loading.textContent = t("loading");
   el.reelsView.appendChild(loading);
-  const r = await api("/api/reels?limit=20", { method: "GET" });
+  let r = null;
+  try {
+    if (reelsCache.payload && Date.now() - reelsCache.timestamp < REELS_CACHE_TTL) {
+      r = reelsCache.payload;
+    } else {
+      r = await api("/api/reels?limit=20", { method: "GET" });
+      reelsCache = { timestamp: Date.now(), payload: r };
+    }
+  } finally {
+    reelsLoading = false;
+  }
   const reels = Array.isArray(r.reels) ? r.reels : [];
   loading.remove();
   if (!reels.length) {
@@ -3523,6 +3623,15 @@ async function loadReels() {
     heart.textContent = "\u2665";
     const actions = document.createElement("div");
     actions.className = "reelActions";
+    const profileAction = document.createElement("div");
+    profileAction.className = "reelProfileAction";
+    profileAction.appendChild(avatarNode(reel.authorAvatar, reel.author, "sm"));
+    const followAction = document.createElement("button");
+    followAction.type = "button";
+    followAction.className = "reelFollowMini";
+    followAction.textContent = reel.isFollowingAuthor ? "\u2713" : "+";
+    followAction.hidden = isMineKey(reel.authorKey);
+    profileAction.appendChild(followAction);
     const likeAction = document.createElement("button");
     likeAction.type = "button";
     likeAction.className = "reelActionBtn";
@@ -3535,6 +3644,10 @@ async function loadReels() {
     shareAction.type = "button";
     shareAction.className = "reelActionBtn";
     shareAction.innerHTML = `${icon("share")}<strong>Share</strong>`;
+    const moreAction = document.createElement("button");
+    moreAction.type = "button";
+    moreAction.className = "reelActionBtn";
+    moreAction.innerHTML = `${icon("more")}<strong>More</strong>`;
     const saveAction = document.createElement("button");
     saveAction.type = "button";
     saveAction.className = "reelActionBtn";
@@ -3548,42 +3661,35 @@ async function loadReels() {
     viewsAction.type = "button";
     viewsAction.className = "reelActionBtn static";
     setIconCountState(viewsAction, "eye", reel.viewCount || 0, false);
+    actions.appendChild(profileAction);
     actions.appendChild(likeAction);
     actions.appendChild(commentAction);
     actions.appendChild(shareAction);
-    actions.appendChild(saveAction);
-    actions.appendChild(messageAction);
-    actions.appendChild(viewsAction);
+    actions.appendChild(moreAction);
     const caption = document.createElement("div");
     caption.className = "reelCaption collapsed";
     const author = document.createElement("div");
     author.className = "reelAuthor";
-    author.appendChild(avatarNode(reel.authorAvatar, reel.author, "sm"));
     const authorLink = document.createElement("a");
     authorLink.href = `#u/${encodeURIComponent(reel.authorKey)}`;
     authorLink.textContent = `@${reel.author || "user"}`;
     author.appendChild(authorLink);
     const reelBadge = renderUserBadge({ verified: reel.verified, role: reel.authorRole, createdAt: reel.authorCreatedAt });
     if (reelBadge) author.appendChild(reelBadge);
-    if (!isMineKey(reel.authorKey)) {
-      const follow = document.createElement("button");
-      follow.type = "button";
-      follow.className = "reelFollow";
-      follow.textContent = reel.isFollowingAuthor ? t("unfollow") : t("follow");
-      on(follow, "click", async () => {
-        follow.disabled = true;
-        try {
-          const rFollow = await api(`/api/follow/${encodeURIComponent(reel.authorKey)}`, { method: "POST" });
-          reel.isFollowingAuthor = !!rFollow.following;
-          follow.textContent = reel.isFollowingAuthor ? t("unfollow") : t("follow");
-        } catch (err) {
-          showToast(humanizeError(err?.message), true);
-        } finally {
-          follow.disabled = false;
-        }
-      });
-      author.appendChild(follow);
+    async function toggleReelFollow() {
+      if (!reel.authorKey || isMineKey(reel.authorKey)) return;
+      followAction.disabled = true;
+      try {
+        const rFollow = await api(`/api/follow/${encodeURIComponent(reel.authorKey)}`, { method: "POST" });
+        reel.isFollowingAuthor = !!rFollow.following;
+        followAction.textContent = reel.isFollowingAuthor ? "\u2713" : "+";
+      } catch (err) {
+        showToast(humanizeError(err?.message), true);
+      } finally {
+        followAction.disabled = false;
+      }
     }
+    on(followAction, "click", toggleReelFollow);
     const captionText = richTextNode(reel.text || "");
     captionText.classList.add("reelText");
     const more = document.createElement("button");
@@ -3597,7 +3703,9 @@ async function loadReels() {
     const sound = document.createElement("button");
     sound.type = "button";
     sound.className = "reelSound";
-    sound.textContent = `Sound - ${reel.author || "HYSA"}`;
+    const soundMarquee = document.createElement("span");
+    soundMarquee.textContent = `\u266A Sound - ${reel.author || "HYSA"}`;
+    sound.appendChild(soundMarquee);
     on(sound, "click", () => showToast("Related reels for this sound are coming next."));
     caption.appendChild(author);
     caption.appendChild(captionText);
@@ -3607,8 +3715,11 @@ async function loadReels() {
     mute.type = "button";
     mute.className = "reelMute";
     mute.textContent = reelMutePreference ? "Muted" : "Sound";
+    const gradient = document.createElement("div");
+    gradient.className = "reelGradientOverlay";
     card.appendChild(mute);
     card.appendChild(media);
+    card.appendChild(gradient);
     card.appendChild(heart);
     card.appendChild(reactionPalette);
     card.appendChild(actions);
@@ -3673,7 +3784,15 @@ async function loadReels() {
         let longPressPaused = false;
         on(video, "timeupdate", () => {
           const total = Number(video.duration || 0);
-          progressFill.style.width = `${total ? (Number(video.currentTime || 0) / total) * 100 : 0}%`;
+          const pct = total ? Number(video.currentTime || 0) / total : 0;
+          progressFill.style.width = `${pct * 100}%`;
+          if (pct >= 0.8) {
+            const nextVideo = card.nextElementSibling?.querySelector?.("video");
+            if (nextVideo && nextVideo.preload !== "auto") {
+              nextVideo.preload = "auto";
+              nextVideo.load();
+            }
+          }
         });
         on(media, "pointerdown", (event) => {
           if (event.target && event.target.closest && event.target.closest("button, a")) return;
@@ -3698,21 +3817,44 @@ async function loadReels() {
           longPressPaused = false;
         });
         let viewTimer = null;
+        let reelInView = false;
+        const cancelReelViewTimer = () => {
+          if (viewTimer) window.clearTimeout(viewTimer);
+          viewTimer = null;
+        };
         const markView = () => {
-          if (!reel.id || reelViewedIds.has(String(reel.id))) return;
-          window.clearTimeout(viewTimer);
+          const reelId = String(reel.id || "");
+          if (!reelId || reelViewedIds.has(reelId) || viewTimer || !reelInView || video.paused) return;
           viewTimer = window.setTimeout(() => {
-            if (video.paused || reelViewedIds.has(String(reel.id))) return;
-            reelViewedIds.add(String(reel.id));
-            api(`/api/posts/${encodeURIComponent(reel.id)}/view`, { method: "POST", body: "{}" })
+            viewTimer = null;
+            if (!reelInView || video.paused || reelViewedIds.has(reelId)) return;
+            reelViewedIds.add(reelId);
+            api(`/api/reels/${encodeURIComponent(reelId)}/view`, { method: "POST", body: "{}" })
               .then((rView) => {
                 reel.viewCount = rView.viewCount ?? reel.viewCount;
+                reel.views = reel.viewCount;
                 setIconCountState(viewsAction, "eye", reel.viewCount || 0, false);
               })
               .catch(() => {});
-          }, 1800);
+          }, 3000);
         };
+        if ("IntersectionObserver" in window) {
+          const reelViewObserver = new IntersectionObserver(
+            (entries) => {
+              const entry = entries[0];
+              reelInView = !!(entry && entry.isIntersecting);
+              if (reelInView) markView();
+              else cancelReelViewTimer();
+            },
+            { root: null, threshold: 0.75 },
+          );
+          reelViewObserver.observe(card);
+        } else {
+          reelInView = true;
+        }
         on(video, "playing", markView);
+        on(video, "pause", cancelReelViewTimer);
+        on(video, "ended", cancelReelViewTimer);
         on(mute, "click", () => {
           video.muted = !video.muted;
           reelMutePreference = video.muted;
@@ -3743,6 +3885,28 @@ async function loadReels() {
     on(shareAction, "click", async () => {
       shareReel(reel);
     });
+    on(moreAction, "click", () => {
+      showActionSheet("Reel options", (body, close) => {
+        const viewInfo = document.createElement("div");
+        viewInfo.className = "sharePreviewCard";
+        viewInfo.innerHTML = `<strong>${formatCount(reel.viewCount || 0)} views</strong><span>@${reel.author || "HYSA"}</span>`;
+        body.appendChild(viewInfo);
+        const save = sheetButton(reel.bookmarkedByMe ? "Saved" : "Save");
+        on(save, "click", async () => {
+          close();
+          saveAction.click();
+        });
+        body.appendChild(save);
+        if (!isMineKey(reel.authorKey)) {
+          const dm = sheetButton("Message creator");
+          on(dm, "click", () => {
+            close();
+            if (reel.authorKey) location.hash = `#dm/${encodeURIComponent(reel.authorKey)}`;
+          });
+          body.appendChild(dm);
+        }
+      });
+    });
     on(messageAction, "click", () => {
       if (!reel.authorKey) return;
       location.hash = `#dm/${encodeURIComponent(reel.authorKey)}`;
@@ -3764,6 +3928,26 @@ async function loadReels() {
     video.preload = index < 2 ? "auto" : "metadata";
   });
   observeMediaPlayback(el.reelsView);
+  on(el.reelsView, "scroll", () => {
+    if (reelScrollTicking) return;
+    reelScrollTicking = true;
+    window.requestAnimationFrame(() => {
+      reelScrollTicking = false;
+      let best = null;
+      let bestOverlap = 0;
+      for (const video of el.reelsView.querySelectorAll(".reelCard video")) {
+        const rect = video.getBoundingClientRect();
+        const overlap = Math.max(0, Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0));
+        if (overlap > bestOverlap) {
+          bestOverlap = overlap;
+          best = video;
+        }
+      }
+      for (const video of el.reelsView.querySelectorAll(".reelCard video")) {
+        if (video !== best) video.pause();
+      }
+    });
+  }, { passive: true });
 }
 
 async function openReelComments(reel, commentAction) {
@@ -5027,53 +5211,8 @@ async function boot() {
         stopDmRecording();
         return;
       }
-      if (!navigator.mediaDevices || !window.MediaRecorder) {
-        showToast("Voice recording is not supported in this browser.", true);
-        return;
-      }
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        dmRecordingChunks = [];
-        const preferredMime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"]
-          .find((type) => window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(type)) || "";
-        dmRecorder = preferredMime ? new MediaRecorder(stream, { mimeType: preferredMime }) : new MediaRecorder(stream);
-        dmRecorder.ondataavailable = (event) => {
-          if (event.data && event.data.size) dmRecordingChunks.push(event.data);
-        };
-        dmRecorder.onstop = () => {
-          stream.getTracks().forEach((track) => track.stop());
-          if (dmRecordingTimer) window.clearInterval(dmRecordingTimer);
-          dmRecordingTimer = null;
-          el.dmRecord.classList.remove("recording");
-          if (dmRecorder._hysaCancel) {
-            dmRecordingChunks = [];
-            setDmRecordStatus("idle");
-            showToast("Recording cancelled.");
-            dmRecorder = null;
-            return;
-          }
-          try {
-            const duration = Math.max(1, Math.round((Date.now() - dmRecordingStartedAt) / 1000));
-            const mime = dmRecorder.mimeType || "audio/webm";
-            const blob = new Blob(dmRecordingChunks, { type: mime });
-            if (!blob.size) throw new Error("UPLOAD_INVALID");
-            createDmVoiceDraft(blob, duration, mime);
-            showToast("Voice preview ready.");
-          } catch (err) {
-            setDmRecordStatus("error", humanizeError(err?.message, t("error_upload_invalid")));
-            showToast(humanizeError(err?.message, t("error_upload_invalid")), true);
-          } finally {
-            dmRecorder = null;
-          }
-        };
-        dmRecorder.start(250);
-        el.dmRecord.classList.add("recording");
-        dmRecordingStartedAt = Date.now();
-        setDmRecordStatus("recording", "0:00");
-        dmRecordingTimer = window.setInterval(() => {
-          setDmRecordStatus("recording", formatDuration((Date.now() - dmRecordingStartedAt) / 1000));
-        }, 250);
-        showToast("Recording... tap Stop to preview.");
+        await startDmRecording();
       } catch {
         showToast("Microphone permission was denied.", true);
       }
