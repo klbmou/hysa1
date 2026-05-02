@@ -832,6 +832,8 @@ function hideAllOverlays() {
 
 let dmRecorder = null;
 let dmRecordingChunks = [];
+let dmRecordingStartedAt = 0;
+let dmRecordingTimer = null;
 
 function formatDuration(seconds) {
   const n = Number.isFinite(Number(seconds)) ? Math.max(0, Math.floor(Number(seconds))) : 0;
@@ -1120,9 +1122,14 @@ function openDmReactionPicker(message) {
 }
 
 function renderDmMessage(message) {
+  const row = document.createElement("div");
+  row.className = `dmMessageRow ${message.mine ? "mine" : "theirs"}`.trim();
   const b = document.createElement("div");
-  b.className = `dmBubble ${message.mine ? "mine" : ""}`.trim();
+  b.className = `dmBubble ${message.mine ? "mine" : "theirs"}`.trim();
   b.dataset.messageId = String(message.id || "");
+  if (!message.mine && activeDmPeerProfile) {
+    row.appendChild(avatarNode(activeDmPeerProfile.avatarUrl, activeDmPeerProfile.username, "xs"));
+  }
   const media = Array.isArray(message.media) ? message.media : [];
   if (message.text) {
     const text = document.createElement("div");
@@ -1177,7 +1184,8 @@ function renderDmMessage(message) {
   const summary = renderDmReactionSummary(message);
   if (summary) b.appendChild(summary);
   if (!b.childNodes.length) b.textContent = "Message";
-  return b;
+  row.appendChild(b);
+  return row;
 }
 
 function stopDmPolling() {
@@ -1228,6 +1236,42 @@ function renderDmThreadList(threads) {
     });
     el.dmThreads.appendChild(btn);
   }
+}
+
+function ensureDmRecordStatus() {
+  const bar = el.dmText?.closest(".dm-input-bar");
+  if (!bar) return null;
+  let status = document.getElementById("dmRecordStatus");
+  if (status) return status;
+  status = document.createElement("div");
+  status.id = "dmRecordStatus";
+  status.className = "dmRecordStatus";
+  status.hidden = true;
+  status.innerHTML = '<span class="recordDot"></span><strong>0:00</strong><div class="recordWave"></div><button type="button">Cancel</button>';
+  const wave = status.querySelector(".recordWave");
+  for (let i = 0; i < 18; i += 1) {
+    const barNode = document.createElement("span");
+    barNode.style.setProperty("--h", `${18 + ((i * 19) % 52)}%`);
+    wave.appendChild(barNode);
+  }
+  on(status.querySelector("button"), "click", () => stopDmRecording({ cancel: true }));
+  bar.parentElement?.insertBefore(status, bar);
+  return status;
+}
+
+function setDmRecordStatus(state, text = "") {
+  const status = ensureDmRecordStatus();
+  if (!status) return;
+  status.hidden = state === "idle";
+  status.dataset.state = state;
+  const label = status.querySelector("strong");
+  if (label && text) label.textContent = text;
+}
+
+function stopDmRecording({ cancel = false } = {}) {
+  if (!dmRecorder || dmRecorder.state === "inactive") return;
+  dmRecorder._hysaCancel = !!cancel;
+  dmRecorder.stop();
 }
 
 async function refreshDmInbox({ silent = false } = {}) {
@@ -1742,6 +1786,9 @@ function buildStoryGroups(stories) {
     if (!group.authorAvatar && story.authorAvatar) group.authorAvatar = story.authorAvatar;
   }
   const groups = Array.from(map.values());
+  groups.forEach((group) => {
+    group.stories.sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+  });
   groups.sort((a, b) => {
     const aLatest = a.stories[a.stories.length - 1];
     const bLatest = b.stories[b.stories.length - 1];
@@ -1759,6 +1806,14 @@ function storyGroupStartIndex(group) {
 
 function storyIndexById(id) {
   return storyCache.findIndex((story) => String(story.id) === String(id));
+}
+
+function openStoryById(id) {
+  const idx = storyIndexById(id);
+  if (idx >= 0) {
+    activeStoryIndex = idx;
+    renderStoryViewer();
+  }
 }
 
 function storyNode(group) {
@@ -2056,10 +2111,20 @@ function ensureStoryViewer() {
   el.storyReplyBtn = overlay.querySelector("#storyReplyBtn");
   el.storyPrev = overlay.querySelector("#storyPrev");
   el.storyNext = overlay.querySelector("#storyNext");
-  on(el.storyViewerClose, "click", closeStoryViewer);
-  on(el.storyPrev, "click", previousStory);
-  on(el.storyNext, "click", nextStory);
-  on(el.storyMute, "click", () => {
+  on(el.storyViewerClose, "click", (event) => {
+    event.stopPropagation();
+    closeStoryViewer();
+  });
+  on(el.storyPrev, "click", (event) => {
+    event.stopPropagation();
+    previousStory();
+  });
+  on(el.storyNext, "click", (event) => {
+    event.stopPropagation();
+    nextStory();
+  });
+  on(el.storyMute, "click", (event) => {
+    event.stopPropagation();
     if (!activeStoryVideo) return;
     activeStoryVideo.muted = !activeStoryVideo.muted;
     el.storyMute.textContent = activeStoryVideo.muted ? "Muted" : "Sound";
@@ -2074,6 +2139,7 @@ function ensureStoryViewer() {
   on(overlay, "pointercancel", resumePress);
   on(el.storyReplyForm, "submit", (event) => {
     event.preventDefault();
+    event.stopPropagation();
     const story = storyCache[activeStoryIndex];
     if (!story || !story.authorKey || isMineKey(story.authorKey)) return;
     const text = String(el.storyReplyInput?.value || "").trim();
@@ -2235,7 +2301,8 @@ function renderStoryViewer() {
       button.className = "storyReactionBtn";
       button.textContent = emoji;
       button.disabled = isMineKey(story.authorKey);
-      on(button, "click", async () => {
+      on(button, "click", async (event) => {
+        event.stopPropagation();
         try {
           await sendStoryReaction(story, emoji);
           showToast("Reaction sent.");
@@ -2283,9 +2350,16 @@ function renderStoryViewer() {
 }
 
 function nextStory() {
-  if (activeStoryIndex < storyCache.length - 1) {
-    activeStoryIndex += 1;
-    renderStoryViewer();
+  const { group, stories, index } = activeStoryGroupContext();
+  const nextInGroup = stories[index + 1];
+  if (nextInGroup) {
+    openStoryById(nextInGroup.id);
+    return;
+  }
+  const groupIndex = storyGroups.findIndex((item) => item === group || item.key === group?.key);
+  const nextGroup = storyGroups[groupIndex + 1];
+  if (nextGroup && nextGroup.stories.length) {
+    openStoryById(nextGroup.stories[0].id);
   } else {
     closeStoryViewer();
     loadStories().catch(() => {});
@@ -2293,9 +2367,16 @@ function nextStory() {
 }
 
 function previousStory() {
-  if (activeStoryIndex > 0) {
-    activeStoryIndex -= 1;
-    renderStoryViewer();
+  const { group, stories, index } = activeStoryGroupContext();
+  const prevInGroup = stories[index - 1];
+  if (prevInGroup) {
+    openStoryById(prevInGroup.id);
+    return;
+  }
+  const groupIndex = storyGroups.findIndex((item) => item === group || item.key === group?.key);
+  const prevGroup = storyGroups[groupIndex - 1];
+  if (prevGroup && prevGroup.stories.length) {
+    openStoryById(prevGroup.stories[prevGroup.stories.length - 1].id);
   } else {
     renderStoryViewer();
   }
@@ -2353,6 +2434,7 @@ function renderProfileHeader(profile) {
 
   const profileKey = String(profile.key || profile.userKey || profile.username || "").toLowerCase();
   const isMe = !!(me && (profileKey === currentUserKey() || profile.username === me.username));
+  const isFriend = !!profile.isFriend;
 
   const top = document.createElement("div");
   top.className = "profileTop";
@@ -2380,6 +2462,7 @@ function renderProfileHeader(profile) {
   ident.appendChild(nameWrap);
 
   const right = document.createElement("div");
+  right.className = "profileActions";
   if (isMe) {
     const insightsBtn = document.createElement("button");
     insightsBtn.type = "button";
@@ -2395,13 +2478,6 @@ function renderProfileHeader(profile) {
     on(edit, "click", () => openProfileEdit());
     right.appendChild(edit);
   } else {
-    const callBtn = document.createElement("button");
-    callBtn.type = "button";
-    callBtn.className = "btn ghost";
-    callBtn.innerHTML = `${icon("phone")}<span>Call</span>`;
-    on(callBtn, "click", () => initiateVideoCall(profileKey || activeProfileKey));
-    right.appendChild(callBtn);
-
     const msgBtn = document.createElement("button");
     msgBtn.type = "button";
     msgBtn.className = "btn ghost";
@@ -2413,14 +2489,16 @@ function renderProfileHeader(profile) {
 
     const followBtn = document.createElement("button");
     followBtn.type = "button";
-    followBtn.className = "btn ghost";
-    followBtn.textContent = profile.isFollowing ? t("unfollow") : t("follow");
+    followBtn.className = isFriend ? "btn primary" : "btn ghost";
+    followBtn.textContent = isFriend ? "Friend" : profile.isFollowing ? t("unfollow") : t("follow");
     on(followBtn, "click", async () => {
       followBtn.disabled = true;
       try {
         const r = await api(`/api/follow/${encodeURIComponent(activeProfileKey)}`, { method: "POST" });
         profile.isFollowing = r.following;
-        followBtn.textContent = profile.isFollowing ? t("unfollow") : t("follow");
+        profile.isFriend = !!r.isFriend;
+        followBtn.className = profile.isFriend ? "btn primary" : "btn ghost";
+        followBtn.textContent = profile.isFriend ? "Friend" : profile.isFollowing ? t("unfollow") : t("follow");
         const badge = el.profileHeader.querySelector("[data-badge='followers']");
         if (badge) badge.textContent = String(r.followerCount);
       } catch {
@@ -2430,6 +2508,14 @@ function renderProfileHeader(profile) {
       }
     });
     right.appendChild(followBtn);
+
+    const callBtn = document.createElement("button");
+    callBtn.type = "button";
+    callBtn.className = "btn ghost";
+    callBtn.innerHTML = `${icon("phone")}<span>Call</span>`;
+    callBtn.title = "Calls coming soon";
+    on(callBtn, "click", () => showToast("Calls coming soon.", true));
+    right.appendChild(callBtn);
   }
 
   top.appendChild(ident);
@@ -2441,8 +2527,9 @@ function renderProfileHeader(profile) {
 
   const stats = document.createElement("div");
   stats.className = "profileStats";
-  stats.innerHTML = `<span>${t("followers")}: <span class="badge" data-badge="followers">${profile.followerCount}</span></span>
-  <span>${t("following")}: <span class="badge">${profile.followingCount}</span></span>`;
+  stats.innerHTML = `<span><strong data-badge="followers">${profile.followerCount}</strong><small>${t("followers")}</small></span>
+  <span><strong>${profile.followingCount}</strong><small>${t("following")}</small></span>
+  <span><strong>${profile.isFriend ? "Yes" : "-"}</strong><small>Friend</small></span>`;
 
   el.profileHeader.appendChild(top);
   el.profileHeader.appendChild(bio);
@@ -2470,6 +2557,10 @@ function renderProfileHeader(profile) {
   repostsTab.className = activeProfileTab === "reposts" ? "active" : "";
   tabs.appendChild(postsTab);
   tabs.appendChild(repostsTab);
+  const mediaTab = document.createElement("button");
+  mediaTab.textContent = "Media";
+  mediaTab.disabled = true;
+  tabs.appendChild(mediaTab);
   el.profileHeader.appendChild(tabs);
 
   on(postsTab, "click", () => {
@@ -3521,6 +3612,24 @@ function shareReel(reel) {
   shareContent({ kind: "reel", id: reel.id, text: reel.text || "", author: reel.author || "", media: reel.media || [] });
 }
 
+async function sendSharedItemToPeer(peer, item, url, button) {
+  const key = String(peer?.key || peer?.userKey || peer || "").trim();
+  if (!key) return;
+  if (button) button.disabled = true;
+  try {
+    await api(`/api/dm/${encodeURIComponent(key)}`, {
+      method: "POST",
+      body: JSON.stringify({ text: `Shared ${item.kind || "post"} from @${item.author || "HYSA"}: ${url}` }),
+    });
+    hideActionSheet();
+    showToast("Sent to DM.");
+  } catch (err) {
+    showToast(humanizeError(err?.message), true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 function shareContent(item) {
   const url = `${location.origin}/#p/${encodeURIComponent(item.id)}`;
   showActionSheet(`Share ${item.kind || "post"}`, (body) => {
@@ -3535,6 +3644,32 @@ function shareContent(item) {
     preview.innerHTML = `<strong></strong><span></span>`;
     preview.querySelector("strong").textContent = `@${item.author || "HYSA"}`;
     preview.querySelector("span").textContent = String(item.text || url).slice(0, 110);
+    const friendsRow = document.createElement("div");
+    friendsRow.className = "shareFriends";
+    friendsRow.innerHTML = '<span class="muted">Loading friends...</span>';
+    api("/api/friends", { method: "GET" }).then((r) => {
+      const friends = Array.isArray(r.friends) ? r.friends : [];
+      friendsRow.textContent = "";
+      if (!friends.length) {
+        friendsRow.innerHTML = '<span class="muted">No mutual friends yet.</span>';
+        return;
+      }
+      for (const friend of friends.slice(0, 12)) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "shareFriend";
+        btn.appendChild(avatarNode(friend.avatarUrl, friend.username, "sm"));
+        const name = document.createElement("span");
+        name.textContent = `@${friend.username}`;
+        const badge = renderUserBadge(friend);
+        if (badge) name.appendChild(badge);
+        btn.appendChild(name);
+        on(btn, "click", () => sendSharedItemToPeer(friend, item, url, btn));
+        friendsRow.appendChild(btn);
+      }
+    }).catch(() => {
+      friendsRow.innerHTML = '<span class="muted">Friends unavailable.</span>';
+    });
 
     on(native, "click", async () => {
       try {
@@ -3555,22 +3690,11 @@ function shareContent(item) {
     on(sendDm, "click", async () => {
       const peer = dmInput.value.trim().replace(/^@/, "").toLowerCase();
       if (!peer) return dmInput.focus();
-      sendDm.disabled = true;
-      try {
-        await api(`/api/dm/${encodeURIComponent(peer)}`, {
-          method: "POST",
-          body: JSON.stringify({ text: `Shared ${item.kind || "post"} from @${item.author || "HYSA"}: ${url}` }),
-        });
-        hideActionSheet();
-        showToast("Sent to DM.");
-      } catch (err) {
-        showToast(humanizeError(err?.message), true);
-      } finally {
-        sendDm.disabled = false;
-      }
+      sendSharedItemToPeer(peer, item, url, sendDm);
     });
 
     body.appendChild(preview);
+    body.appendChild(friendsRow);
     body.appendChild(native);
     body.appendChild(copy);
     body.appendChild(dmInput);
@@ -3793,8 +3917,16 @@ function debounce(fn, ms) {
 function showSearchResults(results) {
   if (!el.searchResults) return;
   if (!results.length) {
-    el.searchResults.hidden = true;
     el.searchResults.textContent = "";
+    if (el.searchInput && el.searchInput.value.trim()) {
+      el.searchResults.hidden = false;
+      const empty = document.createElement("div");
+      empty.className = "result empty";
+      empty.textContent = "No users found";
+      el.searchResults.appendChild(empty);
+    } else {
+      el.searchResults.hidden = true;
+    }
     return;
   }
   el.searchResults.hidden = false;
@@ -3815,10 +3947,21 @@ function showSearchResults(results) {
       left.appendChild(snippet);
       right.textContent = "Post";
     } else {
-      left.textContent = `@${r.username}`;
+      const row = document.createElement("div");
+      row.className = "searchUserRow";
+      row.appendChild(avatarNode(r.avatarUrl, r.username, "xs"));
+      const copy = document.createElement("span");
+      const title = document.createElement("strong");
+      title.textContent = `@${r.username}`;
       const resultBadge = renderUserBadge(r);
-      if (resultBadge) left.appendChild(resultBadge);
-      right.textContent = r.isPrivate ? "Private" : r.key;
+      if (resultBadge) title.appendChild(resultBadge);
+      const sub = document.createElement("small");
+      sub.textContent = [r.displayName, r.isFriend ? "Friend" : r.isFollowing ? "Following" : ""].filter(Boolean).join(" · ") || "HYSA user";
+      copy.appendChild(title);
+      copy.appendChild(sub);
+      row.appendChild(copy);
+      left.appendChild(row);
+      right.textContent = r.isFriend ? "Friend" : r.isPrivate ? "Private" : "";
     }
     item.appendChild(left);
     item.appendChild(right);
@@ -4632,6 +4775,13 @@ async function boot() {
   if (el.dmSend) {
     on(el.dmSend, "click", () => sendDmMessage({ text: el.dmText?.value || "" }));
   }
+  const updateDmSendState = () => {
+    if (!el.dmSend) return;
+    const hasText = !!String(el.dmText?.value || "").trim();
+    el.dmSend.classList.toggle("ready", hasText);
+  };
+  on(el.dmText, "input", updateDmSendState);
+  updateDmSendState();
   on(el.dmText, "keydown", (e) => {
     if (e.key !== "Enter" || e.shiftKey) return;
     e.preventDefault();
@@ -4641,7 +4791,7 @@ async function boot() {
     on(el.dmRecord, "click", async () => {
       if (!activeDmPeer) return;
       if (dmRecorder && dmRecorder.state === "recording") {
-        dmRecorder.stop();
+        stopDmRecording();
         return;
       }
       if (!navigator.mediaDevices || !window.MediaRecorder) {
@@ -4657,18 +4807,37 @@ async function boot() {
         };
         dmRecorder.onstop = async () => {
           stream.getTracks().forEach((track) => track.stop());
+          if (dmRecordingTimer) window.clearInterval(dmRecordingTimer);
+          dmRecordingTimer = null;
           el.dmRecord.classList.remove("recording");
+          setDmRecordStatus("idle");
+          if (dmRecorder._hysaCancel) {
+            dmRecordingChunks = [];
+            showToast("Recording cancelled.");
+            dmRecorder = null;
+            return;
+          }
           const blob = new Blob(dmRecordingChunks, { type: "audio/webm" });
           const file = new File([blob], `voice-${Date.now()}.webm`, { type: "audio/webm" });
           try {
+            setDmRecordStatus("uploading", "Uploading...");
             const media = await uploadFile(file);
             await sendDmMessage({ media: [media] });
+            showToast("Voice message sent.");
           } catch (err) {
             showToast(humanizeError(err?.message, t("error_upload_invalid")), true);
+          } finally {
+            setDmRecordStatus("idle");
+            dmRecorder = null;
           }
         };
         dmRecorder.start();
         el.dmRecord.classList.add("recording");
+        dmRecordingStartedAt = Date.now();
+        setDmRecordStatus("recording", "0:00");
+        dmRecordingTimer = window.setInterval(() => {
+          setDmRecordStatus("recording", formatDuration((Date.now() - dmRecordingStartedAt) / 1000));
+        }, 250);
         showToast("Recording... tap the microphone again to send.");
       } catch {
         showToast("Microphone permission was denied.", true);
@@ -4860,6 +5029,10 @@ async function boot() {
       const q = el.searchInput ? el.searchInput.value.trim() : "";
       if (!q) return showSearchResults([]);
       try {
+        if (el.searchResults) {
+          el.searchResults.hidden = false;
+          el.searchResults.innerHTML = '<div class="result empty">Searching...</div>';
+        }
         const r = await api(`/api/search?q=${encodeURIComponent(q)}`, { method: "GET" });
         showSearchResults(r.results || []);
       } catch {

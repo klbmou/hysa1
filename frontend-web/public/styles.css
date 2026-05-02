@@ -876,6 +876,31 @@ video {
   flex: 1;
 }
 
+.tabs {
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.tabs button {
+  border-color: transparent;
+  border-radius: 12px;
+  min-height: 36px;
+  background: transparent;
+}
+
+.tabs button.active {
+  color: #061016;
+  background: linear-gradient(135deg, #2f9bff, #62f0c8);
+  box-shadow: 0 0 18px rgba(47, 155, 255, 0.28);
+}
+
+.tabs button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 input,
 textarea,
 select {
@@ -1111,6 +1136,35 @@ select:focus {
   background: rgba(255, 255, 255, 0.11);
   animation: none;
   box-shadow: none;
+}
+
+.result.empty {
+  justify-content: center;
+  color: var(--muted);
+  cursor: default;
+}
+
+.searchUserRow {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.searchUserRow span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.searchUserRow strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.searchUserRow small {
+  color: var(--muted);
 }
 
 .storyRing.segmented {
@@ -1565,7 +1619,7 @@ select:focus {
   margin: 0 auto 16px;
   padding: 16px;
   border: 1px solid var(--border);
-  border-radius: 22px;
+  border-radius: 18px;
   background: rgba(20, 22, 29, 0.88);
 }
 
@@ -1579,30 +1633,68 @@ select:focus {
 
 .profileTop {
   justify-content: space-between;
+  align-items: flex-start;
 }
 
 .profileIdent {
   min-width: 0;
+  flex: 1;
 }
 
 .profileName {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-weight: 900;
+  font-size: 18px;
 }
 
 .profileBio {
-  margin-top: 12px;
+  margin-top: 10px;
   color: var(--muted);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
 .profileStats {
-  margin-top: 12px;
-  flex-wrap: wrap;
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
   color: var(--muted);
+}
+
+.profileStats span {
+  min-width: 0;
+  padding: 9px 8px;
+  border-radius: 14px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.profileStats strong,
+.profileStats small {
+  display: block;
+}
+
+.profileStats strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.profileStats small {
+  margin-top: 2px;
+  font-size: 11px;
+}
+
+.profileActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .modal-header {
@@ -1814,7 +1906,7 @@ select:focus {
   border-radius: 24px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .dmEmpty {
@@ -1823,20 +1915,42 @@ select:focus {
   text-align: center;
 }
 
+.dmMessageRow {
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.dmMessageRow.mine {
+  justify-content: flex-end;
+}
+
+.dmMessageRow.theirs {
+  justify-content: flex-start;
+}
+
 .dmBubble {
   max-width: min(76%, 460px);
   padding: 10px 12px;
-  border-radius: 20px;
+  border-radius: 20px 20px 20px 7px;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.055));
+  border: 1px solid rgba(255, 255, 255, 0.075);
   box-shadow: 0 14px 38px rgba(0, 0, 0, 0.22);
   overflow-wrap: anywhere;
   animation: bubbleIn 180ms ease both;
 }
 
 .dmBubble.mine {
-  align-self: flex-end;
+  border-radius: 20px 20px 7px 20px;
   color: #061016;
   background: linear-gradient(135deg, #2f9bff, #62f0c8);
+  border-color: rgba(98, 240, 200, 0.32);
+}
+
+.dmBubbleText {
+  unicode-bidi: plaintext;
+  white-space: pre-wrap;
 }
 
 .dmBubbleText + .dmMedia {
@@ -1878,9 +1992,14 @@ select:focus {
 
 .dmReactionSummary {
   display: flex;
+  justify-content: flex-start;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+}
+
+.dmBubble.mine .dmReactionSummary {
+  justify-content: flex-end;
 }
 
 .dmReactionPill {
@@ -1910,6 +2029,60 @@ select:focus {
 
 .dmMedia audio {
   width: min(100%, 320px);
+}
+
+.dmRecordStatus {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 91, 128, 0.25);
+  border-radius: 16px;
+  display: grid;
+  grid-template-columns: auto auto minmax(90px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 75, 112, 0.1);
+}
+
+.recordDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ff4b70;
+  box-shadow: 0 0 14px rgba(255, 75, 112, 0.75);
+  animation: recordPulse 1s ease-in-out infinite;
+}
+
+.recordWave {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.recordWave span {
+  width: 3px;
+  height: var(--h);
+  min-height: 7px;
+  border-radius: 999px;
+  background: #ff7a93;
+  animation: recordWave 620ms ease-in-out infinite alternate;
+  animation-delay: calc(var(--i, 1) * 22ms);
+}
+
+.dmRecordStatus button {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes recordPulse {
+  50% { transform: scale(1.35); opacity: 0.65; }
+}
+
+@keyframes recordWave {
+  to { transform: scaleY(0.45); opacity: 0.55; }
 }
 
 .voicePlayer {
@@ -1989,6 +2162,93 @@ select:focus {
   50% {
     transform: scaleY(1.35);
     opacity: 0.9;
+  }
+}
+
+.dm-input-bar {
+  gap: 8px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+}
+
+.dm-input-bar input {
+  min-height: 42px;
+}
+
+.dm-input-bar .iconBtn,
+.dm-input-bar .btn {
+  flex: 0 0 auto;
+}
+
+.dm-input-bar .btn.primary:not(.ready) {
+  opacity: 0.58;
+}
+
+.dmRecordStatus[data-state="uploading"] .recordDot,
+.dmRecordStatus[data-state="uploading"] .recordWave span {
+  background: var(--accent);
+}
+
+.shareFriends {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 0 8px;
+  scrollbar-width: none;
+}
+
+.shareFriends::-webkit-scrollbar {
+  display: none;
+}
+
+.shareFriend {
+  width: 72px;
+  border: 0;
+  padding: 4px;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+}
+
+.shareFriend span {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+@media (max-width: 640px) {
+  #profileHeader {
+    margin-bottom: 10px;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .profileTop {
+    display: grid;
+    gap: 12px;
+  }
+
+  .profileActions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .profileActions .btn {
+    min-height: 38px;
+    padding-inline: 8px;
+  }
+
+  .dmBubble {
+    max-width: 78%;
   }
 }
 
@@ -2945,7 +3205,7 @@ select:focus {
   }
 
   .dmBubble {
-    max-width: 86%;
+    max-width: 78%;
   }
 
   .dm-input-bar {

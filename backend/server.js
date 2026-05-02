@@ -1400,6 +1400,17 @@ async function followerCountFor(userKey) {
   return await User.countDocuments({ following: userKey });
 }
 
+async function isFriendKeys(aKey, bKey) {
+  const a = await findUserByKey(String(aKey || ""));
+  const b = await findUserByKey(String(bKey || ""));
+  return !!(
+    a &&
+    b &&
+    asArray(a.following).map(String).includes(String(b.userKey)) &&
+    asArray(b.following).map(String).includes(String(a.userKey))
+  );
+}
+
 function toPublicMe(u) {
   const key = String(u && u.userKey ? u.userKey : normalizeUsername(u && u.username).key);
   const role = key === OWNER_USER_KEY ? "owner" : String((u && u.role) || "");
@@ -1439,6 +1450,7 @@ async function uniqueGoogleUsername(email, name) {
 async function toPublicProfile(target, viewer) {
   const key = String(target.userKey);
   const isFollowing = viewer ? asArray(viewer.following).includes(key) : false;
+  const isFriend = viewer ? isFollowing && asArray(target.following).map(String).includes(String(viewer.userKey)) : false;
   const role = key === OWNER_USER_KEY ? "owner" : String(target.role || "");
   return {
     key,
@@ -1455,6 +1467,7 @@ async function toPublicProfile(target, viewer) {
     followerCount: await followerCountFor(key),
     followingCount: asArray(target.following).length,
     isFollowing,
+    isFriend,
   };
 }
 
@@ -2381,7 +2394,12 @@ app.post("/api/follow/:key", async (req, res) => {
   if (following) {
     await addNotification({ userKey: String(target.userKey), type: "new_follower", actorKey: String(viewer.userKey) });
   }
-  return res.status(200).json({ ok: true, following, followerCount: await followerCountFor(String(target.userKey)) });
+  return res.status(200).json({
+    ok: true,
+    following,
+    isFriend: following && asArray(target.following).map(String).includes(String(viewer.userKey)),
+    followerCount: await followerCountFor(String(target.userKey)),
+  });
 });
 
 app.get("/api/posts/:id", async (req, res) => {
@@ -2863,20 +2881,62 @@ app.get("/api/search", async (req, res) => {
       }).limit(12);
 
   const results = users
-    .filter((u) => u && (String(u.userKey).includes(q) || String(u.username).toLowerCase().includes(q)))
-    .map((u) => ({
+    .filter((u) => {
+      const displayName = String(u.displayName || u.display_name || "").toLowerCase();
+      return u && (
+        String(u.userKey).toLowerCase().includes(q) ||
+        String(u.username).toLowerCase().includes(q) ||
+        displayName.includes(q)
+      );
+    })
+    .map((u) => {
+      const key = String(u.userKey);
+      const isFollowing = asArray(viewer.following).map(String).includes(key);
+      const isFriend = isFollowing && asArray(u.following).map(String).includes(String(viewer.userKey));
+      return {
       type: "user",
-      key: String(u.userKey),
+      key,
       username: String(u.username),
       displayName: String(u.displayName || u.display_name || ""),
+      avatarUrl: publicStoredUrl(u.avatarUrl || u.avatar_url),
       verified: !!u.verified || VERIFIED_USERS.has(String(u.userKey)) || String(u.userKey) === OWNER_USER_KEY,
       role: String(u.userKey) === OWNER_USER_KEY ? "owner" : String(u.role || ""),
       createdAt: String(u.createdAt || u.created_at || ""),
       isPrivate: !!u.isPrivate,
+      isFollowing,
+      isFriend,
       skills: asArray(u.skills).map(String),
-    }));
+    };});
 
   return res.status(200).json({ ok: true, results });
+});
+
+app.get("/api/friends", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  const following = asArray(viewer.following).map(String);
+  if (!following.length) return res.status(200).json({ ok: true, friends: [] });
+  const users = USE_POSTGRES
+    ? (await pgPool.query("SELECT user_key FROM users WHERE user_key = ANY($1)", [following])).rows
+    : await User.find({ userKey: { $in: following } });
+  const friends = [];
+  for (const item of users) {
+    const user = USE_POSTGRES ? await findUserByKey(item.user_key) : item;
+    if (!user || !asArray(user.following).map(String).includes(viewerKey)) continue;
+    const key = String(user.userKey);
+    friends.push({
+      key,
+      userKey: key,
+      username: String(user.username || ""),
+      displayName: String(user.displayName || user.display_name || ""),
+      avatarUrl: publicStoredUrl(user.avatarUrl || user.avatar_url),
+      verified: !!user.verified || VERIFIED_USERS.has(key) || key === OWNER_USER_KEY,
+      role: key === OWNER_USER_KEY ? "owner" : String(user.role || ""),
+      isFriend: true,
+    });
+  }
+  return res.status(200).json({ ok: true, friends: friends.slice(0, 50) });
 });
 
 app.get("/api/dm/threads", async (req, res) => {
@@ -2983,7 +3043,14 @@ app.get("/api/dm/:key", async (req, res) => {
 
   return res.status(200).json({
     ok: true,
-    peer: { key: peerKey, username: String(peer.username || ""), avatarUrl: publicStoredUrl(peer.avatarUrl) },
+    peer: {
+      key: peerKey,
+      username: String(peer.username || ""),
+      avatarUrl: publicStoredUrl(peer.avatarUrl),
+      verified: !!peer.verified || VERIFIED_USERS.has(peerKey) || peerKey === OWNER_USER_KEY,
+      role: peerKey === OWNER_USER_KEY ? "owner" : String(peer.role || ""),
+      isFriend: await isFriendKeys(viewerKey, peerKey),
+    },
     messages,
   });
 });
@@ -3381,6 +3448,7 @@ app.get("/api/messages/:userId", async (req, res) => {
       verified: !!peer.verified || VERIFIED_USERS.has(peerKey) || peerKey === OWNER_USER_KEY,
       role: peerKey === OWNER_USER_KEY ? "owner" : String(peer.role || ""),
       createdAt: String((peer && (peer.createdAt || peer.created_at)) || ""),
+      isFriend: await isFriendKeys(viewerKey, peerKey),
     },
     messages,
   });
