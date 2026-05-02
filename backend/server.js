@@ -73,6 +73,8 @@ const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY;
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
 const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || "").trim();
 const GOOGLE_CLIENT_SECRET = String(process.env.GOOGLE_CLIENT_SECRET || "").trim();
+const AUTH_COOKIE_NAME = "hysa_auth";
+const AUTH_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 const USE_POSTGRES = !!process.env.DATABASE_URL;
 const USE_CLOUDINARY = !!(
@@ -1391,14 +1393,53 @@ function normalizeStoryFilter(value) {
   return STORY_FILTERS.has(filter) ? filter : "normal";
 }
 
-function getBearerToken(req) {
-  const raw = String(req.headers.authorization || "");
-  if (raw.toLowerCase().startsWith("bearer ")) return raw.slice("bearer ".length).trim();
-  return "";
+function parseCookies(req) {
+  const raw = String(req.headers.cookie || "");
+  const cookies = {};
+  for (const part of raw.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx < 0) continue;
+    const key = part.slice(0, idx).trim();
+    if (!key) continue;
+    const value = part.slice(idx + 1).trim();
+    try {
+      cookies[key] = decodeURIComponent(value);
+    } catch {
+      cookies[key] = value;
+    }
+  }
+  return cookies;
+}
+
+function getAuthToken(req) {
+  return String(parseCookies(req)[AUTH_COOKIE_NAME] || "");
+}
+
+function authCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: NODE_ENV === "production",
+    sameSite: "Lax",
+    path: "/",
+    maxAge: AUTH_COOKIE_MAX_AGE_MS,
+  };
+}
+
+function setAuthCookie(res, token) {
+  res.cookie(AUTH_COOKIE_NAME, String(token || ""), authCookieOptions());
+}
+
+function clearAuthCookie(res) {
+  res.clearCookie(AUTH_COOKIE_NAME, {
+    httpOnly: true,
+    secure: NODE_ENV === "production",
+    sameSite: "Lax",
+    path: "/",
+  });
 }
 
 async function authUserFromReq(req) {
-  const token = getBearerToken(req);
+  const token = getAuthToken(req);
   if (!token) return null;
   
   if (USE_POSTGRES) {
@@ -1419,7 +1460,7 @@ async function requireAuth(req, res) {
 
 const rateLimitBuckets = new Map();
 function rateLimitKey(req, bucket) {
-  const token = getBearerToken(req);
+  const token = getAuthToken(req);
   const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || req.ip || "unknown")
     .split(",")[0]
     .trim();
@@ -2161,8 +2202,9 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   const origin = String(req.headers.origin || "");
   const allowedOrigin = !origin || origin === `http://${req.headers.host}` || origin === `https://${req.headers.host}`;
-  if (allowedOrigin) res.setHeader("Access-Control-Allow-Origin", origin || "*");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (allowedOrigin && origin) res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS");
   if (req.method === "OPTIONS") return res.status(204).end();
   return next();
@@ -2227,7 +2269,8 @@ async function handleRegister(req, res) {
     createdUser = u;
   }
   
-  return res.status(200).json({ ok: true, token: createdUser.token, me: toPublicMe(createdUser) });
+  setAuthCookie(res, createdUser.token);
+  return res.status(200).json({ ok: true, me: toPublicMe(createdUser) });
 }
 
 app.post("/api/register", rateLimit("auth"), handleRegister);
@@ -2248,7 +2291,8 @@ app.post("/api/login", rateLimit("auth"), async (req, res) => {
   if (!USE_POSTGRES) {
     await syncDataJson();
   }
-  return res.status(200).json({ ok: true, token: u.token, me: toPublicMe(u) });
+  setAuthCookie(res, u.token);
+  return res.status(200).json({ ok: true, me: toPublicMe(u) });
 });
 
 app.post("/api/auth/google", rateLimit("auth"), async (req, res) => {
@@ -2303,7 +2347,8 @@ app.post("/api/auth/google", rateLimit("auth"), async (req, res) => {
     user.token = newToken();
     await user.save();
     if (!USE_POSTGRES) await syncDataJson();
-    return res.status(200).json({ ok: true, token: user.token, me: toPublicMe(user) });
+    setAuthCookie(res, user.token);
+    return res.status(200).json({ ok: true, me: toPublicMe(user) });
   }
 
   const username = await uniqueGoogleUsername(email, displayName);
@@ -2327,7 +2372,8 @@ app.post("/api/auth/google", rateLimit("auth"), async (req, res) => {
 
   const saved = USE_POSTGRES ? await pgCreateUser(created) : await User.create(created);
   if (!USE_POSTGRES) await syncDataJson();
-  return res.status(200).json({ ok: true, token: saved.token, me: toPublicMe(saved) });
+  setAuthCookie(res, saved.token);
+  return res.status(200).json({ ok: true, me: toPublicMe(saved) });
 });
 
 app.get("/api/config", (_req, res) => {
@@ -2338,8 +2384,9 @@ app.get("/api/config", (_req, res) => {
 });
 
 app.post("/api/logout", async (req, res) => {
-  const u = await requireAuth(req, res);
-  if (!u) return;
+  clearAuthCookie(res);
+  const u = await authUserFromReq(req);
+  if (!u) return res.status(200).json({ ok: true });
   u.token = "";
   await u.save();
   if (!USE_POSTGRES) {

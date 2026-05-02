@@ -1,6 +1,5 @@
 /* global window, document */
 
-const tokenKey = "token";
 const legacyTokenKey = "hysa_token";
 const langKey = "hysa_lang";
 const themeKey = "hysa_theme";
@@ -8,25 +7,18 @@ let googleClientId = "";
 let googleClientConfigPromise = null;
 
 function getToken() {
-  return localStorage.getItem("token");
+  return token;
 }
 
 function readStoredToken() {
-  const current = getToken();
-  if (current) return current;
-  const legacy = localStorage.getItem(legacyTokenKey);
-  if (legacy) {
-    localStorage.setItem(tokenKey, legacy);
-    localStorage.removeItem(legacyTokenKey);
-    return legacy;
-  }
+  localStorage.removeItem("token");
+  localStorage.removeItem(legacyTokenKey);
   return "";
 }
 
 function saveToken(nextToken) {
-  token = String(nextToken || "");
-  if (token) localStorage.setItem("token", token);
-  else localStorage.removeItem("token");
+  token = nextToken === false ? "" : "cookie-session";
+  localStorage.removeItem("token");
   localStorage.removeItem(legacyTokenKey);
 }
 
@@ -648,13 +640,9 @@ async function fetchJson(path, opts = {}) {
   headers.set("Accept", "application/json");
   if (opts.body && !(opts.body instanceof FormData)) headers.set("Content-Type", "application/json; charset=utf-8");
 
-  token = readStoredToken();
-  const storedToken = getToken();
-  if (storedToken) headers.set("Authorization", `Bearer ${storedToken}`);
-
   let res;
   try {
-    res = await fetch(p, { ...opts, headers });
+    res = await fetch(p, { ...opts, headers, credentials: "include" });
   } catch {
     throw new Error("NETWORK");
   }
@@ -673,17 +661,11 @@ async function api(path, opts = {}) {
   if (location.protocol === "file:") throw new Error("FILE_ORIGIN");
 
   const p = String(path || "");
-  const isAuthEndpoint = p.startsWith("/api/login") || p.startsWith("/api/register");
+  const isAuthEndpoint = p.startsWith("/api/login") || p.startsWith("/api/register") || p.startsWith("/api/signup") || p.startsWith("/api/auth/google");
   let { res, json } = await fetchJson(p, opts);
 
   if (res.status === 401 && !isAuthEndpoint) {
-    let retried = false;
-    if (getToken()) {
-      retried = true;
-      ({ res, json } = await fetchJson(p, opts));
-    }
-    if (res.status === 401) authFailureCount += retried ? 2 : 1;
-    else authFailureCount = 0;
+    authFailureCount += 1;
   } else if (res.ok && !(json && json.ok === false)) {
     authFailureCount = 0;
   }
@@ -788,7 +770,7 @@ async function finishGoogleLogin(response) {
     method: "POST",
     body: JSON.stringify({ credential }),
   });
-  saveToken(r.token);
+  saveToken(true);
   authFailureCount = 0;
   me = r.me;
   showApp();
@@ -6324,7 +6306,7 @@ async function boot() {
     const password = String(fd.get("password") || "");
     try {
       const r = await api("/api/login", { method: "POST", body: JSON.stringify({ username, password }) });
-      saveToken(r.token);
+      saveToken(true);
       authFailureCount = 0;
       me = r.me;
       showApp();
@@ -6342,7 +6324,7 @@ async function boot() {
     const password = String(fd.get("password") || "");
     try {
       const r = await api("/api/register", { method: "POST", body: JSON.stringify({ username, password }) });
-      saveToken(r.token);
+      saveToken(true);
       authFailureCount = 0;
       me = r.me;
       showApp();
@@ -6800,37 +6782,33 @@ async function boot() {
 
   on(window, "hashchange", () => route());
 
-  token = readStoredToken();
-  if (!getToken()) {
-    showAuth();
-    return;
-  }
+  clearStoredToken();
 
   if (el.navDmBtn) {
     on(el.navDmBtn, "click", () => { location.hash = "#dm"; route(); });
   }
 
-  showApp();
-  initScrollHideNav();
-  initPullToRefresh();
-  initSwipeGestures();
-  setupA2hsBanner();
-  registerServiceWorker();
-  setInterval(refreshAllTimestamps, 60000);
-  setInterval(pollOnlineStatus, 60000);
-  route();
-
   api("/api/me", { method: "GET" })
     .then((r) => {
+      saveToken(true);
       me = r.me;
       showApp();
+      initScrollHideNav();
+      initPullToRefresh();
+      initSwipeGestures();
+      setupA2hsBanner();
+      registerServiceWorker();
+      setInterval(refreshAllTimestamps, 60000);
+      setInterval(pollOnlineStatus, 60000);
+      route();
+      api("/api/version", { method: "GET" }).catch(() => showToast(t("error_server_outdated"), true));
     })
     .catch((err) => {
       if (String(err && err.message) !== "UNAUTHENTICATED") {
         showToast(humanizeError(err && err.message), true);
       }
+      showAuth();
     });
-  api("/api/version", { method: "GET" }).catch(() => showToast(t("error_server_outdated"), true));
 }
 
 // =====================================================================
