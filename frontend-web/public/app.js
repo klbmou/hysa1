@@ -1060,6 +1060,14 @@ function scrollDmToLatest({ smooth = false } = {}) {
   el.dmMessages.scrollTo({ top: el.dmMessages.scrollHeight, behavior: smooth ? "smooth" : "auto" });
 }
 
+function resetMainScroll() {
+  const main = document.querySelector(".main-content");
+  if (main) main.scrollTop = 0;
+  if (el.feed) el.feed.scrollTop = 0;
+  if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+  window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+}
+
 function dmMessageSignature(messages) {
   return (Array.isArray(messages) ? messages : [])
     .map((message) => `${message.id}|${message.seen ? "1" : "0"}|${reactionSignature(message.reactions)}`)
@@ -3319,6 +3327,8 @@ async function loadReels() {
   if (!el.reelsView || !el.feed) return;
   el.reelsView.hidden = false;
   el.feed.hidden = true;
+  resetMainScroll();
+  el.reelsView.scrollTop = 0;
   if (el.storiesBar) el.storiesBar.hidden = true;
   if (el.trendsBar) el.trendsBar.hidden = true;
   el.reelsView.textContent = "";
@@ -3332,8 +3342,20 @@ async function loadReels() {
     route();
   });
   el.reelsView.appendChild(exit);
+  const loading = document.createElement("div");
+  loading.className = "reelsLoading";
+  loading.textContent = t("loading");
+  el.reelsView.appendChild(loading);
   const r = await api("/api/reels?limit=20", { method: "GET" });
   const reels = Array.isArray(r.reels) ? r.reels : [];
+  loading.remove();
+  if (!reels.length) {
+    const empty = document.createElement("div");
+    empty.className = "reelsLoading";
+    empty.textContent = "No reels yet.";
+    el.reelsView.appendChild(empty);
+    return;
+  }
   for (const reel of reels) {
     const card = document.createElement("div");
     card.className = "reelCard";
@@ -3361,6 +3383,11 @@ async function loadReels() {
     saveAction.type = "button";
     saveAction.className = "reelActionBtn";
     setIconCountState(saveAction, "bookmark", reel.bookmarkCount || 0, reel.bookmarkedByMe);
+    const messageAction = document.createElement("button");
+    messageAction.type = "button";
+    messageAction.className = "reelActionBtn";
+    messageAction.innerHTML = `${icon("comment")}<strong>DM</strong>`;
+    messageAction.hidden = isMineKey(reel.authorKey);
     const viewsAction = document.createElement("button");
     viewsAction.type = "button";
     viewsAction.className = "reelActionBtn static";
@@ -3369,6 +3396,7 @@ async function loadReels() {
     actions.appendChild(commentAction);
     actions.appendChild(shareAction);
     actions.appendChild(saveAction);
+    actions.appendChild(messageAction);
     actions.appendChild(viewsAction);
     const caption = document.createElement("div");
     caption.className = "reelCaption collapsed";
@@ -3530,6 +3558,10 @@ async function loadReels() {
     on(shareAction, "click", async () => {
       shareReel(reel);
     });
+    on(messageAction, "click", () => {
+      if (!reel.authorKey) return;
+      location.hash = `#dm/${encodeURIComponent(reel.authorKey)}`;
+    });
     on(saveAction, "click", async () => {
       try {
         const rSave = await api(`/api/posts/${encodeURIComponent(reel.id)}/bookmark`, { method: "POST" });
@@ -3542,6 +3574,10 @@ async function loadReels() {
     });
     el.reelsView.appendChild(card);
   }
+  const videos = Array.from(el.reelsView.querySelectorAll(".reelCard video"));
+  videos.forEach((video, index) => {
+    video.preload = index < 2 ? "auto" : "metadata";
+  });
   observeMediaPlayback(el.reelsView);
 }
 
@@ -3755,6 +3791,7 @@ async function openNotificationsPanel() {
 async function openProfile(userKeyOrName) {
   activeProfileKey = userKeyOrName;
   activePostId = null;
+  resetMainScroll();
   if (el.reelsView) el.reelsView.hidden = true;
   if (el.feed) el.feed.hidden = false;
   const r = await api(`/api/user/${encodeURIComponent(userKeyOrName)}`, { method: "GET" });
@@ -3777,6 +3814,8 @@ async function openProfile(userKeyOrName) {
     }
   }
   updateFeedSentinel();
+  resetMainScroll();
+  window.requestAnimationFrame(resetMainScroll);
 }
 
 async function openPost(postId) {
@@ -4128,13 +4167,19 @@ async function uploadFile(file) {
 
   const dataUrl = await readFileAsDataUrl(file);
   let r;
+  const controller = "AbortController" in window ? new AbortController() : null;
+  const timeout = window.setTimeout(() => controller?.abort(), 45000);
   try {
-    r = await api("/api/upload", { method: "POST", body: JSON.stringify({ dataUrl }) });
+    r = await api("/api/upload", { method: "POST", body: JSON.stringify({ dataUrl }), signal: controller?.signal });
   } catch (err) {
     const code = String(err?.message || "");
     if (code === "NOT_FOUND" || code === "HTTP_404") throw new Error("UPLOAD_ENDPOINT_MISSING");
+    if (err?.name === "AbortError" || code === "NETWORK") throw new Error("UPLOAD_TIMEOUT");
     throw err;
+  } finally {
+    window.clearTimeout(timeout);
   }
+  if (!r?.media?.url || !r.media.kind || !r.media.mime) throw new Error("UPLOAD_INVALID");
   return r.media;
 }
 
@@ -4817,12 +4862,15 @@ async function boot() {
             dmRecorder = null;
             return;
           }
-          const blob = new Blob(dmRecordingChunks, { type: "audio/webm" });
-          const file = new File([blob], `voice-${Date.now()}.webm`, { type: "audio/webm" });
           try {
+            const duration = Math.max(1, Math.round((Date.now() - dmRecordingStartedAt) / 1000));
+            const mime = dmRecorder.mimeType || "audio/webm";
+            const blob = new Blob(dmRecordingChunks, { type: mime });
+            if (!blob.size) throw new Error("UPLOAD_INVALID");
+            const file = new File([blob], `voice-${Date.now()}.webm`, { type: mime });
             setDmRecordStatus("uploading", "Uploading...");
             const media = await uploadFile(file);
-            await sendDmMessage({ media: [media] });
+            await sendDmMessage({ media: [{ ...media, type: "voice", duration }] });
             showToast("Voice message sent.");
           } catch (err) {
             showToast(humanizeError(err?.message, t("error_upload_invalid")), true);

@@ -1721,6 +1721,8 @@ function toPublicMediaList(media) {
       url: String(m && m.url ? m.url : ""),
       kind: String(m && m.kind ? m.kind : ""),
       mime: String(m && m.mime ? m.mime : ""),
+      type: String(m && m.type ? m.type : ""),
+      duration: Number.isFinite(Number(m && m.duration)) ? Number(m.duration) : undefined,
     }))
     .filter((m) => m.kind && m.mime)
     .map((m) => (m.url && uploadUrlExists(m.url) ? m : { ...m, url: "", missing: true }));
@@ -1737,7 +1739,16 @@ function validateDmMediaList(media) {
     if (!["image", "video", "audio"].includes(kind)) return { ok: false, error: "INVALID_MEDIA" };
     if (!mime || !mime.startsWith(`${kind}/`)) return { ok: false, error: "INVALID_MEDIA" };
   }
-  return { ok: true, media: list.map((m) => ({ url: String(m.url), kind: String(m.kind), mime: String(m.mime) })) };
+  return {
+    ok: true,
+    media: list.map((m) => ({
+      url: String(m.url),
+      kind: String(m.kind),
+      mime: String(m.mime),
+      type: String(m.type || ""),
+      duration: Number.isFinite(Number(m.duration)) ? Number(m.duration) : undefined,
+    })),
+  };
 }
 
 function parseDataUrl(dataUrl) {
@@ -3295,7 +3306,7 @@ app.post("/api/ai/video", async (req, res) => {
 
 async function uploadToCloudinary(dataUrl, kind) {
   const result = await cloudinary.uploader.upload(dataUrl, {
-    resource_type: kind === "video" ? "video" : "image",
+    resource_type: kind === "image" ? "image" : "video",
     folder: "hysa1",
     use_filename: true,
     unique_filename: true,
@@ -3329,15 +3340,17 @@ app.post("/api/upload", async (req, res) => {
   if (USE_CLOUDINARY) {
     try {
       const result = await cloudinary.uploader.upload(body.dataUrl, {
-        resource_type: kind === "video" ? "video" : "image",
+        resource_type: kind === "image" ? "image" : "video",
         folder: "hysa1",
         use_filename: true,
         unique_filename: true,
       });
       mediaUrl = result.secure_url;
     } catch (err) {
-      console.warn("[cloudinary] Upload failed, falling back to local:", err.message);
-      USE_CLOUDINARY = false;
+      console.warn("[cloudinary] Upload failed:", err.message);
+      if (NODE_ENV === "production") {
+        return res.status(502).json({ ok: false, error: "UPLOAD_FAILED" });
+      }
     }
   }
 

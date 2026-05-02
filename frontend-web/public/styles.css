@@ -2288,7 +2288,16 @@ select:focus {
   z-index: 1100;
   overflow-y: auto;
   scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+  overscroll-behavior-y: contain;
   background: #000;
+}
+
+.reelsLoading {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .reelsExit {
@@ -2313,7 +2322,8 @@ select:focus {
 .reelCard {
   position: relative;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2343,15 +2353,16 @@ select:focus {
 .reelActions {
   position: absolute;
   right: 14px;
-  bottom: 110px;
+  bottom: calc(104px + env(safe-area-inset-bottom));
+  z-index: 6;
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .reelActionBtn {
-  width: 46px;
-  min-width: 46px;
-  height: 46px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 50%;
@@ -2406,6 +2417,7 @@ select:focus {
 
 .reelActionBtn.active {
   color: #ff4f76;
+  animation: reelActionPop 220ms ease;
 }
 
 .reelActionBtn.active svg {
@@ -2441,6 +2453,10 @@ select:focus {
   gap: 8px;
   color: #fff;
   text-shadow: 0 2px 18px rgba(0, 0, 0, 0.8);
+}
+
+@keyframes reelActionPop {
+  50% { transform: scale(1.14); }
 }
 
 .reelAuthor {
