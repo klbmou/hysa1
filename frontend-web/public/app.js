@@ -582,10 +582,10 @@ function renderUserBadge(user = {}) {
   if (!verified) return null;
   const badge = document.createElement("button");
   badge.type = "button";
-  badge.className = `verifiedBadge ${role === "owner" ? "ownerBadge" : ""}`.trim();
+  badge.className = `verifiedBadge hysaUserBadge ${role === "owner" ? "ownerBadge" : ""}`.trim();
   badge.innerHTML = role === "owner"
-    ? '<span class="ownerBadgeMark">H</span><span class="ownerBadgeCheck">✓</span>'
-    : icon("check");
+    ? '<span class="hysaBadgeCore">H</span><span class="hysaBadgeSpark"></span>'
+    : '<span class="hysaBadgeCore">H</span>';
   badge.title = role === "owner" ? "Verified Owner" : "Verified";
   on(badge, "click", (event) => {
     event.preventDefault();
@@ -4792,6 +4792,11 @@ async function boot() {
     setMsg(el.profileMsg, "");
     if (el.profileSave) el.profileSave.disabled = true;
     try {
+      const profileKeyBeforeSave = String(activeProfileKey || "").toLowerCase();
+      const myKeysBeforeSave = [me?.userKey, me?.key, me?.username]
+        .map((value) => String(value || "").toLowerCase())
+        .filter(Boolean);
+      const savingOwnProfile = !!profileKeyBeforeSave && myKeysBeforeSave.includes(profileKeyBeforeSave);
       const bio = String(el.profileBio?.value || "");
       const username = String(el.profileUsername?.value || "").trim();
       const displayName = String(el.profileDisplayName?.value || "").trim();
@@ -4808,7 +4813,11 @@ async function boot() {
       me = r.me;
       closeProfileEdit();
       showToast(t("saved"));
-      if (activeProfileKey && me && activeProfileKey === me.username.toLowerCase()) route();
+      if (savingOwnProfile && me?.username) {
+        location.hash = `#u/${encodeURIComponent(me.username.toLowerCase())}`;
+      } else if (activeProfileKey) {
+        route();
+      }
     } catch (err) {
       setMsg(el.profileMsg, humanizeError(err?.message), true);
     } finally {

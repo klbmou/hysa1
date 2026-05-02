@@ -586,6 +586,14 @@ async function pgFindUserByToken(token) {
   return pgFindUserByKey(res.rows[0].user_key);
 }
 
+async function pgFindUserByUsername(username) {
+  const value = String(username || "").trim();
+  if (!value) return null;
+  const res = await pgPool.query("SELECT user_key FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1", [value]);
+  if (!res.rows.length) return null;
+  return pgFindUserByKey(res.rows[0].user_key);
+}
+
 async function pgCreateUser(user) {
   await pgPool.query(
     `INSERT INTO users (
@@ -1332,9 +1340,56 @@ async function findUserByKey(key) {
   return await User.findOne({ userKey: k });
 }
 
+async function findUserByCurrentUsername(username) {
+  const display = String(username || "").trim();
+  if (!display) return null;
+
+  if (USE_POSTGRES) {
+    return await pgFindUserByUsername(display);
+  }
+
+  return await User.findOne({ username: { $regex: `^${escapeRegex(display)}$`, $options: "i" } });
+}
+
+async function findUserByEmailAddress(email) {
+  const value = String(email || "").trim();
+  if (!value) return null;
+
+  if (USE_POSTGRES) {
+    return await pgFindUserByEmail(value);
+  }
+
+  return await User.findOne({ email: { $regex: `^${escapeRegex(value)}$`, $options: "i" } });
+}
+
 async function findUserByKeyOrName(input) {
-  const { key } = normalizeUsername(input);
-  return await findUserByKey(key);
+  const raw = String(input || "").trim();
+  const { key } = normalizeUsername(raw);
+  if (!key) return null;
+
+  const byKey = await findUserByKey(key);
+  if (byKey) return byKey;
+
+  const byUsername = await findUserByCurrentUsername(raw);
+  if (byUsername) return byUsername;
+
+  if (raw.includes("@")) {
+    return await findUserByEmailAddress(raw);
+  }
+
+  return null;
+}
+
+async function findUserForLogin(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return null;
+
+  if (raw.includes("@")) {
+    const byEmail = await findUserByEmailAddress(raw);
+    if (byEmail) return byEmail;
+  }
+
+  return await findUserByKeyOrName(raw);
 }
 
 async function followerCountFor(userKey) {
@@ -1376,7 +1431,7 @@ async function uniqueGoogleUsername(email, name) {
     const candidate = i === 0 ? base : `${base.slice(0, Math.max(3, 18 - String(i).length - 1))}_${i}`;
     const err = validateUsername(candidate);
     if (err) continue;
-    if (!await findUserByKey(candidate)) return candidate;
+    if (!await findUserByKey(candidate) && !await findUserByCurrentUsername(candidate)) return candidate;
   }
   return `user_${crypto.randomBytes(5).toString("hex")}`;
 }
@@ -1929,7 +1984,9 @@ async function handleRegister(req, res) {
   const passErr = validatePassword(body.password);
   if (passErr) return res.status(400).json({ ok: false, error: passErr });
 
-  if (await findUserByKey(key)) return res.status(409).json({ ok: false, error: "USERNAME_TAKEN" });
+  if (await findUserByKey(key) || await findUserByCurrentUsername(display)) {
+    return res.status(409).json({ ok: false, error: "USERNAME_TAKEN" });
+  }
 
   const u = normalizeUserObject(
     {
@@ -1962,10 +2019,10 @@ app.post("/api/signup", handleRegister);
 
 app.post("/api/login", async (req, res) => {
   const body = req.body || {};
-  const { key } = normalizeUsername(body.username);
+  const login = String(body.username ?? body.email ?? "").trim();
   const password = String(body.password ?? "");
 
-  const u = await findUserByKey(key);
+  const u = await findUserForLogin(login);
   if (!u || !verifyPassword(password, u.password)) {
     return res.status(401).json({ ok: false, error: "INVALID_CREDENTIALS" });
   }
