@@ -469,8 +469,8 @@ function fmtTime(iso) {
 
 function formatCount(n) {
   const value = Number(n) || 0;
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}m`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}k`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}K`;
   return String(value);
 }
 
@@ -504,6 +504,7 @@ const ICONS = {
   eye: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',
   repost: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="m7 22-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>',
   share: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>',
+  plane: '<svg viewBox="0 0 24 24" aria-hidden="true" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
   bookmark: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21 12 17 5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z"/></svg>',
   more: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>',
   check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12.2 11.2 14.4 15.6 9.6"/><path d="M12 2.8 14.1 5l3-.3.7 2.9 2.6 1.5-1.4 2.7 1.4 2.7-2.6 1.5-.7 2.9-3-.3-2.1 2.2-2.1-2.2-3 .3-.7-2.9-2.6-1.5 1.4-2.7-1.4-2.7 2.6-1.5.7-2.9 3 .3Z"/></svg>',
@@ -3643,20 +3644,34 @@ async function loadReels() {
   if (el.storiesBar) el.storiesBar.hidden = true;
   if (el.trendsBar) el.trendsBar.hidden = true;
   el.reelsView.textContent = "";
-  const exit = document.createElement("button");
-  exit.type = "button";
-  exit.className = "reelsExit";
-  exit.setAttribute("aria-label", "Exit reels");
-  exit.textContent = "X";
-  on(exit, "click", () => {
-    location.hash = "#home";
-    route();
-  });
-  el.reelsView.appendChild(exit);
+
+  // ── TOP BAR (fixed overlay, created once) ────────────────
+  const topBar = document.createElement("div");
+  topBar.className = "reelTopBar";
+  const topCreate = document.createElement("button");
+  topCreate.type = "button";
+  topCreate.className = "reelTopBtn";
+  topCreate.setAttribute("aria-label", "Create reel");
+  topCreate.innerHTML = `<svg viewBox="0 0 24 24" width="26" height="26" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg>`;
+  on(topCreate, "click", () => { location.hash = "#home"; route(); });
+  const topTitle = document.createElement("span");
+  topTitle.className = "reelTopTitle";
+  topTitle.textContent = "Reels";
+  const topFilter = document.createElement("button");
+  topFilter.type = "button";
+  topFilter.className = "reelTopBtn";
+  topFilter.setAttribute("aria-label", "Filter");
+  topFilter.innerHTML = `<svg viewBox="0 0 24 24" width="26" height="26" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>`;
+  topBar.appendChild(topCreate);
+  topBar.appendChild(topTitle);
+  topBar.appendChild(topFilter);
+  el.reelsView.appendChild(topBar);
+
   const loading = document.createElement("div");
   loading.className = "reelsLoading reelsSkeleton";
   loading.textContent = t("loading");
   el.reelsView.appendChild(loading);
+
   let r = null;
   try {
     if (reelsCache.payload && Date.now() - reelsCache.timestamp < REELS_CACHE_TTL) {
@@ -3677,15 +3692,28 @@ async function loadReels() {
     el.reelsView.appendChild(empty);
     return;
   }
+
   for (const reel of reels) {
     const card = document.createElement("div");
     card.className = "reelCard";
     const reelMedia = (reel.media || []).find((m) => m && m.kind === "video") || (reel.media || [])[0];
+
+    // ── MEDIA LAYER ──────────────────────────────────────────
     const media = document.createElement("div");
     media.className = "reelMedia";
+
+    // ── GRADIENT OVERLAYS ────────────────────────────────────
+    const gradTop = document.createElement("div");
+    gradTop.className = "reelGradTop";
+    const gradBottom = document.createElement("div");
+    gradBottom.className = "reelGradBottom";
+
+    // ── HEART BURST (double-tap) ─────────────────────────────
     const heart = document.createElement("div");
     heart.className = "heartBurst";
     heart.textContent = "\u2665";
+
+    // ── REACTION PALETTE (long-press) ────────────────────────
     const reactionPalette = document.createElement("div");
     reactionPalette.className = "reelReactionPalette";
     for (const emoji of ["❤️", "😂", "😮", "😢", "😡"]) {
@@ -3699,111 +3727,178 @@ async function loadReels() {
       });
       reactionPalette.appendChild(reactionBtn);
     }
-    heart.textContent = "♥";
-    heart.textContent = "\u2665";
-    const actions = document.createElement("div");
-    actions.className = "reelActions";
-    const profileAction = document.createElement("div");
-    profileAction.className = "reelProfileAction";
-    profileAction.appendChild(avatarNode(reel.authorAvatar, reel.author, "sm"));
+
+    // ── RIGHT RAIL ────────────────────────────────────────────
+    const rail = document.createElement("div");
+    rail.className = "reelRightRail";
+
+    // Profile avatar + follow badge
+    const railProfile = document.createElement("div");
+    railProfile.className = "reelRailProfile";
+    const railAvatar = avatarNode(reel.authorAvatar, reel.author, "sm");
+    railAvatar.classList.add("reelRailAvatar");
+    railProfile.appendChild(railAvatar);
     const followAction = document.createElement("button");
     followAction.type = "button";
-    followAction.className = "reelFollowMini";
+    followAction.className = "reelFollowBadge";
     followAction.textContent = reel.isFollowingAuthor ? "\u2713" : "+";
     followAction.hidden = isMineKey(reel.authorKey);
-    profileAction.appendChild(followAction);
+    railProfile.appendChild(followAction);
+    rail.appendChild(railProfile);
+
+    // Like
     const likeAction = document.createElement("button");
     likeAction.type = "button";
-    likeAction.className = "reelActionBtn";
+    likeAction.className = "reelRailBtn";
     setIconCountState(likeAction, "heart", reel.likeCount || 0, reel.likedByMe);
+
+    // Comment
     const commentAction = document.createElement("button");
     commentAction.type = "button";
-    commentAction.className = "reelActionBtn";
+    commentAction.className = "reelRailBtn";
     setIconCountState(commentAction, "comment", reel.commentCount || 0, false);
+
+    // Share (forward arrow)
     const shareAction = document.createElement("button");
     shareAction.type = "button";
-    shareAction.className = "reelActionBtn";
-    shareAction.innerHTML = `${icon("share")}<strong>Share</strong>`;
-    const moreAction = document.createElement("button");
-    moreAction.type = "button";
-    moreAction.className = "reelActionBtn";
-    moreAction.innerHTML = `${icon("more")}<strong>More</strong>`;
-    const saveAction = document.createElement("button");
-    saveAction.type = "button";
-    saveAction.className = "reelActionBtn";
-    setIconCountState(saveAction, "bookmark", reel.bookmarkCount || 0, reel.bookmarkedByMe);
+    shareAction.className = "reelRailBtn";
+    shareAction.innerHTML = `${icon("share")}<strong>${formatCount(0)}</strong>`;
+
+    // DM / Send (paper plane) — hidden for own reels
     const messageAction = document.createElement("button");
     messageAction.type = "button";
-    messageAction.className = "reelActionBtn";
-    messageAction.innerHTML = `${icon("comment")}<strong>DM</strong>`;
+    messageAction.className = "reelRailBtn";
+    messageAction.innerHTML = `${icon("plane")}<strong>${formatCount(0)}</strong>`;
     messageAction.hidden = isMineKey(reel.authorKey);
+
+    // Bookmark
+    const saveAction = document.createElement("button");
+    saveAction.type = "button";
+    saveAction.className = "reelRailBtn";
+    setIconCountState(saveAction, "bookmark", reel.bookmarkCount || 0, reel.bookmarkedByMe);
+
+    // More (⋯)
+    const moreAction = document.createElement("button");
+    moreAction.type = "button";
+    moreAction.className = "reelRailBtn reelRailMore";
+    moreAction.innerHTML = `<svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg><strong></strong>`;
+
+    // Views (non-interactive)
     const viewsAction = document.createElement("button");
     viewsAction.type = "button";
-    viewsAction.className = "reelActionBtn static";
+    viewsAction.className = "reelRailBtn";
+    viewsAction.style.pointerEvents = "none";
     setIconCountState(viewsAction, "eye", reel.viewCount || 0, false);
-    actions.appendChild(profileAction);
-    actions.appendChild(likeAction);
-    actions.appendChild(commentAction);
-    actions.appendChild(shareAction);
-    actions.appendChild(moreAction);
-    const caption = document.createElement("div");
-    caption.className = "reelCaption collapsed";
-    const author = document.createElement("div");
-    author.className = "reelAuthor";
+
+    rail.appendChild(likeAction);
+    rail.appendChild(commentAction);
+    rail.appendChild(shareAction);
+    rail.appendChild(messageAction);
+    rail.appendChild(saveAction);
+    rail.appendChild(moreAction);
+
+    // ── BOTTOM LEFT ───────────────────────────────────────────
+    const bottomLeft = document.createElement("div");
+    bottomLeft.className = "reelBottomLeft";
+
+    // Row: avatar + username + badge + follow button
+    const infoRow = document.createElement("div");
+    infoRow.className = "reelInfoRow";
+    const infoAvatar = avatarNode(reel.authorAvatar, reel.author, "sm");
+    infoAvatar.classList.add("reelInfoAvatar");
     const authorLink = document.createElement("a");
     authorLink.href = `#u/${encodeURIComponent(reel.authorKey)}`;
+    authorLink.className = "reelUsername";
     authorLink.textContent = `@${reel.author || "user"}`;
-    author.appendChild(authorLink);
     const reelBadge = renderUserBadge({ verified: reel.verified, role: reel.authorRole, createdAt: reel.authorCreatedAt });
-    if (reelBadge) author.appendChild(reelBadge);
+    const followBtnInline = document.createElement("button");
+    followBtnInline.type = "button";
+    followBtnInline.className = "reelFollowInline";
+    if (reel.isFollowingAuthor) followBtnInline.classList.add("following");
+    followBtnInline.textContent = reel.isFollowingAuthor ? "Following" : "Follow";
+    followBtnInline.hidden = isMineKey(reel.authorKey);
+    infoRow.appendChild(infoAvatar);
+    infoRow.appendChild(authorLink);
+    if (reelBadge) infoRow.appendChild(reelBadge);
+    infoRow.appendChild(followBtnInline);
+    bottomLeft.appendChild(infoRow);
+
+    // Caption (2-line clamp + ...more)
+    const captionText = richTextNode(reel.text || "");
+    captionText.className = "reelCaptionText";
+    const moreTextBtn = document.createElement("button");
+    moreTextBtn.type = "button";
+    moreTextBtn.className = "reelMoreText";
+    moreTextBtn.textContent = "...more";
+    let captionExpanded = false;
+    on(moreTextBtn, "click", () => {
+      captionExpanded = !captionExpanded;
+      captionText.classList.toggle("expanded", captionExpanded);
+      moreTextBtn.textContent = captionExpanded ? "less" : "...more";
+    });
+    bottomLeft.appendChild(captionText);
+    bottomLeft.appendChild(moreTextBtn);
+
+    // Social proof
+    const socialProof = document.createElement("div");
+    socialProof.className = "reelSocialProof";
+    if (reel.mutualFollowers && reel.mutualFollowers.length) {
+      socialProof.textContent = `Followed by ${reel.mutualFollowers[0]} and others`;
+    }
+    bottomLeft.appendChild(socialProof);
+
+    // Music/sound marquee row
+    const musicRow = document.createElement("button");
+    musicRow.type = "button";
+    musicRow.className = "reelMusicRow";
+    const musicMarquee = document.createElement("span");
+    musicMarquee.className = "reelMusicMarquee";
+    musicMarquee.textContent = `\u266A sound \u00B7 ${reel.author || "HYSA"}`;
+    musicRow.appendChild(musicMarquee);
+    on(musicRow, "click", () => showToast("Related reels for this sound are coming."));
+    bottomLeft.appendChild(musicRow);
+
+    // ── MUTE CIRCLE (center bottom) ───────────────────────────
+    const muteIconMuted = `<svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`;
+    const muteIconOn = `<svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>`;
+    const mute = document.createElement("button");
+    mute.type = "button";
+    mute.className = "reelMuteCircle";
+    mute.setAttribute("aria-label", reelMutePreference ? "Unmute" : "Mute");
+    mute.innerHTML = reelMutePreference ? muteIconMuted : muteIconOn;
+
+    // ── ASSEMBLE CARD ─────────────────────────────────────────
+    card.appendChild(media);
+    card.appendChild(gradTop);
+    card.appendChild(gradBottom);
+    card.appendChild(heart);
+    card.appendChild(reactionPalette);
+    card.appendChild(mute);
+    card.appendChild(rail);
+    card.appendChild(bottomLeft);
+
+    // ── FOLLOW LOGIC ─────────────────────────────────────────
     async function toggleReelFollow() {
       if (!reel.authorKey || isMineKey(reel.authorKey)) return;
       followAction.disabled = true;
+      followBtnInline.disabled = true;
       try {
         const rFollow = await api(`/api/follow/${encodeURIComponent(reel.authorKey)}`, { method: "POST" });
         reel.isFollowingAuthor = !!rFollow.following;
         followAction.textContent = reel.isFollowingAuthor ? "\u2713" : "+";
+        followBtnInline.textContent = reel.isFollowingAuthor ? "Following" : "Follow";
+        followBtnInline.classList.toggle("following", reel.isFollowingAuthor);
       } catch (err) {
         showToast(humanizeError(err?.message), true);
       } finally {
         followAction.disabled = false;
+        followBtnInline.disabled = false;
       }
     }
     on(followAction, "click", toggleReelFollow);
-    const captionText = richTextNode(reel.text || "");
-    captionText.classList.add("reelText");
-    const more = document.createElement("button");
-    more.type = "button";
-    more.className = "reelMore";
-    more.textContent = "more";
-    on(more, "click", () => {
-      caption.classList.toggle("collapsed");
-      more.textContent = caption.classList.contains("collapsed") ? "more" : "less";
-    });
-    const sound = document.createElement("button");
-    sound.type = "button";
-    sound.className = "reelSound";
-    const soundMarquee = document.createElement("span");
-    soundMarquee.textContent = `\u266A Sound - ${reel.author || "HYSA"}`;
-    sound.appendChild(soundMarquee);
-    on(sound, "click", () => showToast("Related reels for this sound are coming next."));
-    caption.appendChild(author);
-    caption.appendChild(captionText);
-    caption.appendChild(more);
-    caption.appendChild(sound);
-    const mute = document.createElement("button");
-    mute.type = "button";
-    mute.className = "reelMute";
-    mute.textContent = reelMutePreference ? "Muted" : "Sound";
-    const gradient = document.createElement("div");
-    gradient.className = "reelGradientOverlay";
-    card.appendChild(mute);
-    card.appendChild(media);
-    card.appendChild(gradient);
-    card.appendChild(heart);
-    card.appendChild(reactionPalette);
-    card.appendChild(actions);
-    card.appendChild(caption);
+    on(followBtnInline, "click", toggleReelFollow);
+
+    // ── HEART ANIMATIONS ─────────────────────────────────────
     function flashHeart() {
       heart.classList.remove("show");
       void heart.offsetWidth;
@@ -3840,6 +3935,8 @@ async function loadReels() {
       setIconCountState(likeAction, "heart", reel.likeCount || 0, reel.likedByMe);
       pulseLikeButton();
     }
+
+    // ── VIDEO PLAYER ─────────────────────────────────────────
     if (reelMedia && reelMedia.kind === "video") {
       const player = customVideoPlayer(reelMedia.url, {
         muted: reelMutePreference,
@@ -3939,7 +4036,8 @@ async function loadReels() {
           video.muted = !video.muted;
           reelMutePreference = video.muted;
           localStorage.setItem("hysa_reels_muted", String(reelMutePreference));
-          mute.textContent = video.muted ? "Muted" : "Sound";
+          mute.innerHTML = video.muted ? muteIconMuted : muteIconOn;
+          mute.setAttribute("aria-label", video.muted ? "Unmute" : "Mute");
           for (const v of el.reelsView.querySelectorAll(".reelCard video")) v.muted = reelMutePreference;
         });
       }
@@ -3951,6 +4049,8 @@ async function loadReels() {
       img.src = reelMedia.url;
       media.appendChild(img);
     }
+
+    // ── INTERACTIONS ─────────────────────────────────────────
     on(card, "dblclick", (event) => {
       const target = event && event.target && event.target.closest ? event.target : null;
       if (target && target.closest(".proVideo")) return;
@@ -3958,11 +4058,19 @@ async function loadReels() {
       floatHearts(event);
       if (!reel.likedByMe) likeReel().catch(() => {});
     });
-    on(likeAction, "click", () => likeReel().catch(() => {}));
+    on(likeAction, "click", () => {
+      likeAction.classList.add("railBounce");
+      window.setTimeout(() => likeAction.classList.remove("railBounce"), 340);
+      likeReel().catch(() => {});
+    });
     on(commentAction, "click", () => {
+      commentAction.classList.add("railBounce");
+      window.setTimeout(() => commentAction.classList.remove("railBounce"), 340);
       openReelComments(reel, commentAction).catch((err) => showToast(humanizeError(err?.message), true));
     });
-    on(shareAction, "click", async () => {
+    on(shareAction, "click", () => {
+      shareAction.classList.add("railBounce");
+      window.setTimeout(() => shareAction.classList.remove("railBounce"), 340);
       shareReel(reel);
     });
     on(moreAction, "click", () => {
@@ -3988,10 +4096,14 @@ async function loadReels() {
       });
     });
     on(messageAction, "click", () => {
+      messageAction.classList.add("railBounce");
+      window.setTimeout(() => messageAction.classList.remove("railBounce"), 340);
       if (!reel.authorKey) return;
       location.hash = `#dm/${encodeURIComponent(reel.authorKey)}`;
     });
     on(saveAction, "click", async () => {
+      saveAction.classList.add("railBounce");
+      window.setTimeout(() => saveAction.classList.remove("railBounce"), 340);
       try {
         const rSave = await api(`/api/posts/${encodeURIComponent(reel.id)}/bookmark`, { method: "POST" });
         reel.bookmarkedByMe = rSave.bookmarked;
@@ -4001,8 +4113,10 @@ async function loadReels() {
         showToast(humanizeError(err?.message), true);
       }
     });
+
     el.reelsView.appendChild(card);
   }
+
   const videos = Array.from(el.reelsView.querySelectorAll(".reelCard video"));
   videos.forEach((video, index) => {
     video.preload = index < 2 ? "auto" : "metadata";

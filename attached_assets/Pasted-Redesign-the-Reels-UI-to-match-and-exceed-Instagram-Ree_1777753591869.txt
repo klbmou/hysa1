@@ -1,0 +1,86 @@
+Redesign the Reels UI to match and exceed Instagram Reels.
+Only touch: app.js + styles.css
+DO NOT touch server.js
+
+TARGET DESIGN (based on Instagram Reels):
+
+═══════════════════════════════════════
+TOP BAR (overlay on video)
+═══════════════════════════════════════
+- Position: fixed top, over the video
+- Left: + button (create reel)
+- Center: "Reels" title (bold white)
+- Right: filter/settings icon
+- Background: transparent gradient top
+
+═══════════════════════════════════════
+RIGHT SIDE ACTIONS (vertical rail)
+═══════════════════════════════════════
+Position: fixed right side, vertically centered
+
+Buttons from top to bottom:
+1. ❤️ Heart icon + like count below (e.g. "14.1K")
+2. 💬 Comment bubble icon + count (e.g. "972")
+3. ↗️ Share/forward icon + count (e.g. "592")
+4. ✈️ Send/DM icon + count (e.g. "60.5K")  
+5. 🔖 Bookmark icon + count (e.g. "903")
+6. ⋯ More options (3 dots)
+7. Small thumbnail of next reel (bottom)
+
+Style:
+- Icons: white, 28px
+- Count: white, bold, 13px, below each icon
+- Background: none (overlay on video)
+- Spacing: 24px between each button
+- Tap animation: scale 1.2 + bounce
+
+═══════════════════════════════════════
+BOTTOM LEFT (overlay on video)
+═══════════════════════════════════════
+- Avatar (48px circle, gradient ring) + Follow button
+- Username: bold white 15px
+- Caption: white 14px, max 2 lines + "...more"
+- "Followed by X" social proof text (grey)
+- 🎵 Music: "♪ sound name" scrolling marquee
+
+═══════════════════════════════════════
+CENTER
+═══════════════════════════════════════
+- Mute/unmute button: small circle, semi-transparent
+- Play/pause: tap video center
+- Double tap: big heart burst animation
+
+═══════════════════════════════════════
+BACKGROUND
+═══════════════════════════════════════
+- Video: object-fit cover, full screen
+- Top gradient: black → transparent (80px)
+- Bottom gradient: transparent → black (200px)
+- Side rails: no background
+
+═══════════════════════════════════════
+BOTTOM NAV
+═══════════════════════════════════════
+- While in Reels: show minimal nav
+- Home / Reels(active) / Send / Search / Profile
+- Semi-transparent background
+
+═══════════════════════════════════════
+ANIMATIONS
+═══════════════════════════════════════
+- Scroll between reels: snap scroll, smooth
+- Like: red heart burst from center + float up
+- Follow: button morphs to "Following" + checkmark
+- Share: sheet slides up from bottom
+- Swipe up/down: smooth reel transition
+
+═══════════════════════════════════════
+FORMAT NUMBERS
+═══════════════════════════════════════
+- 1000 → 1K
+- 14100 → 14.1K  
+- 1000000 → 1M
+- Apply to: likes, comments, shares, views
+
+node --check after done.
+Commit to GitHub when finished.
