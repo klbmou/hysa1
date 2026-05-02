@@ -4334,7 +4334,8 @@ async function loadReels() {
       reelScrollTicking = false;
       let best = null;
       let bestOverlap = 0;
-      for (const video of el.reelsView.querySelectorAll(".reelCard video")) {
+      for (const video of videos) {
+        if (!video.isConnected) continue;
         const rect = video.getBoundingClientRect();
         const overlap = Math.max(0, Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0));
         if (overlap > bestOverlap) {
@@ -4342,7 +4343,8 @@ async function loadReels() {
           best = video;
         }
       }
-      for (const video of el.reelsView.querySelectorAll(".reelCard video")) {
+      for (const video of videos) {
+        if (!video.isConnected) continue;
         if (video !== best) video.pause();
       }
     });

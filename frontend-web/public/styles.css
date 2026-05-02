@@ -253,12 +253,16 @@ a {
     calc(var(--top-nav-h) + env(safe-area-inset-top) + 14px)
     0
     calc(var(--bottom-nav-h) + env(safe-area-inset-bottom) + 34px);
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }
 
 #feed {
   width: 100%;
   display: grid;
   gap: 16px;
+  overflow-anchor: auto;
+  scroll-margin-top: calc(var(--top-nav-h) + env(safe-area-inset-top));
 }
 
 .post {
@@ -271,6 +275,9 @@ a {
   border-radius: 22px;
   background: rgba(20, 22, 29, 0.94);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  contain: layout paint style;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 620px;
 }
 
 .postTop {
@@ -321,6 +328,7 @@ a {
 
 html {
   background: var(--bg-primary);
+  scrollbar-gutter: stable;
 }
 
 body {
