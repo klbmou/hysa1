@@ -2315,6 +2315,19 @@ app.get("/api/posts", async (req, res) => {
   return res.status(200).json(result);
 });
 
+// Scheduled posts — MUST be before /api/posts/:id to avoid shadowing
+app.get("/api/posts/scheduled", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true, posts: [] });
+  const r = await pgPool.query(
+    "SELECT * FROM posts WHERE author_key = $1 AND scheduled_at > NOW() ORDER BY scheduled_at ASC",
+    [viewerKey]
+  );
+  return res.status(200).json({ ok: true, posts: r.rows.map(formatPostRow) });
+});
+
 app.get("/api/feed", async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
@@ -3373,58 +3386,166 @@ app.get("/api/moderation/reports", async (req, res) => {
 });
 
 function aiSmartReply(message) {
-  const m = String(message || "").trim().toLowerCase();
+  const orig = String(message || "").trim();
+  const m = orig.toLowerCase();
+  const isAr = /[\u0600-\u06FF]/.test(orig);
 
-  // Greetings
-  if (/^(hi|hello|hey|howdy|hiya|سلام|مرحبا|السلام عليكم|أهلا|هلا|مرحبًا|bonjour|salut)/.test(m)) {
-    const greetings = [
-      "مرحباً! 👋 أنا مساعد HYSA. كيف يمكنني مساعدتك اليوم؟",
-      "أهلاً وسهلاً! 😊 يسعدني مساعدتك. هل تريد كتابة منشور؟ أو لديك سؤال؟",
-      "Hello! 👋 I'm the HYSA assistant. How can I help you today?",
+  // Greeting
+  if (/^(hi|hello|hey|howdy|hiya|سلام|مرحبا|السلام عليكم|أهلا|هلا|مرحبًا|صباح|مساء)/.test(m)) {
+    const g = isAr ? [
+      "أهلاً! أنا بلوطة 🌰 مساعدك الذكي على HYSA. كيف أقدر أساعدك اليوم؟",
+      "مرحباً بك! 🌟 اطلب مني كابشن، هاشتاقات، بايو، أو أي شيء تحتاجه!",
+      "هلا والله! 🌰 شو نسوي اليوم؟ كابشن؟ هاشتاق؟ فكرة منشور؟",
+    ] : [
+      "Hey there! I'm بلوطة 🌰 your smart HYSA assistant. What can I create for you?",
+      "Hello! Ready to craft some amazing content? Captions, hashtags, bio — just ask!",
     ];
-    return greetings[Math.floor(Math.random() * greetings.length)];
+    return g[Math.floor(Math.random() * g.length)];
   }
 
-  // Help with posts (Arabic)
-  if (/منشور|نشر|اكتب لي|كتابة/.test(m)) {
-    return "يمكنني مساعدتك في كتابة منشور! 📝 أخبرني:\n• ما الموضوع الذي تريد الكتابة عنه؟\n• ما الشعور الذي تريد نقله؟\n• هل تريد إضافة هاشتاقات؟";
+  // Caption requests
+  const captionTemplates = {
+    food: isAr ? [
+      "الأكل مش بس رزق، هو فن 🍽️ #طعام #مطبخ #اكل_عربي",
+      "اللي يكل من يده، يكل زين 🧑‍🍳✨ #طبخ #شهيوات",
+      "معدتك سعيدة = أنت سعيد 😍 #فود #مطاعم",
+      "كل وجبة قصة 📖 وهذي قصتي مع الطعام 🍜 #foodie #اكل",
+      "الحياة أجمل بوجبة حلوة 🌮 #طعام_العرب",
+    ] : [
+      "Food is my love language 🍜 #foodie #yummy #instafood",
+      "Life is short, eat the good stuff 🍕 #food #foodlover",
+      "Good food = good mood 😍 #foodblog #delicious",
+      "Eating my way through life, one bite at a time 🌮 #foodstagram",
+      "They said eat less. I said eat better 🍰 #foodies",
+    ],
+    travel: isAr ? [
+      "العالم كتاب، ومن لم يسافر قرأ صفحة واحدة 🌍 #سفر #ترحال",
+      "كل مكان جديد، روح جديدة ✈️ #رحلات #adventure",
+      "السفر لا يُكمَّل دون قصص تُحكى 🗺️ #مسافر #سياحة",
+      "بعيد عن المألوف، قريب من الجمال 🏔️ #سفر #طبيعة",
+    ] : [
+      "Not all those who wander are lost 🌍 #travel #wanderlust",
+      "Life is short and the world is wide ✈️ #explore #adventure",
+      "Collect moments, not things 🗺️ #travelgram #wanderer",
+      "Every destination has a story 🏔️ #travelblogger",
+    ],
+    motivation: isAr ? [
+      "كل يوم فرصة جديدة للبداية 💪 #تحفيز #نجاح",
+      "لا تتوقف حين تتعب، توقف حين تنجح 🏆 #motivation",
+      "أصعب خطوة هي الأولى، والباقي سيأتي 🌟 #عزيمة",
+      "ما تُزرعه اليوم تحصده غداً 🌱 #تطوير_الذات",
+    ] : [
+      "Start where you are. Use what you have. Do what you can. 💪 #motivation",
+      "Dream big. Work hard. Stay humble. 🌟 #success #inspire",
+      "Progress, not perfection 🏆 #growth #mindset",
+      "Be the energy you want to attract ✨ #positivity",
+    ],
+    funny: isAr ? [
+      "الحياة مش سهلة بس الوجه الحلو يساعد 😂 #يوميات #humor",
+      "أنا مش كسلان، أنا موفّر طاقتي 🛋️ #كوميدي #يوميات",
+      "قرأت إن الضحك علاج، والله وأنا أعالج نفسي كل يوم 😂 #humor",
+    ] : [
+      "I'm not lazy, I'm just energy efficient 🛋️ #relatable #funny",
+      "Current mood: pretending to be a morning person ☕ #humor #relatable",
+      "My therapist told me to embrace my flaws. So here I am 😅 #funny",
+    ],
+  };
+
+  if (/كابشن|caption|وصف.*صورة|صورة.*وصف|اكتب.*صورة/.test(m)) {
+    let cat = "motivation";
+    if (/food|اكل|طعام|مطعم|طبخ|شهيوات/.test(m)) cat = "food";
+    else if (/travel|سفر|رحلة|ترحال|مطار/.test(m)) cat = "travel";
+    else if (/funny|مضحك|كوميدي|ظريف/.test(m)) cat = "funny";
+    const list = captionTemplates[cat];
+    const picks = list.slice(0, 3).join("\n\n");
+    return isAr
+      ? `إليك ${list.length < 4 ? "بعض" : "٣"} كابشنات لصورتك 📸:\n\n${picks}\n\nقل لي الموضوع وأعطيك المزيد! 🌰`
+      : `Here are some captions for your photo 📸:\n\n${picks}\n\nTell me the vibe and I'll get more specific! 🌰`;
   }
 
   // Hashtag suggestions
-  if (/هاشتاق|hashtag|وسم/.test(m)) {
-    return "إليك بعض الهاشتاقات الشائعة على HYSA 🏷️:\n#تقنية #ترفيه #رياضة #أخبار #صور #فيديو #حياة #ثقافة #سفر #طعام\n\nأخبرني بموضوع منشورك وسأقترح هاشتاقات مناسبة!";
+  const hashtagDB = {
+    travel: "#سفر #ترحال #رحلات #مسافر #سياحة #travel #wanderlust #explore #adventure #travelgram #instatravel #backpacking #globetrotter #travelphoto #worldtravel",
+    food: "#طعام #اكل #مطبخ #شهيوات #وصفات #food #foodie #yummy #instafood #foodstagram #homecooking #delicious #foodblog #recipe #eating",
+    tech: "#تقنية #تكنولوجيا #برمجة #تطوير #tech #technology #coding #programming #developer #software #ai #startup #innovation #digital",
+    fitness: "#رياضة #لياقة #صحة #تمارين #fitness #gym #workout #health #motivation #fitlife #bodybuilding #exercise #training #lifestyle",
+    fashion: "#موضة #ستايل #لباس #فاشن #fashion #style #ootd #outfit #trending #aesthetic #streetstyle #instafashion",
+    art: "#فن #رسم #إبداع #تصميم #art #artwork #drawing #creative #design #illustration #artist #digitalart",
+    general: "#hysa #تواصل_اجتماعي #محتوى #عرب #lifestyle #content #social #trending #viral #explore",
+  };
+
+  if (/هاشتاق|hashtag|وسم|هاشتاغ/.test(m)) {
+    let cat = "general";
+    if (/food|اكل|طعام/.test(m)) cat = "food";
+    else if (/travel|سفر|رحل/.test(m)) cat = "travel";
+    else if (/tech|تقني|برمج/.test(m)) cat = "tech";
+    else if (/sport|رياض|gym|fitness/.test(m)) cat = "fitness";
+    else if (/fashion|موضة|ستايل/.test(m)) cat = "fashion";
+    else if (/art|فن|رسم/.test(m)) cat = "art";
+    return isAr
+      ? `إليك هاشتاقات ${cat} مناسبة لمنشورك 🏷️:\n\n${hashtagDB[cat]}\n\n💡 نصيحة: استخدم ٥-١٠ هاشتاقات للوصول الأفضل!`
+      : `Here are ${cat} hashtags for your post 🏷️:\n\n${hashtagDB[cat]}\n\n💡 Tip: Use 5-10 hashtags for best reach!`;
   }
 
-  // Help with bio
-  if (/bio|نبذة|بايو|profile|بروفايل/.test(m)) {
-    return "لكتابة نبذة احترافية على ملفك الشخصي 📋، اتبع هذه النصيحة:\n1. اذكر اهتماماتك الرئيسية\n2. أضف مجالك أو تخصصك\n3. اكتب جملة مميزة تعبر عنك\n\nمثال: \"مهتم بالتقنية والتصميم | أشارك يومياتي وأفكاري 🌟\"";
+  // Bio templates
+  const bioTemplates = isAr ? [
+    "مهتم بـ [اهتمامك] | أشارك [محتواك] كل يوم 🌟 | DM مفتوح",
+    "📍 [مدينتك] | 💼 [مجالك] | أؤمن أن الحياة أجمل مع [شغفك]",
+    "مصمم حياتي بطريقتي الخاصة 🎨 | [تخصصك] بشغف | هنا لأشاركك قصتي",
+    "صانع محتوى | [موضوعك] | نشر الإيجابية يومياً ☀️",
+    "أحب [شغفك] وأصنع محتوى عن [موضوعك] 📲 | انضم لرحلتي!",
+  ] : [
+    "Living life one post at a time 📲 | [Your niche] creator | DMs open",
+    "📍 [City] | Passionate about [interest] | Sharing my journey daily",
+    "Content creator | [Topic] enthusiast | Spreading good vibes ☀️",
+    "Just a [job/hobby] who loves to share 🌟 | [Your specialty]",
+    "Building dreams, sharing stories 🚀 | [Your focus] | Join the ride!",
+  ];
+
+  if (/bio|نبذة|بايو|about me|profile.*desc/.test(m)) {
+    const picks = bioTemplates.slice(0, 3).join("\n\n");
+    return isAr
+      ? `إليك ٣ قوالب بايو احترافية 📋:\n\n${picks}\n\n✏️ استبدل الكلمات بين [] بمعلوماتك الحقيقية!`
+      : `Here are 3 professional bio templates 📋:\n\n${picks}\n\n✏️ Replace words in [] with your actual info!`;
   }
 
   // What is HYSA
-  if (/what is hysa|ما هو hysa|ما هي hysa|عن التطبيق|about/.test(m)) {
-    return "HYSA هي شبكة تواصل اجتماعي مصغّرة 🌐\n\nيمكنك:\n• نشر منشورات نصية وصور ومقاطع فيديو\n• متابعة الأصدقاء\n• الإعجاب والتعليق وإعادة النشر\n• مشاركة القصص\n• إرسال رسائل مباشرة\n• البحث عن مستخدمين";
+  if (/hysa|التطبيق|about.*app/.test(m)) {
+    return isAr
+      ? "HYSA هي شبكة تواصل اجتماعي عربية أولاً 🌐\n\nيمكنك:\n• نشر منشورات + صور + فيديو\n• متابعة الأصدقاء\n• قصص تختفي بعد ٢٤ ساعة\n• رسائل مباشرة\n• مشاركة Reels\n• بلوطة المساعد الذكي 🌰"
+      : "HYSA is an Arabic-first micro-social platform 🌐\n\nFeatures: Posts, Stories, Reels, DMs, Friends System, and me — بلوطة 🌰 your AI assistant!";
   }
 
-  // How to post
-  if (/كيف|how to|post|upload/.test(m)) {
-    return "لإنشاء منشور جديد ✏️:\n1. اضغط على زر ＋ في الأسفل\n2. اكتب نصك (حتى 280 حرف)\n3. يمكنك إضافة صورة أو فيديو\n4. اختر الخصوصية (عام أو خاص)\n5. اضغط \"نشر\"!\n\nمنشورك سيظهر في الصفحة الرئيسية فور نشره 🚀";
-  }
-
-  // Generate post idea
-  if (/فكرة|idea|اقتراح|suggest/.test(m)) {
-    const ideas = [
-      "💡 فكرة منشور: شارك شيئاً تعلمته اليوم مع هاشتاق #تعلمت_اليوم",
-      "💡 فكرة منشور: ما هو أفضل شيء حدث معك هذا الأسبوع؟ شاركه مع متابعيك!",
-      "💡 فكرة منشور: ضع صورة من يومك مع وصف قصير — الناس تحب التفاصيل البسيطة!",
-      "💡 Post idea: Share a tip from your field of expertise with #tips hashtag",
+  // Post idea
+  if (/فكرة|idea|اقتراح|suggest|post.*idea/.test(m)) {
+    const ideas = isAr ? [
+      "💡 شارك لحظة جميلة من يومك مع وصف قصير — الناس تحب الأصالة!",
+      "💡 اكتب ٣ أشياء تعلمتها هذا الأسبوع مع #تعلمت_اليوم",
+      "💡 نشر صورة قديمة مع تعليق عن كيف تغيّرت — التحولات دائماً تحصل تفاعل كبير!",
+      "💡 اسأل متابعيك سؤالاً — التفاعل يزيد الوصول!",
+    ] : [
+      "💡 Share a 'day in my life' moment — authenticity always wins!",
+      "💡 Post a throwback with a reflection — people love growth stories!",
+      "💡 Ask your followers a question — engagement boosts reach!",
+      "💡 Share a tip from your expertise with #tips",
     ];
     return ideas[Math.floor(Date.now() / 1000) % ideas.length];
   }
 
-  // Default helpful response
-  const defaults = [
-    "يمكنني مساعدتك في:\n• كتابة منشورات\n• اقتراح هاشتاقات\n• كتابة نبذة للملف الشخصي\n• الإجابة على أسئلة عن HYSA\n\nماذا تحتاج؟ 😊",
-    "أنا هنا للمساعدة! 🤖 يمكنني مساعدتك في كتابة المحتوى واقتراح الأفكار والإجابة على أسئلتك عن التطبيق.",
+  // How to use
+  if (/كيف|how to|post|نشر|upload/.test(m)) {
+    return isAr
+      ? "لإنشاء منشور ✏️:\n1. اضغط زر ＋ في الأسفل\n2. اكتب نصك\n3. أضف صورة أو فيديو\n4. اضغط نشر 🚀"
+      : "To create a post ✏️:\n1. Tap the + button at the bottom\n2. Write your text\n3. Add a photo or video\n4. Hit Post! 🚀";
+  }
+
+  // Default
+  const defaults = isAr ? [
+    "أنا بلوطة 🌰 جاهز أساعدك في:\n• كتابة كابشن صورة 📸\n• اقتراح هاشتاقات 🏷️\n• كتابة بايو احترافي\n• أفكار للمنشورات 💡\n\nماذا تريد؟",
+    "هلا! 🌰 قل لي ماذا تحتاج وأنا هنا — كابشن، هاشتاق، بايو، أو أي شيء تبيه!",
+  ] : [
+    "I'm بلوطة 🌰 Here to help with:\n• Photo captions 📸\n• Hashtag suggestions 🏷️\n• Professional bio writing\n• Post ideas 💡\n\nWhat do you need?",
+    "Hey! 🌰 Ask me for captions, hashtags, bio templates, or post ideas!",
   ];
   return defaults[Math.floor(Math.random() * defaults.length)];
 }
@@ -3460,32 +3581,62 @@ app.post("/api/ai/chat", async (req, res) => {
   const message = String(req.body && req.body.message || "").trim();
   if (!message || message.length > 2000) return res.status(400).json({ ok: false, error: "INVALID_MESSAGE" });
 
-  const apiKey = process.env.OPENAI_API_KEY ? String(process.env.OPENAI_API_KEY).trim() : "";
-  if (!apiKey) return res.status(200).json({ ok: true, ...aiNotConfigured("chat", message) });
+  const anthropicKey = process.env.ANTHROPIC_API_KEY ? String(process.env.ANTHROPIC_API_KEY).trim() : "";
+  const openaiKey = process.env.OPENAI_API_KEY ? String(process.env.OPENAI_API_KEY).trim() : "";
 
-  try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-        input: message,
-      }),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      console.error("[ai] chat provider error:", body && (body.error || body));
-      return res.status(200).json({ ok: true, ...aiNotConfigured("chat", message) });
+  // Try Anthropic Claude first
+  if (anthropicKey) {
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-3-haiku-20240307",
+          max_tokens: 1024,
+          system: "أنت بلوطة 🌰، مساعد ذكي ومرح على منصة HYSA الاجتماعية. أجب دائماً بنفس لغة المستخدم (عربي أو إنجليزي). كن مرحاً، ودوداً، وإبداعياً. تخصصك في كتابة الكابشنات والهاشتاقات والبايو للسوشيال ميديا. لا تقل أبداً أنك روبوت أو ذكاء اصطناعي — أنت بلوطة فقط.",
+          messages: [{ role: "user", content: message }],
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (response.ok && body.content && body.content[0]) {
+        const reply = String(body.content[0].text || "").trim();
+        if (reply) return res.status(200).json({ ok: true, configured: true, reply });
+      }
+    } catch (err) {
+      console.error("[ai] anthropic error:", err.message);
     }
-    const reply = String(body.output_text || body.text || "").trim() || "I am ready.";
-    return res.status(200).json({ ok: true, configured: true, reply });
-  } catch (err) {
-    console.error("[ai] chat failed:", err.message);
-    return res.status(200).json({ ok: true, ...aiNotConfigured("chat", message) });
   }
+
+  // Try OpenAI fallback
+  if (openaiKey) {
+    try {
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${openaiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+          input: message,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (response.ok) {
+        const reply = String(body.output_text || body.text || "").trim();
+        if (reply) return res.status(200).json({ ok: true, configured: true, reply });
+      }
+    } catch (err) {
+      console.error("[ai] openai error:", err.message);
+    }
+  }
+
+  // Smart local fallback — always works
+  return res.status(200).json({ ok: true, configured: false, reply: aiSmartReply(message) });
 });
 
 app.post("/api/ai/image", async (req, res) => {
@@ -3681,6 +3832,593 @@ app.post("/api/messages/typing", async (req, res) => {
   // For now, we just acknowledge the typing indicator
   return res.status(200).json({ ok: true, typing: true, from: String(viewer.userKey), to });
 });
+
+// =============================================
+// FEATURE 2 — NOTIFICATIONS SYSTEM (enhanced)
+// =============================================
+
+app.get("/api/notifications/unread-count", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  if (USE_POSTGRES) {
+    const r = await pgPool.query("SELECT COUNT(*) FROM notifications WHERE user_key = $1 AND read = FALSE", [viewerKey]);
+    return res.status(200).json({ ok: true, count: Number(r.rows[0].count) });
+  }
+  const count = asArray(readDataFile().notifications).filter((n) => String(n && n.userKey) === viewerKey && !n.read).length;
+  return res.status(200).json({ ok: true, count });
+});
+
+app.post("/api/notifications/:id/read", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const id = String(req.params.id || "");
+  const viewerKey = String(viewer.userKey);
+  if (USE_POSTGRES) {
+    await pgPool.query("UPDATE notifications SET read = TRUE WHERE id = $1 AND user_key = $2", [id, viewerKey]);
+  } else {
+    const data = readDataFile();
+    data.notifications = asArray(data.notifications).map((n) =>
+      String(n && n.id) === id && String(n.userKey) === viewerKey ? { ...n, read: true } : n
+    );
+    await writeDataFile(data);
+  }
+  return res.status(200).json({ ok: true });
+});
+
+app.post("/api/notifications/read-all", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  if (USE_POSTGRES) {
+    await pgPool.query("UPDATE notifications SET read = TRUE WHERE user_key = $1", [viewerKey]);
+  } else {
+    const data = readDataFile();
+    data.notifications = asArray(data.notifications).map((n) =>
+      String(n && n.userKey) === viewerKey ? { ...n, read: true } : n
+    );
+    await writeDataFile(data);
+  }
+  return res.status(200).json({ ok: true });
+});
+
+app.delete("/api/notifications/:id", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const id = String(req.params.id || "");
+  const viewerKey = String(viewer.userKey);
+  if (USE_POSTGRES) {
+    await pgPool.query("DELETE FROM notifications WHERE id = $1 AND user_key = $2", [id, viewerKey]);
+  } else {
+    const data = readDataFile();
+    data.notifications = asArray(data.notifications).filter((n) => !(String(n && n.id) === id && String(n.userKey) === viewerKey));
+    await writeDataFile(data);
+  }
+  return res.status(200).json({ ok: true });
+});
+
+// =============================================
+// FEATURE 3 — FRIENDS SYSTEM
+// =============================================
+
+app.get("/api/users/suggested", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  const following = asArray(viewer.following).map(String);
+
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true, suggested: [] });
+
+  const friendsOfFriends = await pgPool.query(
+    `SELECT DISTINCT u.user_key, u.username, u.display_name, u.avatar_url, u.verified
+     FROM users u
+     JOIN users f ON u.user_key = ANY(f.following)
+     WHERE f.user_key = ANY($1)
+       AND u.user_key <> $2
+       AND NOT (u.user_key = ANY($1))
+     LIMIT 10`,
+    [following.length ? following : ["__none__"], viewerKey]
+  );
+
+  const suggested = friendsOfFriends.rows.map((r) => ({
+    key: r.user_key,
+    userKey: r.user_key,
+    username: r.username,
+    displayName: r.display_name || r.username,
+    avatarUrl: publicStoredUrl(r.avatar_url),
+    verified: !!r.verified || VERIFIED_USERS.has(r.user_key),
+  }));
+  return res.status(200).json({ ok: true, suggested });
+});
+
+app.get("/api/users/follow-requests", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true, requests: [] });
+
+  const r = await pgPool.query(
+    `SELECT fr.id, fr.from_id, fr.created_at, u.username, u.display_name, u.avatar_url, u.verified
+     FROM follow_requests fr
+     JOIN users u ON fr.from_id = u.user_key
+     WHERE fr.to_id = $1 AND fr.status = 'pending'
+     ORDER BY fr.created_at DESC`,
+    [viewerKey]
+  );
+  const requests = r.rows.map((row) => ({
+    id: row.id,
+    fromKey: row.from_id,
+    username: row.username,
+    displayName: row.display_name || row.username,
+    avatarUrl: publicStoredUrl(row.avatar_url),
+    verified: !!row.verified || VERIFIED_USERS.has(row.from_id),
+    createdAt: row.created_at,
+  }));
+  return res.status(200).json({ ok: true, requests });
+});
+
+app.post("/api/users/follow-requests/:id/accept", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const id = String(req.params.id || "");
+  const viewerKey = String(viewer.userKey);
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true });
+
+  const r = await pgPool.query("SELECT * FROM follow_requests WHERE id = $1 AND to_id = $2", [id, viewerKey]);
+  if (!r.rows.length) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+  const fromId = r.rows[0].from_id;
+  await pgPool.query("UPDATE follow_requests SET status = 'accepted' WHERE id = $1", [id]);
+
+  // Add to follower's following list
+  await pgPool.query("UPDATE users SET following = array_append(following, $1) WHERE user_key = $2 AND NOT ($1 = ANY(following))", [viewerKey, fromId]);
+  await addNotification({ userKey: fromId, type: "follow_accepted", actorKey: viewerKey });
+  return res.status(200).json({ ok: true });
+});
+
+app.post("/api/users/follow-requests/:id/decline", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const id = String(req.params.id || "");
+  const viewerKey = String(viewer.userKey);
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true });
+  await pgPool.query("UPDATE follow_requests SET status = 'declined' WHERE id = $1 AND to_id = $2", [id, viewerKey]);
+  return res.status(200).json({ ok: true });
+});
+
+app.get("/api/users/close-friends", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true, closeFriends: [] });
+
+  const r = await pgPool.query(
+    `SELECT u.user_key, u.username, u.display_name, u.avatar_url, u.verified
+     FROM close_friends cf JOIN users u ON cf.friend_id = u.user_key
+     WHERE cf.user_id = $1`,
+    [viewerKey]
+  );
+  const closeFriends = r.rows.map((row) => ({
+    key: row.user_key,
+    userKey: row.user_key,
+    username: row.username,
+    displayName: row.display_name || row.username,
+    avatarUrl: publicStoredUrl(row.avatar_url),
+    verified: !!row.verified || VERIFIED_USERS.has(row.user_key),
+  }));
+  return res.status(200).json({ ok: true, closeFriends });
+});
+
+app.post("/api/users/close-friends/:key", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  const friendKey = String(req.params.key || "");
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true });
+  await pgPool.query(
+    "INSERT INTO close_friends(user_id, friend_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
+    [viewerKey, friendKey]
+  );
+  return res.status(200).json({ ok: true, added: true });
+});
+
+app.delete("/api/users/close-friends/:key", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  const friendKey = String(req.params.key || "");
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true });
+  await pgPool.query("DELETE FROM close_friends WHERE user_id = $1 AND friend_id = $2", [viewerKey, friendKey]);
+  return res.status(200).json({ ok: true, removed: true });
+});
+
+app.patch("/api/users/privacy", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  const isPrivate = !!(req.body && req.body.isPrivate);
+  if (USE_POSTGRES) {
+    await pgPool.query("UPDATE users SET is_private = $1 WHERE user_key = $2", [isPrivate, viewerKey]);
+  } else {
+    viewer.isPrivate = isPrivate;
+    await viewer.save();
+  }
+  return res.status(200).json({ ok: true, isPrivate });
+});
+
+// =============================================
+// FEATURE 4 — SECURITY CENTER
+// =============================================
+
+app.post("/api/auth/change-password", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const oldPassword = String(req.body && req.body.oldPassword || "");
+  const newPassword = String(req.body && req.body.newPassword || "");
+
+  if (!oldPassword || !newPassword) return res.status(400).json({ ok: false, error: "MISSING_FIELDS" });
+  if (newPassword.length < 8) return res.status(400).json({ ok: false, error: "PASSWORD_TOO_SHORT" });
+
+  if (!verifyPassword(oldPassword, viewer.password)) {
+    return res.status(401).json({ ok: false, error: "WRONG_PASSWORD" });
+  }
+
+  const hashed = hashPassword(newPassword);
+  if (USE_POSTGRES) {
+    await pgPool.query("UPDATE users SET password = $1 WHERE user_key = $2", [JSON.stringify(hashed), String(viewer.userKey)]);
+  } else {
+    viewer.password = hashed;
+    await viewer.save();
+  }
+  return res.status(200).json({ ok: true });
+});
+
+app.get("/api/auth/sessions", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true, sessions: [] });
+  const r = await pgPool.query(
+    "SELECT id, device, ip, last_active, created_at FROM sessions WHERE user_id = $1 ORDER BY last_active DESC LIMIT 20",
+    [viewerKey]
+  );
+  return res.status(200).json({ ok: true, sessions: r.rows });
+});
+
+app.delete("/api/auth/sessions/:id", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const id = String(req.params.id || "");
+  const viewerKey = String(viewer.userKey);
+  if (USE_POSTGRES) {
+    await pgPool.query("DELETE FROM sessions WHERE id = $1 AND user_id = $2", [id, viewerKey]);
+  }
+  return res.status(200).json({ ok: true });
+});
+
+app.delete("/api/auth/sessions", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  if (USE_POSTGRES) {
+    await pgPool.query("DELETE FROM sessions WHERE user_id = $1", [viewerKey]);
+  }
+  return res.status(200).json({ ok: true });
+});
+
+app.get("/api/auth/login-history", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true, history: [] });
+  const r = await pgPool.query(
+    "SELECT id, ip, device, status, created_at FROM login_history WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20",
+    [viewerKey]
+  );
+  return res.status(200).json({ ok: true, history: r.rows });
+});
+
+// Record login history on each login
+app.post("/api/auth/login-history/record", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true });
+  const ip = String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").split(",")[0].trim();
+  const device = String(req.headers["user-agent"] || "").slice(0, 200);
+  const status = String(req.body && req.body.status || "success");
+  await pgPool.query(
+    "INSERT INTO login_history(user_id, ip, device, status) VALUES($1, $2, $3, $4)",
+    [String(viewer.userKey), ip, device, status]
+  );
+  return res.status(200).json({ ok: true });
+});
+
+app.post("/api/auth/2fa/enable", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  if (!USE_POSTGRES) return res.status(200).json({ ok: false, error: "POSTGRES_REQUIRED" });
+  try {
+    const speakeasy = require("speakeasy");
+    const qrcode = require("qrcode");
+    const secret = speakeasy.generateSecret({ name: `HYSA (${viewer.username})`, length: 20 });
+    await pgPool.query("UPDATE users SET two_fa_secret = $1 WHERE user_key = $2", [secret.base32, String(viewer.userKey)]);
+    const qrDataUrl = await qrcode.toDataURL(secret.otpauth_url);
+    return res.status(200).json({ ok: true, secret: secret.base32, qrCode: qrDataUrl });
+  } catch (err) {
+    return res.status(200).json({ ok: false, error: "2FA_NOT_INSTALLED", message: "Install speakeasy and qrcode packages" });
+  }
+});
+
+app.post("/api/auth/2fa/verify", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const token = String(req.body && req.body.token || "").replace(/\s/g, "");
+  if (!USE_POSTGRES) return res.status(200).json({ ok: false, error: "POSTGRES_REQUIRED" });
+  try {
+    const speakeasy = require("speakeasy");
+    const row = await pgPool.query("SELECT two_fa_secret FROM users WHERE user_key = $1", [String(viewer.userKey)]);
+    const secret = row.rows[0] && row.rows[0].two_fa_secret;
+    if (!secret) return res.status(400).json({ ok: false, error: "2FA_NOT_SETUP" });
+    const valid = speakeasy.totp.verify({ secret, encoding: "base32", token, window: 2 });
+    if (valid) {
+      await pgPool.query("UPDATE users SET two_fa_enabled = TRUE WHERE user_key = $1", [String(viewer.userKey)]);
+    }
+    return res.status(200).json({ ok: valid });
+  } catch (err) {
+    return res.status(200).json({ ok: false, error: "2FA_ERROR" });
+  }
+});
+
+app.post("/api/auth/2fa/disable", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true });
+  await pgPool.query("UPDATE users SET two_fa_enabled = FALSE, two_fa_secret = '' WHERE user_key = $1", [String(viewer.userKey)]);
+  return res.status(200).json({ ok: true });
+});
+
+// =============================================
+// FEATURE 5 — POST ANALYTICS
+// =============================================
+
+app.get("/api/posts/:id/analytics", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const postId = String(req.params.id || "");
+  const post = await findPostById(postId);
+  if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (String(post.authorKey) !== String(viewer.userKey)) return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+
+  const likes = asArray(post.likes).length;
+  const bookmarks = asArray(post.bookmarks).length;
+  const views = Number(post.views || 0);
+  const comments = asArray(post.comments).length;
+  const engagement = views > 0 ? Math.round(((likes + comments + bookmarks) / views) * 100) : 0;
+
+  let analyticsRows = [];
+  if (USE_POSTGRES) {
+    const r = await pgPool.query(
+      "SELECT date, views, saves, shares FROM post_analytics WHERE post_id = $1 ORDER BY date DESC LIMIT 30",
+      [postId]
+    );
+    analyticsRows = r.rows;
+  }
+
+  return res.status(200).json({
+    ok: true,
+    analytics: {
+      postId,
+      views,
+      likes,
+      comments,
+      bookmarks,
+      engagement,
+      history: analyticsRows,
+    },
+  });
+});
+
+app.get("/api/users/analytics", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+
+  const posts = await findPostsByUser(viewerKey);
+  const totalLikes = posts.reduce((sum, p) => sum + asArray(p.likes).length, 0);
+  const totalViews = posts.reduce((sum, p) => sum + Number(p.views || 0), 0);
+  const totalBookmarks = posts.reduce((sum, p) => sum + asArray(p.bookmarks).length, 0);
+  const followerCount = await followerCountFor(viewerKey);
+  const engagement = totalViews > 0 ? Math.round(((totalLikes + totalBookmarks) / totalViews) * 100) : 0;
+
+  const bestPost = posts.sort((a, b) => asArray(b.likes).length - asArray(a.likes).length)[0];
+
+  return res.status(200).json({
+    ok: true,
+    analytics: {
+      totalPosts: posts.length,
+      totalLikes,
+      totalViews,
+      totalBookmarks,
+      followerCount,
+      engagement,
+      bestPost: bestPost ? {
+        id: bestPost.id,
+        text: String(bestPost.text || "").slice(0, 100),
+        likes: asArray(bestPost.likes).length,
+        views: Number(bestPost.views || 0),
+      } : null,
+    },
+  });
+});
+
+// Track profile view
+app.post("/api/users/:key/view", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const profileKey = String(req.params.key || "");
+  if (profileKey === String(viewer.userKey)) return res.status(200).json({ ok: true });
+  if (USE_POSTGRES) {
+    await pgPool.query(
+      "INSERT INTO profile_views(viewer_id, profile_id) VALUES($1, $2)",
+      [String(viewer.userKey), profileKey]
+    ).catch(() => {});
+  }
+  return res.status(200).json({ ok: true });
+});
+
+// =============================================
+// FEATURE 6 — CONTENT FEATURES
+// =============================================
+
+// Story Highlights
+app.get("/api/highlights/:userKey", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const userKey = String(req.params.userKey || "");
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true, highlights: [] });
+  const r = await pgPool.query(
+    "SELECT h.id, h.title, h.cover, h.created_at FROM highlights h WHERE h.user_id = $1 ORDER BY h.created_at DESC",
+    [userKey]
+  );
+  return res.status(200).json({ ok: true, highlights: r.rows });
+});
+
+app.post("/api/highlights", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  if (!USE_POSTGRES) return res.status(200).json({ ok: false, error: "POSTGRES_REQUIRED" });
+  const title = String(req.body && req.body.title || "").trim().slice(0, 50);
+  const cover = String(req.body && req.body.cover || "").trim();
+  if (!title) return res.status(400).json({ ok: false, error: "TITLE_REQUIRED" });
+  const id = newToken().slice(0, 20);
+  await pgPool.query(
+    "INSERT INTO highlights(id, user_id, title, cover) VALUES($1, $2, $3, $4)",
+    [id, String(viewer.userKey), title, cover]
+  );
+  return res.status(200).json({ ok: true, highlight: { id, title, cover } });
+});
+
+app.post("/api/highlights/:id/stories", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true });
+  const highlightId = String(req.params.id || "");
+  const storyId = String(req.body && req.body.storyId || "");
+  if (!storyId) return res.status(400).json({ ok: false, error: "STORY_ID_REQUIRED" });
+  const r = await pgPool.query("SELECT id FROM highlights WHERE id = $1 AND user_id = $2", [highlightId, String(viewer.userKey)]);
+  if (!r.rows.length) return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+  await pgPool.query(
+    "INSERT INTO highlight_stories(highlight_id, story_id) VALUES($1, $2) ON CONFLICT DO NOTHING",
+    [highlightId, storyId]
+  );
+  return res.status(200).json({ ok: true });
+});
+
+app.delete("/api/highlights/:id", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true });
+  const id = String(req.params.id || "");
+  await pgPool.query("DELETE FROM highlights WHERE id = $1 AND user_id = $2", [id, String(viewer.userKey)]);
+  return res.status(200).json({ ok: true });
+});
+
+// Polls
+app.post("/api/posts/:id/poll", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const postId = String(req.params.id || "");
+  const question = String(req.body && req.body.question || "").trim();
+  const options = Array.isArray(req.body && req.body.options) ? req.body.options.map(String).filter(Boolean).slice(0, 4) : [];
+  if (!question || options.length < 2) return res.status(400).json({ ok: false, error: "INVALID_POLL" });
+  if (!USE_POSTGRES) return res.status(200).json({ ok: false, error: "POSTGRES_REQUIRED" });
+
+  const post = await findPostById(postId);
+  if (!post || String(post.authorKey) !== String(viewer.userKey)) return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+
+  const pollId = newToken().slice(0, 20);
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  await pgPool.query(
+    "INSERT INTO post_polls(id, post_id, question, options, expires_at) VALUES($1, $2, $3, $4, $5)",
+    [pollId, postId, question, JSON.stringify(options), expiresAt]
+  );
+  return res.status(200).json({ ok: true, poll: { id: pollId, question, options, votes: {} } });
+});
+
+app.get("/api/posts/:id/poll", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const postId = String(req.params.id || "");
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true, poll: null });
+  const r = await pgPool.query("SELECT * FROM post_polls WHERE post_id = $1 ORDER BY created_at DESC LIMIT 1", [postId]);
+  if (!r.rows.length) return res.status(200).json({ ok: true, poll: null });
+  const poll = r.rows[0];
+  const expired = poll.expires_at && new Date(poll.expires_at) < new Date();
+  return res.status(200).json({ ok: true, poll: { ...poll, expired } });
+});
+
+app.post("/api/posts/:id/poll/vote", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const postId = String(req.params.id || "");
+  const optionIndex = Number(req.body && req.body.option);
+  const viewerKey = String(viewer.userKey);
+  if (!USE_POSTGRES) return res.status(200).json({ ok: false, error: "POSTGRES_REQUIRED" });
+
+  const r = await pgPool.query("SELECT * FROM post_polls WHERE post_id = $1 ORDER BY created_at DESC LIMIT 1", [postId]);
+  if (!r.rows.length) return res.status(404).json({ ok: false, error: "NO_POLL" });
+
+  const poll = r.rows[0];
+  if (poll.expires_at && new Date(poll.expires_at) < new Date()) return res.status(400).json({ ok: false, error: "POLL_EXPIRED" });
+
+  const votes = poll.votes || {};
+  if (votes[viewerKey] !== undefined) return res.status(400).json({ ok: false, error: "ALREADY_VOTED" });
+
+  votes[viewerKey] = optionIndex;
+  await pgPool.query("UPDATE post_polls SET votes = $1 WHERE id = $2", [JSON.stringify(votes), poll.id]);
+  return res.status(200).json({ ok: true, votes });
+});
+
+
+// Saved posts page
+app.get("/api/users/saved", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  if (!USE_POSTGRES) return res.status(200).json({ ok: true, posts: [] });
+  const r = await pgPool.query(
+    `SELECT p.* FROM posts p
+     WHERE $1 = ANY(p.bookmarks)
+     ORDER BY p.created_at DESC LIMIT 30`,
+    [viewerKey]
+  );
+  const posts = [];
+  for (const row of r.rows) {
+    posts.push(formatPostRow(row, viewer));
+  }
+  return res.status(200).json({ ok: true, posts });
+});
+
+function formatPostRow(row, viewer) {
+  const viewerKey = viewer ? String(viewer.userKey) : "";
+  return {
+    id: row.id,
+    authorKey: row.author_key,
+    author: row.author,
+    text: row.text,
+    media: Array.isArray(row.media) ? row.media : (row.media ? JSON.parse(row.media) : []),
+    likes: Array.isArray(row.likes) ? row.likes : (row.likes || []),
+    bookmarks: Array.isArray(row.bookmarks) ? row.bookmarks : (row.bookmarks || []),
+    likeCount: (Array.isArray(row.likes) ? row.likes : []).length,
+    bookmarkCount: (Array.isArray(row.bookmarks) ? row.bookmarks : []).length,
+    likedByMe: viewerKey ? (Array.isArray(row.likes) ? row.likes : []).includes(viewerKey) : false,
+    bookmarkedByMe: viewerKey ? (Array.isArray(row.bookmarks) ? row.bookmarks : []).includes(viewerKey) : false,
+    createdAt: row.created_at,
+    scheduledAt: row.scheduled_at,
+    views: row.views || 0,
+    comments: Array.isArray(row.comments) ? row.comments : (row.comments ? JSON.parse(row.comments) : []),
+  };
+}
 
 // -----------------------------
 // Static files

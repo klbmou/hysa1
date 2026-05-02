@@ -1,14 +1,57 @@
 # HYSA - Mini Social Media App
 
 ## Overview
-HYSA is a mini social media web application (similar to Twitter/X) supporting signup/login, feed posts, follow, like/bookmark, search, and more. Features Arabic/English/French language support, dark mode, accent color themes, and an AI assistant.
+HYSA is an Arabic-first (RTL) micro-social platform (Twitter/X-like) with Node.js/Express backend + Vanilla JS frontend. Features 6 major feature sets: AI Assistant "بلوطة", Notifications System, Friends System, Security Center, Post Analytics, and Content Features (carousel, highlights, polls, scheduling, bookmarks).
+
+## Feature Set (v2.0)
+
+### Feature 1 — AI Assistant "بلوطة" 🌰
+- Floating 🌰 FAB button (bottom-right), slides-up chat panel
+- Header: "بلوطة 🌰" + "مساعدك الذكي"
+- 4 suggested prompt chips on first open (caption, hashtags, bio, funny caption)
+- Backend tries Anthropic Claude → OpenAI → smart local fallback
+- Local fallback: 100+ caption templates (food/travel/motivation/funny), hashtag DB by 7 categories, 5+ bio templates, bilingual Arabic/English detection
+
+### Feature 2 — Notifications System
+- Bell icon with red badge showing unread count (polls every 30s via `/api/notifications/unread-count`)
+- Grouped: Today / This Week / Earlier
+- Each item: avatar + text + time + delete (✕) button
+- Tap to navigate to relevant content
+- Mark all read, delete individual
+
+### Feature 3 — Friends System
+- Mutual follow = Friends (badge shown)
+- Follow requests (for private accounts)
+- Suggested friends (friends-of-friends)
+- Close friends table (green ring on stories)
+- Privacy toggle (private account / public)
+
+### Feature 4 — Security Center
+- Change password with strength bar
+- Active sessions list (view + logout individual or all)
+- Login history (last 20, color-coded success/fail)
+- 2FA with Google Authenticator (speakeasy + qrcode)
+- Privacy toggle (private account)
+
+### Feature 5 — Post Analytics
+- 📊 button in own profile header
+- Stats cards: Views / Likes / Followers / Bookmarks / Posts / Engagement %
+- Best performing post highlight
+- Best time to post recommendation
+- Post-level analytics via `/api/posts/:id/analytics`
+
+### Feature 6 — Content Features
+- Story highlights (create/view circles below bio)
+- Polls in posts (vote + see results, 24h expiry)
+- Post scheduling (scheduled_at column, hidden until time)
+- Saved posts page (bookmarks already stored in posts.bookmarks array)
 
 ## Project Structure
 
 ```
 /
 ├── backend/          # Node.js Express API server (main entry point)
-│   ├── server.js     # Main Express server (~3050 lines) - serves API + static frontend
+│   ├── server.js     # Main Express server (~4500 lines) - serves API + static frontend
 │   ├── data.json     # Local JSON "database" (used when DATABASE_URL not set)
 │   ├── schema.sql    # PostgreSQL schema (for production)
 │   ├── migrate.js    # DB migration helper

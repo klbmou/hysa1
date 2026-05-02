@@ -119,6 +119,99 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Follow requests (Feature 3 - Friends System)
+CREATE TABLE IF NOT EXISTS follow_requests (
+  id SERIAL PRIMARY KEY,
+  from_id VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  to_id VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  status VARCHAR(20) DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(from_id, to_id)
+);
+
+-- Close friends (Feature 3)
+CREATE TABLE IF NOT EXISTS close_friends (
+  user_id VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  friend_id VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY(user_id, friend_id)
+);
+
+-- Sessions (Feature 4 - Security Center)
+CREATE TABLE IF NOT EXISTS sessions (
+  id VARCHAR(100) PRIMARY KEY,
+  user_id VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  token_hash VARCHAR(200) NOT NULL,
+  device TEXT DEFAULT '',
+  ip VARCHAR(100) DEFAULT '',
+  last_active TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Login history (Feature 4)
+CREATE TABLE IF NOT EXISTS login_history (
+  id SERIAL PRIMARY KEY,
+  user_id VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  ip VARCHAR(100) DEFAULT '',
+  device TEXT DEFAULT '',
+  status VARCHAR(20) DEFAULT 'success',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Post analytics (Feature 5)
+CREATE TABLE IF NOT EXISTS post_analytics (
+  post_id VARCHAR(50) NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  views INTEGER DEFAULT 0,
+  reach INTEGER DEFAULT 0,
+  saves INTEGER DEFAULT 0,
+  shares INTEGER DEFAULT 0,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  PRIMARY KEY(post_id, date)
+);
+
+-- Profile views (Feature 5)
+CREATE TABLE IF NOT EXISTS profile_views (
+  id SERIAL PRIMARY KEY,
+  viewer_id VARCHAR(50) REFERENCES users(user_key) ON DELETE SET NULL,
+  profile_id VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  viewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Story highlights (Feature 6)
+CREATE TABLE IF NOT EXISTS highlights (
+  id VARCHAR(50) PRIMARY KEY,
+  user_id VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  title TEXT NOT NULL DEFAULT '',
+  cover TEXT DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Highlight stories (Feature 6)
+CREATE TABLE IF NOT EXISTS highlight_stories (
+  highlight_id VARCHAR(50) NOT NULL REFERENCES highlights(id) ON DELETE CASCADE,
+  story_id VARCHAR(50) NOT NULL,
+  PRIMARY KEY(highlight_id, story_id)
+);
+
+-- Post polls (Feature 6)
+CREATE TABLE IF NOT EXISTS post_polls (
+  id VARCHAR(50) PRIMARY KEY,
+  post_id VARCHAR(50) NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  question TEXT NOT NULL DEFAULT '',
+  options JSONB DEFAULT '[]',
+  votes JSONB DEFAULT '{}',
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ALTER TABLE additions for existing tables
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS message TEXT DEFAULT '';
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS reference_id VARCHAR(100) DEFAULT '';
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS reference_type VARCHAR(50) DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS two_fa_secret TEXT DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS two_fa_enabled BOOLEAN DEFAULT FALSE;
+
 -- Indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_posts_author_key ON posts(author_key);
 CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);

@@ -1,0 +1,199 @@
+You are a senior full-stack engineer on HYSA1.
+Social media app. Stack: Node.js, PostgreSQL, Cloudinary, Vanilla JS.
+DO NOT break existing features. Work on existing files only.
+
+FILES YOU CAN TOUCH:
+- backend/server.js
+- frontend-web/public/app.js
+- frontend-web/public/styles.css
+- frontend-web/public/index.html
+- frontend-web/public/sw.js
+
+═══════════════════════════════════════
+FEATURE 1 — AI ASSISTANT "بلوطة" 🌰
+═══════════════════════════════════════
+UI:
+- Floating button bottom-right (🌰)
+- Click → modal slides up from bottom
+- Chat interface with message history
+- Header: "بلوطة 🌰" + "مساعدك الذكي"
+- Suggested prompts on first open:
+  "اكتب كابشن لصورة 📸"
+  "اقترح هاشتاقات ✈️"
+  "اكتب بايو احترافي"
+  "Write a funny caption"
+
+Backend:
+- POST /api/ai/chat
+- If ANTHROPIC_API_KEY in env → use Claude API
+- If no key → smart local fallback responses
+
+Local fallback (no API needed):
+- 20 caption templates per category (food/travel/funny/motivation)
+- 500 hashtags database by category
+- 15 bio templates
+- Responds in same language as user (Arabic/English)
+- Personality: friendly, funny, never says "I am AI"
+
+═══════════════════════════════════════
+FEATURE 2 — NOTIFICATIONS SYSTEM
+═══════════════════════════════════════
+Database:
+- notifications table:
+  id, user_id, type, from_user_id,
+  reference_id, reference_type,
+  message, is_read, created_at
+
+Trigger on:
+- Like on post/reel
+- Comment on post
+- New follower
+- Mention @username
+- Reply to comment
+- Story view
+
+Backend routes:
+- GET /api/notifications (paginated 20)
+- POST /api/notifications/:id/read
+- POST /api/notifications/read-all
+- DELETE /api/notifications/:id
+- GET /api/notifications/unread-count
+
+Frontend:
+- Bell icon with red badge (unread count)
+- Dropdown panel on click
+- Grouped: Today / This Week / Earlier
+- Each: avatar + text + time + thumbnail
+- Mark all read button
+- Poll every 30s for new notifications
+- Tap → navigate to relevant content
+
+═══════════════════════════════════════
+FEATURE 3 — FRIENDS SYSTEM
+═══════════════════════════════════════
+Database:
+- follow_requests table: id, from_id, to_id, status, created_at
+- close_friends table: user_id, friend_id
+- Add is_private to users table
+
+Features:
+- Mutual follow = Friends (show "Friends" badge)
+- Friends list page
+- Suggested friends (friends of friends)
+- Close friends list
+- Private account: follow requests instead of instant follow
+- Accept/Decline follow requests
+- Close friends stories: green ring
+
+Backend routes:
+- GET /api/users/friends
+- GET /api/users/suggested
+- GET /api/users/follow-requests
+- POST /api/users/follow-requests/:id/accept
+- POST /api/users/follow-requests/:id/decline
+- POST /api/users/close-friends/:id
+- DELETE /api/users/close-friends/:id
+- PATCH /api/users/privacy (toggle private)
+
+═══════════════════════════════════════
+FEATURE 4 — SECURITY CENTER
+═══════════════════════════════════════
+Database:
+- sessions table: id, user_id, token_hash, device, ip, last_active, created_at
+- login_history table: id, user_id, ip, device, status, created_at
+
+Features:
+- Change password (verify old + strength check)
+- Change email with 6-digit verification code
+- Active sessions list (logout one or all)
+- Login history (last 20, green=success red=failed)
+- 2FA with Google Authenticator (speakeasy + qrcode)
+- Rate limiting: 5 login attempts per 15min
+- Auto logout after 30 days inactive
+- Suspicious login email alert
+
+Backend routes:
+- POST /api/auth/change-password
+- POST /api/auth/change-email
+- POST /api/auth/verify-email-code
+- GET /api/auth/sessions
+- DELETE /api/auth/sessions/:id
+- DELETE /api/auth/sessions (all)
+- GET /api/auth/login-history
+- POST /api/auth/2fa/enable
+- POST /api/auth/2fa/verify
+- POST /api/auth/2fa/disable
+
+Security settings UI:
+- Change password section (strength bar)
+- Active sessions list with device info
+- Login history timeline
+- 2FA toggle with QR code display
+- Backup codes display
+
+═══════════════════════════════════════
+FEATURE 5 — POST ANALYTICS
+═══════════════════════════════════════
+Database:
+- post_analytics table: post_id, views, reach, saves, shares, date
+- profile_views table: viewer_id, profile_id, viewed_at
+
+Backend routes:
+- GET /api/posts/:id/analytics
+- GET /api/users/analytics
+
+Frontend dashboard:
+- Accessible from profile page (📊 icon)
+- Charts using Chart.js (CDN):
+  Line: followers over time
+  Bar: post performance
+- Stats cards: Views / Likes / Followers / Engagement rate
+- Date range: 7d / 30d / 90d
+- Best performing post highlight
+- Best time to post recommendation
+
+═══════════════════════════════════════
+FEATURE 6 — CONTENT FEATURES
+═══════════════════════════════════════
+Carousel posts:
+- Multiple images in one post
+- Swipe between images
+- Dot indicators at bottom
+- post_media table: post_id, url, type, order
+
+Story highlights:
+- highlights table: id, user_id, title, cover, created_at
+- highlight_stories table: highlight_id, story_id
+- Show as circles below bio on profile
+- Create/edit/delete highlights
+
+Polls in posts:
+- post_polls table: id, post_id, question, options, votes
+- Show poll UI in feed
+- Vote and see results instantly
+- Expires after 24h
+
+Post scheduling:
+- scheduled_at column on posts
+- Posts with future date: not shown until that time
+- "Scheduled" label in your profile grid
+
+Save/Bookmark:
+- saved_posts table: user_id, post_id, created_at
+- Bookmark icon on posts
+- Saved posts page in profile
+
+═══════════════════════════════════════
+RULES
+═══════════════════════════════════════
+- One feature at a time
+- Test after each feature
+- Use ALTER TABLE IF NOT EXISTS (never DROP)
+- node --check after every JS change
+- Do not install new npm packages except:
+  speakeasy, qrcode (for 2FA only)
+- Commit to GitHub after ALL features done
+- Report changed files and lines after each feature
+
+START with Feature 1 (بلوطة AI) now.
+DO NOT STOP between features.

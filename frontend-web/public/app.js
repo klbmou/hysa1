@@ -2676,6 +2676,14 @@ function renderProfileHeader(profile) {
   const right = document.createElement("div");
   right.className = "profileActions";
   if (isMe) {
+    const analyticsBtn = document.createElement("button");
+    analyticsBtn.type = "button";
+    analyticsBtn.className = "btn ghost";
+    analyticsBtn.textContent = "📊";
+    analyticsBtn.title = "الإحصائيات";
+    on(analyticsBtn, "click", () => openAnalyticsDashboard());
+    right.appendChild(analyticsBtn);
+
     const insightsBtn = document.createElement("button");
     insightsBtn.type = "button";
     insightsBtn.className = "btn ghost";
@@ -4183,43 +4191,93 @@ async function openNotificationsPanel() {
   try {
     const r = await api("/api/notifications", { method: "GET" });
     const notifications = Array.isArray(r.notifications) ? r.notifications : [];
-    showActionSheet("Notifications", (body) => {
+    showActionSheet("🔔 الإشعارات", (body) => {
       body.classList.add("notificationsSheet");
+
+      const now = Date.now();
+      const dayMs = 86400000;
+      const weekMs = 7 * dayMs;
+      const todayItems = [], weekItems = [], olderItems = [];
+      for (const n of notifications) {
+        const age = now - new Date(n.createdAt || n.created_at || 0).getTime();
+        if (age < dayMs) todayItems.push(n);
+        else if (age < weekMs) weekItems.push(n);
+        else olderItems.push(n);
+      }
+
+      const typeText = (item) => ({
+        like: "أعجب بمنشورك ❤️",
+        comment: "علّق على منشورك 💬",
+        comment_reply: "ردّ على تعليقك 💬",
+        dm: "أرسل لك رسالة 📩",
+        story_reaction: "تفاعل مع قصتك ✨",
+        new_follower: "بدأ بمتابعتك 👤",
+        repost: "شارك منشورك 🔁",
+        follow_accepted: "قبل طلب متابعتك ✅",
+        mention: "ذكرك في منشور 📢",
+      }[item.type] || String(item.type || "إشعار"));
+
+      const renderGroup = (label, items) => {
+        if (!items.length) return;
+        const header = document.createElement("div");
+        header.className = "notifGroupHeader";
+        header.textContent = label;
+        body.appendChild(header);
+        for (const item of items) {
+          const row = document.createElement("div");
+          row.className = `notificationItem ${item.read ? "" : "unread"}`.trim();
+          const actor = item.actorKey ? `@${item.actorKey}` : "HYSA";
+          const avEl = avatarNode(item.actorAvatarUrl || "", item.actorKey || "H", "sm");
+          const textEl = document.createElement("div");
+          textEl.className = "notifText";
+          textEl.innerHTML = `<span class="notifActor">${actor}</span> ${typeText(item)}<br><small class="muted">${fmtTime(item.createdAt || item.created_at)}</small>`;
+          const delBtn = document.createElement("button");
+          delBtn.type = "button";
+          delBtn.className = "notifDelete iconBtn";
+          delBtn.textContent = "✕";
+          delBtn.title = "حذف";
+          on(delBtn, "click", async (e) => {
+            e.stopPropagation();
+            row.style.opacity = "0.3";
+            await api(`/api/notifications/${encodeURIComponent(item.id)}`, { method: "DELETE" }).catch(() => {});
+            row.remove();
+          });
+          row.appendChild(avEl);
+          row.appendChild(textEl);
+          row.appendChild(delBtn);
+          on(row, "click", async () => {
+            if (!item.read) {
+              api(`/api/notifications/${encodeURIComponent(item.id)}/read`, { method: "POST" }).catch(() => {});
+              row.classList.remove("unread");
+              item.read = true;
+            }
+            hideActionSheet();
+            if (item.type === "dm" && item.actorKey) location.hash = `#dm/${encodeURIComponent(item.actorKey)}`;
+            else if (item.postId || item.post_id) location.hash = `#p/${encodeURIComponent(item.postId || item.post_id)}`;
+            else if (item.actorKey) location.hash = `#u/${encodeURIComponent(item.actorKey)}`;
+            route();
+          });
+          body.appendChild(row);
+        }
+      };
+
       if (!notifications.length) {
         const empty = document.createElement("div");
         empty.className = "muted";
-        empty.textContent = "No notifications yet.";
+        empty.style.cssText = "padding:24px;text-align:center";
+        empty.textContent = "لا توجد إشعارات بعد 🔔";
         body.appendChild(empty);
+      } else {
+        renderGroup("اليوم", todayItems);
+        renderGroup("هذا الأسبوع", weekItems);
+        renderGroup("سابقاً", olderItems);
       }
-      for (const item of notifications) {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = `notificationItem ${item.read ? "" : "unread"}`.trim();
-        const actor = item.actorKey ? `@${item.actorKey}` : "HYSA";
-        const typeText = {
-          like: "liked your post",
-          comment: "commented on your post",
-          comment_reply: "replied to a comment",
-          dm: "sent you a message",
-          story_reaction: "reacted to your story",
-          new_follower: "started following you",
-          repost: "shared your post",
-        }[item.type] || String(item.type || "notification");
-        btn.innerHTML = `<strong></strong><small></small>`;
-        btn.querySelector("strong").textContent = `${actor} ${typeText}`;
-        btn.querySelector("small").textContent = fmtTime(item.createdAt);
-        on(btn, "click", () => {
-          hideActionSheet();
-          if (item.type === "dm" && item.actorKey) location.hash = `#dm/${encodeURIComponent(item.actorKey)}`;
-          else if (item.postId) location.hash = `#p/${encodeURIComponent(item.postId)}`;
-          else if (item.actorKey) location.hash = `#u/${encodeURIComponent(item.actorKey)}`;
-        });
-        body.appendChild(btn);
-      }
-      const mark = sheetButton("Mark all as read", "primary");
+
+      const mark = sheetButton("تحديد الكل كمقروء", "primary");
       on(mark, "click", async () => {
-        await api("/api/notifications/read", { method: "POST", body: "{}" });
+        await api("/api/notifications/read-all", { method: "POST", body: "{}" }).catch(() => {});
         if (el.notifDot) el.notifDot.hidden = true;
+        if (el.notifBadge) el.notifBadge.hidden = true;
         hideActionSheet();
       });
       body.appendChild(mark);
@@ -4798,21 +4856,41 @@ function bindOverlayClose(overlay, onClose) {
 function ensureSettingsSections() {
   const body = el.settingsView?.querySelector(".settings-body");
   if (!body || body.dataset.completedSections === "true") return;
-  const sections = [
-    ["Notifications", "Unread badges and alerts are stored with your account."],
-    ["Media", "Uploads continue through HYSA media storage."],
-    ["AI Assistant", "AI features can be configured without saving API keys in the app."],
-    ["Security", "Use a strong password and report suspicious accounts."],
-    ["Verification", me?.role === "owner" ? "Verified Owner account" : "Request verification from your profile tools."],
-    ["About", "HYSA social app"],
+
+  const clickableSections = [
+    { title: "👥 الأصدقاء", desc: "قائمة أصدقائك وطلبات المتابعة والمقترحون", action: () => { closeSettings(); openFriendsPanel(); } },
+    { title: "🔖 المحفوظات", desc: "المنشورات التي حفظتها", action: () => { closeSettings(); openSavedPosts(); } },
+    { title: "📊 الإحصائيات", desc: "تحليلات منشوراتك ومتابعيك", action: () => { closeSettings(); openAnalyticsDashboard(); } },
+    { title: "🔒 مركز الأمان", desc: "تغيير كلمة المرور، الجلسات، التحقق بخطوتين", action: () => { closeSettings(); openSecurityCenter(); } },
+    { title: "🌰 بلوطة AI", desc: "مساعدك الذكي لكتابة الكابشنات والهاشتاقات", action: () => { closeSettings(); if (el.aiFab) el.aiFab.click(); } },
+    { title: "About HYSA", desc: "الإصدار 2.0 · Arabic-first social platform", action: null },
   ];
-  for (const [title, desc] of sections) {
+
+  for (const { title, desc, action } of clickableSections) {
     const section = document.createElement("div");
     section.className = "settings-section";
-    section.innerHTML = `<h3 class="settings-section-title"></h3><div class="settings-option"><div class="settings-option-info"><span class="settings-option-label"></span><span class="settings-option-desc muted"></span></div></div>`;
-    section.querySelector(".settings-section-title").textContent = title;
-    section.querySelector(".settings-option-label").textContent = title;
-    section.querySelector(".settings-option-desc").textContent = desc;
+    const opt = document.createElement("div");
+    opt.className = "settings-option";
+    if (action) opt.style.cursor = "pointer";
+    const info = document.createElement("div");
+    info.className = "settings-option-info";
+    const labelEl = document.createElement("span");
+    labelEl.className = "settings-option-label";
+    labelEl.textContent = title;
+    const descEl = document.createElement("span");
+    descEl.className = "settings-option-desc muted";
+    descEl.textContent = desc;
+    info.appendChild(labelEl);
+    info.appendChild(descEl);
+    opt.appendChild(info);
+    if (action) {
+      const arrow = document.createElement("span");
+      arrow.textContent = "›";
+      arrow.style.cssText = "font-size:20px;opacity:0.5;margin-inline-start:auto";
+      opt.appendChild(arrow);
+      on(opt, "click", action);
+    }
+    section.appendChild(opt);
     body.appendChild(section);
   }
   body.dataset.completedSections = "true";
@@ -4895,29 +4973,36 @@ function ensureAiAssistant() {
   const fab = document.createElement("button");
   fab.id = "aiFab";
   fab.type = "button";
-  fab.className = "aiFab";
-  fab.innerHTML = icon("spark");
-  fab.setAttribute("aria-label", "Open AI assistant");
-  fab.title = "AI assistant";
+  fab.className = "aiFab baloota";
+  fab.setAttribute("aria-label", "بلوطة - مساعدك الذكي");
+  fab.title = "بلوطة 🌰";
+  fab.textContent = "🌰";
 
   const panel = document.createElement("section");
   panel.id = "aiPanel";
   panel.className = "aiPanel glass";
   panel.hidden = true;
   panel.innerHTML = `
-    <header class="aiHeader">
-      <div><strong>HYSA AI</strong><span>Assistant</span></div>
-      <button id="aiClose" class="iconBtn" type="button" aria-label="Close">X</button>
+    <header class="aiHeader baloota-header">
+      <div class="aiHeaderInfo">
+        <span class="aiBaloota-icon">🌰</span>
+        <div>
+          <strong>بلوطة</strong>
+          <span class="aiSubtitle">مساعدك الذكي</span>
+        </div>
+      </div>
+      <button id="aiClose" class="iconBtn" type="button" aria-label="Close">✕</button>
     </header>
-    <div id="aiModes" class="aiModes">
-      <button type="button" data-ai-mode="chat" class="active">${icon("spark")}<span>Chat</span></button>
-      <button type="button" data-ai-mode="image">${icon("image")}<span>Image</span></button>
-      <button type="button" data-ai-mode="video">${icon("video")}<span>Video</span></button>
+    <div id="aiSuggested" class="aiSuggested">
+      <button type="button" class="aiSuggestBtn" data-prompt="اكتب كابشن لصورة 📸">اكتب كابشن لصورة 📸</button>
+      <button type="button" class="aiSuggestBtn" data-prompt="اقترح هاشتاقات ✈️">اقترح هاشتاقات ✈️</button>
+      <button type="button" class="aiSuggestBtn" data-prompt="اكتب بايو احترافي">اكتب بايو احترافي</button>
+      <button type="button" class="aiSuggestBtn" data-prompt="Write a funny caption">Write a funny caption</button>
     </div>
     <div id="aiMessages" class="aiMessages"></div>
     <form id="aiForm" class="aiForm">
-      <input id="aiPrompt" type="text" maxlength="1000" autocomplete="off" placeholder="Ask HYSA AI...">
-      <button id="aiSend" class="btn primary sm" type="submit">Send</button>
+      <input id="aiPrompt" type="text" maxlength="1000" autocomplete="off" placeholder="اسألني أي شيء... 🌰" dir="auto">
+      <button id="aiSend" class="btn primary sm" type="submit">إرسال</button>
     </form>
   `;
   document.body.appendChild(fab);
@@ -4926,7 +5011,7 @@ function ensureAiAssistant() {
   el.aiFab = fab;
   el.aiPanel = panel;
   el.aiClose = panel.querySelector("#aiClose");
-  el.aiModes = panel.querySelector("#aiModes");
+  el.aiSuggested = panel.querySelector("#aiSuggested");
   el.aiMessages = panel.querySelector("#aiMessages");
   el.aiForm = panel.querySelector("#aiForm");
   el.aiPrompt = panel.querySelector("#aiPrompt");
@@ -4936,24 +5021,25 @@ function ensureAiAssistant() {
     if (!getToken()) return showAuth();
     panel.hidden = !panel.hidden;
     if (!panel.hidden && el.aiMessages && !el.aiMessages.children.length) {
-      addAiMessage("assistant", "AI is ready. If the backend has no API key yet, I will answer in safe mock mode.");
+      addAiMessage("assistant", "أهلاً! أنا بلوطة 🌰 مساعدك على HYSA. يمكنني مساعدتك في كتابة الكابشنات، الهاشتاقات، البايو، وأفكار المحتوى. اضغط على أحد الأزرار أو اكتب سؤالك!");
     }
     if (!panel.hidden && el.aiPrompt) el.aiPrompt.focus();
+    if (el.aiSuggested) el.aiSuggested.hidden = !!(el.aiMessages && el.aiMessages.children.length > 0);
   });
-  on(el.aiClose, "click", () => {
-    panel.hidden = true;
-  });
-  for (const btn of panel.querySelectorAll("[data-ai-mode]")) {
+  on(el.aiClose, "click", () => { panel.hidden = true; });
+
+  for (const btn of panel.querySelectorAll(".aiSuggestBtn")) {
     on(btn, "click", () => {
-      aiMode = btn.getAttribute("data-ai-mode") || "chat";
-      for (const item of panel.querySelectorAll("[data-ai-mode]")) item.classList.toggle("active", item === btn);
-      if (el.aiPrompt) {
-        el.aiPrompt.placeholder = aiMode === "chat" ? "Ask HYSA AI..." : `Describe the ${aiMode} you want...`;
-        el.aiPrompt.focus();
-      }
+      const prompt = btn.getAttribute("data-prompt") || "";
+      if (el.aiPrompt) el.aiPrompt.value = prompt;
+      if (el.aiSuggested) el.aiSuggested.hidden = true;
+      sendAiPrompt(new Event("submit"));
     });
   }
-  on(el.aiForm, "submit", sendAiPrompt);
+  on(el.aiForm, "submit", (e) => {
+    if (el.aiSuggested) el.aiSuggested.hidden = true;
+    sendAiPrompt(e);
+  });
 }
 
 function addAiMessage(role, text, mediaUrl = "") {
@@ -5014,6 +5100,457 @@ async function sendAiPrompt(e) {
     addAiMessage("assistant", humanizeError(err?.message, "AI could not respond right now."));
   } finally {
     if (el.aiSend) el.aiSend.disabled = false;
+  }
+}
+
+// =============================================
+// FEATURE 3 — FRIENDS SYSTEM UI
+// =============================================
+
+async function openFriendsPanel() {
+  try {
+    const [friendsR, suggestedR, requestsR] = await Promise.all([
+      api("/api/friends"),
+      api("/api/users/suggested"),
+      api("/api/users/follow-requests"),
+    ]);
+    const friends = friendsR.friends || [];
+    const suggested = suggestedR.suggested || [];
+    const requests = requestsR.requests || [];
+
+    showActionSheet("👥 الأصدقاء", (body) => {
+      body.classList.add("friendsSheet");
+
+      if (requests.length) {
+        const rHeader = document.createElement("div");
+        rHeader.className = "notifGroupHeader";
+        rHeader.textContent = `طلبات المتابعة (${requests.length})`;
+        body.appendChild(rHeader);
+        for (const req of requests) {
+          const row = document.createElement("div");
+          row.className = "friendRow";
+          const av = avatarNode(req.avatarUrl, req.username, "sm");
+          const info = document.createElement("div");
+          info.className = "friendInfo";
+          info.innerHTML = `<strong>${req.displayName || req.username}</strong><small>@${req.username}</small>`;
+          const acceptBtn = document.createElement("button");
+          acceptBtn.type = "button";
+          acceptBtn.className = "btn primary xs";
+          acceptBtn.textContent = "قبول";
+          const declineBtn = document.createElement("button");
+          declineBtn.type = "button";
+          declineBtn.className = "btn ghost xs";
+          declineBtn.textContent = "رفض";
+          on(acceptBtn, "click", async () => {
+            await api(`/api/users/follow-requests/${encodeURIComponent(req.id)}/accept`, { method: "POST" });
+            row.style.opacity = "0.4";
+            showToast("تم قبول الطلب ✅");
+          });
+          on(declineBtn, "click", async () => {
+            await api(`/api/users/follow-requests/${encodeURIComponent(req.id)}/decline`, { method: "POST" });
+            row.remove();
+          });
+          const btns = document.createElement("div");
+          btns.style.display = "flex";
+          btns.style.gap = "6px";
+          btns.appendChild(acceptBtn);
+          btns.appendChild(declineBtn);
+          row.appendChild(av);
+          row.appendChild(info);
+          row.appendChild(btns);
+          body.appendChild(row);
+        }
+      }
+
+      if (friends.length) {
+        const fHeader = document.createElement("div");
+        fHeader.className = "notifGroupHeader";
+        fHeader.textContent = `أصدقاؤك (${friends.length})`;
+        body.appendChild(fHeader);
+        for (const f of friends) {
+          const row = document.createElement("div");
+          row.className = "friendRow";
+          const av = avatarNode(f.avatarUrl, f.username, "sm");
+          const info = document.createElement("div");
+          info.className = "friendInfo";
+          info.innerHTML = `<strong>${f.displayName || f.username}</strong> <span class="badge" style="font-size:10px">صديق</span><br><small>@${f.username}</small>`;
+          on(row, "click", () => { hideActionSheet(); location.hash = `#u/${encodeURIComponent(f.userKey)}`; route(); });
+          row.appendChild(av);
+          row.appendChild(info);
+          body.appendChild(row);
+        }
+      }
+
+      if (suggested.length) {
+        const sHeader = document.createElement("div");
+        sHeader.className = "notifGroupHeader";
+        sHeader.textContent = "أشخاص قد تعرفهم";
+        body.appendChild(sHeader);
+        for (const s of suggested) {
+          const row = document.createElement("div");
+          row.className = "friendRow";
+          const av = avatarNode(s.avatarUrl, s.username, "sm");
+          const info = document.createElement("div");
+          info.className = "friendInfo";
+          info.innerHTML = `<strong>${s.displayName || s.username}</strong><small>@${s.username}</small>`;
+          const followBtn = document.createElement("button");
+          followBtn.type = "button";
+          followBtn.className = "btn ghost xs";
+          followBtn.textContent = "متابعة";
+          on(followBtn, "click", async () => {
+            await api(`/api/follow/${encodeURIComponent(s.userKey)}`, { method: "POST" });
+            followBtn.textContent = "تمت المتابعة ✓";
+            followBtn.disabled = true;
+          });
+          row.appendChild(av);
+          row.appendChild(info);
+          row.appendChild(followBtn);
+          body.appendChild(row);
+        }
+      }
+
+      if (!friends.length && !suggested.length && !requests.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.style.cssText = "padding:24px;text-align:center";
+        empty.textContent = "لا أصدقاء بعد — ابدأ بمتابعة أشخاص!";
+        body.appendChild(empty);
+      }
+    });
+  } catch (err) {
+    showToast(humanizeError(err?.message), true);
+  }
+}
+
+// =============================================
+// FEATURE 4 — SECURITY CENTER UI
+// =============================================
+
+async function openSecurityCenter() {
+  showActionSheet("🔒 مركز الأمان", async (body) => {
+    body.classList.add("securitySheet");
+
+    // Change Password
+    const pwSection = document.createElement("div");
+    pwSection.className = "securitySection";
+    pwSection.innerHTML = `
+      <h3 class="securityTitle">تغيير كلمة المرور</h3>
+      <div class="securityForm">
+        <input type="password" id="secOldPw" placeholder="كلمة المرور الحالية" class="input" autocomplete="current-password">
+        <input type="password" id="secNewPw" placeholder="كلمة المرور الجديدة (٨ أحرف+)" class="input" autocomplete="new-password">
+        <div id="pwStrengthBar" class="pwStrengthBar"><div id="pwStrengthFill" class="pwStrengthFill"></div></div>
+        <button type="button" id="secChangePwBtn" class="btn primary" style="width:100%">تغيير كلمة المرور</button>
+        <div id="secPwMsg" class="formMsg"></div>
+      </div>
+    `;
+    body.appendChild(pwSection);
+
+    const newPwInput = pwSection.querySelector("#secNewPw");
+    const fill = pwSection.querySelector("#pwStrengthFill");
+    on(newPwInput, "input", () => {
+      const v = newPwInput.value;
+      let score = 0;
+      if (v.length >= 8) score++;
+      if (/[A-Z]/.test(v)) score++;
+      if (/[0-9]/.test(v)) score++;
+      if (/[^A-Za-z0-9]/.test(v)) score++;
+      const pct = [0, 25, 50, 75, 100][score];
+      const color = ["#e74c3c", "#e74c3c", "#f39c12", "#27ae60", "#27ae60"][score];
+      fill.style.width = pct + "%";
+      fill.style.background = color;
+    });
+    on(pwSection.querySelector("#secChangePwBtn"), "click", async () => {
+      const oldPw = pwSection.querySelector("#secOldPw").value;
+      const newPw = newPwInput.value;
+      const msg = pwSection.querySelector("#secPwMsg");
+      try {
+        await api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ oldPassword: oldPw, newPassword: newPw }) });
+        msg.textContent = "تم تغيير كلمة المرور بنجاح ✅";
+        msg.style.color = "var(--green)";
+        pwSection.querySelector("#secOldPw").value = "";
+        newPwInput.value = "";
+      } catch (err) {
+        msg.textContent = humanizeError(err?.message);
+        msg.style.color = "var(--red)";
+      }
+    });
+
+    // Privacy Toggle
+    const privSection = document.createElement("div");
+    privSection.className = "securitySection";
+    const isPrivate = !!(me && me.isPrivate);
+    privSection.innerHTML = `
+      <h3 class="securityTitle">خصوصية الحساب</h3>
+      <div class="securityOption">
+        <div>
+          <div>حساب خاص</div>
+          <small class="muted">يتطلب موافقتك قبل المتابعة</small>
+        </div>
+        <label class="toggleSwitch">
+          <input type="checkbox" id="privacyToggle" ${isPrivate ? "checked" : ""}>
+          <span class="toggleSlider"></span>
+        </label>
+      </div>
+    `;
+    body.appendChild(privSection);
+    on(privSection.querySelector("#privacyToggle"), "change", async (e) => {
+      await api("/api/users/privacy", { method: "PATCH", body: JSON.stringify({ isPrivate: e.target.checked }) });
+      if (me) me.isPrivate = e.target.checked;
+      showToast(e.target.checked ? "الحساب الآن خاص 🔒" : "الحساب الآن عام 🌐");
+    });
+
+    // Login History
+    const histSection = document.createElement("div");
+    histSection.className = "securitySection";
+    histSection.innerHTML = `<h3 class="securityTitle">سجل تسجيل الدخول</h3><div id="loginHistList" class="loginHistList"><div class="muted" style="padding:8px">جاري التحميل...</div></div>`;
+    body.appendChild(histSection);
+
+    try {
+      const r = await api("/api/auth/login-history");
+      const list = histSection.querySelector("#loginHistList");
+      list.textContent = "";
+      if (!r.history || !r.history.length) {
+        list.innerHTML = `<div class="muted" style="padding:8px">لا يوجد سجل بعد</div>`;
+      } else {
+        for (const h of r.history.slice(0, 10)) {
+          const item = document.createElement("div");
+          item.className = "loginHistItem";
+          item.style.borderRight = `3px solid ${h.status === "success" ? "var(--green, #27ae60)" : "var(--red, #e74c3c)"}`;
+          item.innerHTML = `<span style="font-size:12px">${h.ip || "Unknown IP"} · ${String(h.device || "").slice(0, 30)}</span><small class="muted">${fmtTime(h.created_at)}</small>`;
+          list.appendChild(item);
+        }
+      }
+    } catch {}
+
+    // Active Sessions
+    const sessSection = document.createElement("div");
+    sessSection.className = "securitySection";
+    sessSection.innerHTML = `<h3 class="securityTitle">الجلسات النشطة</h3><div id="sessListEl" class="loginHistList"><div class="muted" style="padding:8px">جاري التحميل...</div></div>`;
+    body.appendChild(sessSection);
+    const logAllBtn = sheetButton("تسجيل الخروج من كل الجلسات", "ghost");
+    on(logAllBtn, "click", async () => {
+      await api("/api/auth/sessions", { method: "DELETE" });
+      showToast("تم تسجيل الخروج من جميع الجلسات");
+    });
+    body.appendChild(logAllBtn);
+
+    try {
+      const sr = await api("/api/auth/sessions");
+      const sl = sessSection.querySelector("#sessListEl");
+      sl.textContent = "";
+      if (!sr.sessions || !sr.sessions.length) {
+        sl.innerHTML = `<div class="muted" style="padding:8px">لا جلسات نشطة محفوظة</div>`;
+      } else {
+        for (const s of sr.sessions.slice(0, 5)) {
+          const item = document.createElement("div");
+          item.className = "loginHistItem";
+          item.innerHTML = `<span style="font-size:12px">${s.ip || "?"} · ${String(s.device || "").slice(0, 30)}</span><small class="muted">${fmtTime(s.last_active)}</small>`;
+          const rmBtn = document.createElement("button");
+          rmBtn.type = "button";
+          rmBtn.className = "btn ghost xs";
+          rmBtn.textContent = "إنهاء";
+          on(rmBtn, "click", async () => { await api(`/api/auth/sessions/${encodeURIComponent(s.id)}`, { method: "DELETE" }); item.remove(); });
+          item.appendChild(rmBtn);
+          sl.appendChild(item);
+        }
+      }
+    } catch {}
+  });
+}
+
+// =============================================
+// FEATURE 5 — POST ANALYTICS UI
+// =============================================
+
+async function openAnalyticsDashboard() {
+  showActionSheet("📊 الإحصائيات", async (body) => {
+    body.classList.add("analyticsSheet");
+
+    const loadingEl = document.createElement("div");
+    loadingEl.className = "muted";
+    loadingEl.style.padding = "20px";
+    loadingEl.textContent = "جاري تحميل الإحصائيات...";
+    body.appendChild(loadingEl);
+
+    try {
+      const r = await api("/api/users/analytics");
+      const a = r.analytics || {};
+      loadingEl.remove();
+
+      const statsGrid = document.createElement("div");
+      statsGrid.className = "analyticsGrid";
+      const stats = [
+        { label: "المشاهدات", value: a.totalViews || 0, icon: "👁️" },
+        { label: "الإعجابات", value: a.totalLikes || 0, icon: "❤️" },
+        { label: "المتابعون", value: a.followerCount || 0, icon: "👥" },
+        { label: "المشاركات", value: a.totalBookmarks || 0, icon: "🔖" },
+        { label: "المنشورات", value: a.totalPosts || 0, icon: "📝" },
+        { label: "التفاعل %", value: (a.engagement || 0) + "%", icon: "📈" },
+      ];
+      for (const s of stats) {
+        const card = document.createElement("div");
+        card.className = "analyticsCard";
+        card.innerHTML = `<span class="analyticsIcon">${s.icon}</span><strong class="analyticsVal">${s.value}</strong><span class="analyticslabel">${s.label}</span>`;
+        statsGrid.appendChild(card);
+      }
+      body.appendChild(statsGrid);
+
+      if (a.bestPost) {
+        const bestSection = document.createElement("div");
+        bestSection.className = "securitySection";
+        bestSection.innerHTML = `
+          <h3 class="securityTitle">⭐ أفضل منشور</h3>
+          <div class="analyticsCard" style="width:100%;text-align:right">
+            <p style="margin:0;font-size:14px">${String(a.bestPost.text || "").slice(0, 100) || "(بدون نص)"}</p>
+            <small class="muted">❤️ ${a.bestPost.likes} · 👁️ ${a.bestPost.views}</small>
+          </div>
+        `;
+        on(bestSection.querySelector(".analyticsCard"), "click", () => {
+          hideActionSheet();
+          location.hash = `#p/${encodeURIComponent(a.bestPost.id)}`;
+        });
+        body.appendChild(bestSection);
+      }
+
+      const tipSection = document.createElement("div");
+      tipSection.className = "securitySection";
+      tipSection.innerHTML = `
+        <h3 class="securityTitle">💡 أفضل وقت للنشر</h3>
+        <div class="muted" style="font-size:13px;line-height:1.5">
+          بناءً على التحليلات: أفضل وقت للنشر هو <strong>مساءً بين ٧–١٠ م</strong> عندما يكون معظم المتابعين نشطين.
+        </div>
+      `;
+      body.appendChild(tipSection);
+
+    } catch (err) {
+      loadingEl.textContent = humanizeError(err?.message);
+    }
+  });
+}
+
+// =============================================
+// FEATURE 6 — CONTENT FEATURES UI
+// =============================================
+
+async function openSavedPosts() {
+  showActionSheet("🔖 المحفوظات", async (body) => {
+    body.classList.add("savedSheet");
+    const loadEl = document.createElement("div");
+    loadEl.className = "muted";
+    loadEl.style.padding = "20px";
+    loadEl.textContent = "جاري التحميل...";
+    body.appendChild(loadEl);
+    try {
+      const r = await api("/api/users/saved");
+      loadEl.remove();
+      const posts = r.posts || [];
+      if (!posts.length) {
+        const e = document.createElement("div");
+        e.className = "muted";
+        e.style.cssText = "padding:24px;text-align:center";
+        e.textContent = "لا منشورات محفوظة بعد 🔖";
+        body.appendChild(e);
+        return;
+      }
+      for (const p of posts) {
+        const row = document.createElement("div");
+        row.className = "savedPostRow";
+        const textEl = document.createElement("div");
+        textEl.style.flex = "1";
+        textEl.innerHTML = `<div style="font-size:14px;line-height:1.4">${String(p.text || "").slice(0, 80) || "(صورة/فيديو)"}</div><small class="muted">@${p.author || p.authorKey} · ${fmtTime(p.createdAt)}</small>`;
+        row.appendChild(textEl);
+        on(row, "click", () => { hideActionSheet(); location.hash = `#p/${encodeURIComponent(p.id)}`; route(); });
+        body.appendChild(row);
+      }
+    } catch (err) {
+      loadEl.textContent = humanizeError(err?.message);
+    }
+  });
+}
+
+async function openHighlights(userKey) {
+  try {
+    const r = await api(`/api/highlights/${encodeURIComponent(userKey)}`);
+    const highlights = r.highlights || [];
+    showActionSheet("✨ الهايلايتس", (body) => {
+      body.classList.add("highlightsSheet");
+      const grid = document.createElement("div");
+      grid.className = "highlightsGrid";
+      for (const h of highlights) {
+        const item = document.createElement("div");
+        item.className = "highlightItem";
+        const cover = document.createElement("div");
+        cover.className = "highlightCover";
+        if (h.cover) cover.style.backgroundImage = `url(${h.cover})`;
+        else cover.textContent = "✨";
+        const label = document.createElement("span");
+        label.textContent = h.title;
+        item.appendChild(cover);
+        item.appendChild(label);
+        grid.appendChild(item);
+      }
+      if (!highlights.length) {
+        grid.innerHTML = `<div class="muted" style="padding:20px;text-align:center">لا توجد هايلايتس بعد</div>`;
+      }
+      body.appendChild(grid);
+
+      if (me && me.userKey === userKey) {
+        const createBtn = sheetButton("+ إنشاء هايلايت", "primary");
+        on(createBtn, "click", async () => {
+          const title = prompt("اسم الهايلايت:");
+          if (!title) return;
+          await api("/api/highlights", { method: "POST", body: JSON.stringify({ title }) });
+          showToast("تم إنشاء الهايلايت ✅");
+          hideActionSheet();
+        });
+        body.appendChild(createBtn);
+      }
+    });
+  } catch (err) {
+    showToast(humanizeError(err?.message), true);
+  }
+}
+
+async function openPollForPost(postId) {
+  try {
+    const r = await api(`/api/posts/${encodeURIComponent(postId)}/poll`);
+    const poll = r.poll;
+    if (!poll) return showToast("لا يوجد استطلاع لهذا المنشور", true);
+
+    showActionSheet(`📊 ${poll.question}`, (body) => {
+      const options = Array.isArray(poll.options) ? poll.options : [];
+      const votes = poll.votes || {};
+      const totalVotes = Object.values(votes).length;
+      const myvote = me ? votes[me.userKey] : undefined;
+      const expired = !!poll.expired;
+
+      for (let i = 0; i < options.length; i++) {
+        const optVotes = Object.values(votes).filter(v => v === i).length;
+        const pct = totalVotes > 0 ? Math.round((optVotes / totalVotes) * 100) : 0;
+        const optRow = document.createElement("div");
+        optRow.className = `pollOption ${myvote === i ? "voted" : ""}`;
+        optRow.innerHTML = `
+          <div class="pollBar" style="width:${myvote !== undefined || expired ? pct : 0}%"></div>
+          <span class="pollLabel">${options[i]}</span>
+          ${myvote !== undefined || expired ? `<span class="pollPct">${pct}%</span>` : ""}
+        `;
+        if (myvote === undefined && !expired) {
+          on(optRow, "click", async () => {
+            await api(`/api/posts/${encodeURIComponent(postId)}/poll/vote`, { method: "POST", body: JSON.stringify({ option: i }) });
+            showToast("تم التصويت ✅");
+            hideActionSheet();
+          });
+        }
+        body.appendChild(optRow);
+      }
+      const meta = document.createElement("div");
+      meta.className = "muted";
+      meta.style.cssText = "text-align:center;padding:8px;font-size:12px";
+      meta.textContent = `${totalVotes} تصويت${expired ? " · انتهى الاستطلاع" : ""}`;
+      body.appendChild(meta);
+    });
+  } catch (err) {
+    showToast(humanizeError(err?.message), true);
   }
 }
 
@@ -5122,6 +5659,7 @@ async function boot() {
     // Nav
     notifBtn: document.getElementById("notifBtn"),
     notifDot: document.getElementById("notifDot"),
+    notifBadge: document.getElementById("notifBadge"),
     navAvatar: document.getElementById("navAvatar"),
     langToggleLabel: document.getElementById("langToggleLabel"),
     themeToggle: document.getElementById("themeToggle"),
@@ -5622,19 +6160,22 @@ async function boot() {
     });
   }
 
-  // Notifications dot
+  // Notifications dot — poll every 30s using fast unread-count endpoint
   async function checkNotifDot() {
-    if (!getToken() || !el.notifDot) return;
+    if (!getToken()) return;
     try {
-      const r = await api("/api/notifications", { method: "GET" });
-      const hasUnread = (r.notifications || []).some((n) => !n.read);
-      el.notifDot.hidden = !hasUnread;
+      const r = await api("/api/notifications/unread-count");
+      const count = Number(r.count || 0);
+      if (el.notifDot) el.notifDot.hidden = count === 0;
+      if (el.notifBadge) {
+        el.notifBadge.hidden = count === 0;
+        el.notifBadge.textContent = count > 9 ? "9+" : String(count);
+      }
     } catch {}
   }
   if (el.notifBtn) {
     on(el.notifBtn, "click", () => openNotificationsPanel());
-    // Poll every 60s
-    setInterval(checkNotifDot, 60000);
+    setInterval(checkNotifDot, 30000);
   }
 
   on(window, "keydown", (e) => {
