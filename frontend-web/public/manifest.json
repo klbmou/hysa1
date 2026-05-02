@@ -1,0 +1,21 @@
+{
+  "name": "HYSA",
+  "short_name": "HYSA",
+  "description": "Arabic-first social platform",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#6C63FF",
+  "background_color": "#0A0A0F",
+  "lang": "ar",
+  "dir": "rtl",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["social", "news"]
+}
