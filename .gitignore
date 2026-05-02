@@ -2,6 +2,8 @@ node_modules/
 **/node_modules/
 uploads/
 backend/uploads/
+data.json
+backend/data.json
 storage/
 backend/storage/
 .tmp-*/

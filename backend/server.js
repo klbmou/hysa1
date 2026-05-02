@@ -35,6 +35,27 @@ const NODE_ENV = process.env.NODE_ENV || "development";
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB
 const JSON_LIMIT = "50mb";
+const RATE_LIMITS = {
+  auth: { windowMs: 15 * 60 * 1000, max: 25 },
+  posts: { windowMs: 60 * 1000, max: 40 },
+  comments: { windowMs: 60 * 1000, max: 80 },
+  uploads: { windowMs: 10 * 60 * 1000, max: 30 },
+};
+const ALLOWED_UPLOAD_MIMES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+  "audio/webm",
+  "audio/ogg",
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/wav",
+]);
 const VERIFIED_USERS = new Set(
   String(process.env.VERIFIED_USERS || "hysa,admin,psx,france")
     .split(",")
@@ -1236,8 +1257,16 @@ function coerceVisibility(v) {
   return s === "private" ? "private" : "public";
 }
 
+function stripUnsafeText(input, maxLen = 1000) {
+  return String(input ?? "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLen);
+}
+
 function sanitizeBio(input) {
-  const b = String(input ?? "");
+  const b = stripUnsafeText(input, 160);
   if (b.length > 160) return { ok: false, error: "BIO_TOO_LONG" };
   return { ok: true, bio: b };
 }
@@ -1386,6 +1415,37 @@ async function requireAuth(req, res) {
     return null;
   }
   return u;
+}
+
+const rateLimitBuckets = new Map();
+function rateLimitKey(req, bucket) {
+  const token = getBearerToken(req);
+  const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || req.ip || "unknown")
+    .split(",")[0]
+    .trim();
+  return `${bucket}:${token || ip}`;
+}
+
+function rateLimit(bucketName) {
+  const config = RATE_LIMITS[bucketName] || RATE_LIMITS.posts;
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = rateLimitKey(req, bucketName);
+    const current = rateLimitBuckets.get(key);
+    const bucket = current && current.resetAt > now ? current : { count: 0, resetAt: now + config.windowMs };
+    bucket.count += 1;
+    rateLimitBuckets.set(key, bucket);
+    if (bucket.count > config.max) {
+      res.setHeader("Retry-After", String(Math.ceil((bucket.resetAt - now) / 1000)));
+      return res.status(429).json({ ok: false, error: "RATE_LIMITED" });
+    }
+    if (rateLimitBuckets.size > 5000 && Math.random() < 0.02) {
+      for (const [entryKey, entry] of rateLimitBuckets.entries()) {
+        if (!entry || entry.resetAt <= now) rateLimitBuckets.delete(entryKey);
+      }
+    }
+    return next();
+  };
 }
 
 async function findUserByKey(key) {
@@ -1860,6 +1920,7 @@ function parseDataUrl(dataUrl) {
 }
 
 function extForMime(mime) {
+  if (!ALLOWED_UPLOAD_MIMES.has(String(mime || "").toLowerCase())) return "";
   const map = {
     "image/jpeg": "jpg",
     "image/jpg": "jpg",
@@ -2067,6 +2128,16 @@ app.use(express.json({ limit: JSON_LIMIT }));
 app.use(express.urlencoded({ limit: JSON_LIMIT, extended: true }));
 
 app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()");
+  if (NODE_ENV === "production") {
+    res.setHeader("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
+  }
+  return next();
+});
+
+app.use((req, res, next) => {
   const startedAt = Date.now();
   let approxBytes = 0;
   const originalWrite = res.write.bind(res);
@@ -2088,7 +2159,9 @@ app.use((req, res, next) => {
 
 // (Optional) CORS for debugging / split deployments.
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const origin = String(req.headers.origin || "");
+  const allowedOrigin = !origin || origin === `http://${req.headers.host}` || origin === `https://${req.headers.host}`;
+  if (allowedOrigin) res.setHeader("Access-Control-Allow-Origin", origin || "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS");
   if (req.method === "OPTIONS") return res.status(204).end();
@@ -2157,10 +2230,10 @@ async function handleRegister(req, res) {
   return res.status(200).json({ ok: true, token: createdUser.token, me: toPublicMe(createdUser) });
 }
 
-app.post("/api/register", handleRegister);
-app.post("/api/signup", handleRegister);
+app.post("/api/register", rateLimit("auth"), handleRegister);
+app.post("/api/signup", rateLimit("auth"), handleRegister);
 
-app.post("/api/login", async (req, res) => {
+app.post("/api/login", rateLimit("auth"), async (req, res) => {
   const body = req.body || {};
   const login = String(body.username ?? body.email ?? "").trim();
   const password = String(body.password ?? "");
@@ -2178,7 +2251,7 @@ app.post("/api/login", async (req, res) => {
   return res.status(200).json({ ok: true, token: u.token, me: toPublicMe(u) });
 });
 
-app.post("/api/auth/google", async (req, res) => {
+app.post("/api/auth/google", rateLimit("auth"), async (req, res) => {
   if (!GOOGLE_CLIENT_ID) {
     return res.status(503).json({ ok: false, error: "GOOGLE_AUTH_NOT_CONFIGURED" });
   }
@@ -2604,12 +2677,12 @@ app.get("/api/posts/:id", async (req, res) => {
   return res.status(200).json({ ok: true, post: await toPublicPost(post, viewer) });
 });
 
-app.post("/api/posts", async (req, res) => {
+app.post("/api/posts", rateLimit("posts"), async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
 
   const body = req.body || {};
-  const text = String(body.text ?? body.content ?? "").trim();
+  const text = stripUnsafeText(body.text ?? body.content ?? "", 280);
   const visibility = coerceVisibility(body.visibility);
 
   const mediaCheck = validateMediaList(body.media);
@@ -2775,7 +2848,7 @@ app.get("/api/posts/:id/comments", async (req, res) => {
   return res.status(200).json({ ok: true, comments: nestComments(comments), commentCount: asArray(post.comments).length });
 });
 
-app.post("/api/posts/:id/comments", async (req, res) => {
+app.post("/api/posts/:id/comments", rateLimit("comments"), async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
 
@@ -2787,7 +2860,7 @@ app.post("/api/posts/:id/comments", async (req, res) => {
     return res.status(404).json({ ok: false, error: "NOT_FOUND" });
   }
 
-  const text = String((req.body && req.body.text) || "").trim();
+  const text = stripUnsafeText((req.body && req.body.text) || "", 200);
   const filteredText = filterProfanity(text);
   const parentId = String((req.body && req.body.parentId) || "");
   if (!text || text.length > 200) return res.status(400).json({ ok: false, error: "INVALID_COMMENT" });
@@ -2813,7 +2886,7 @@ app.post("/api/posts/:id/comments", async (req, res) => {
   return res.status(200).json({ ok: true, comment: await toPublicComment(comment), commentCount: asArray(post.comments).length });
 });
 
-app.post("/api/posts/:id/comments/:commentId/replies", async (req, res) => {
+app.post("/api/posts/:id/comments/:commentId/replies", rateLimit("comments"), async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
   const id = String(req.params.id || "");
@@ -2822,7 +2895,7 @@ app.post("/api/posts/:id/comments/:commentId/replies", async (req, res) => {
   if (!await canViewerSeePost(post, viewer)) {
     return res.status(404).json({ ok: false, error: "NOT_FOUND" });
   }
-  const text = String((req.body && req.body.text) || "").trim();
+  const text = stripUnsafeText((req.body && req.body.text) || "", 200);
   const filteredText = filterProfanity(text);
   const parentId = String(req.params.commentId || "");
   if (!text || text.length > 200 || !parentId) return res.status(400).json({ ok: false, error: "INVALID_COMMENT" });
@@ -2975,7 +3048,7 @@ app.post("/api/profile", async (req, res) => {
 
   viewer.bio = bioCheck.bio;
   viewer.email = email;
-  viewer.displayName = String(body.displayName || body.display_name || viewer.displayName || "").trim().slice(0, 80);
+  viewer.displayName = stripUnsafeText(body.displayName || body.display_name || viewer.displayName || "", 80);
   viewer.avatarUrl = avatarUrl;
   viewer.isPrivate = body.isPrivate === true || String(body.isPrivate || "").toLowerCase() === "true";
   viewer.skills = sanitizeSkills(body.skills);
@@ -3665,7 +3738,7 @@ async function uploadToCloudinary(dataUrl, kind) {
   return result.secure_url;
 }
 
-app.post("/api/upload", async (req, res) => {
+app.post("/api/upload", rateLimit("uploads"), async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
 
@@ -3673,9 +3746,13 @@ app.post("/api/upload", async (req, res) => {
   const parsed = parseDataUrl(body.dataUrl);
   if (!parsed) return res.status(400).json({ ok: false, error: "UPLOAD_INVALID" });
   const { mime, b64 } = parsed;
+  const normalizedMime = String(mime || "").toLowerCase();
+  if (!ALLOWED_UPLOAD_MIMES.has(normalizedMime)) {
+    return res.status(400).json({ ok: false, error: "UPLOAD_INVALID" });
+  }
 
-  const ext = extForMime(mime);
-  const kind = mime.startsWith("video/") ? "video" : mime.startsWith("image/") ? "image" : mime.startsWith("audio/") ? "audio" : "";
+  const ext = extForMime(normalizedMime);
+  const kind = normalizedMime.startsWith("video/") ? "video" : normalizedMime.startsWith("image/") ? "image" : normalizedMime.startsWith("audio/") ? "audio" : "";
   if (!ext || !kind) return res.status(400).json({ ok: false, error: "UPLOAD_INVALID" });
 
   let buf;
@@ -3716,7 +3793,7 @@ app.post("/api/upload", async (req, res) => {
     mediaUrl = `/uploads/${filename}`;
   }
 
-  const media = { url: mediaUrl, kind, mime };
+  const media = { url: mediaUrl, kind, mime: normalizedMime };
   return res.status(200).json({ ok: true, media });
 });
 
@@ -4566,11 +4643,11 @@ app.use((err, req, res, next) => {
     if (err.type === "entity.parse.failed") {
       return res.status(400).json({ ok: false, error: "BAD_JSON" });
     }
-    console.error("[api] error:", err);
+    console.error("[api] error:", NODE_ENV === "production" ? (err && err.message) : err);
     return res.status(500).json({ ok: false, error: "SERVER_ERROR" });
   }
 
-  console.error("[server] error:", err);
+  console.error("[server] error:", NODE_ENV === "production" ? (err && err.message) : err);
   return res.status(500).send("Server error");
 });
 
