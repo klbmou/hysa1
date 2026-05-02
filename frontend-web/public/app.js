@@ -3028,47 +3028,45 @@ function showDeleteConfirm(title, bodyText, onConfirm) {
   });
 }
 
-function commentNode(comment, onReply, onDelete, post) {
+function commentNode(comment, onReply, onDelete, post, depth = 0) {
   const wrap = document.createElement("div");
-  wrap.className = "comment";
+  wrap.className = "comment" + (depth > 0 ? " reply" : "");
 
-  const top = document.createElement("div");
-  top.className = "commentTop";
+  const avatar = avatarNode(comment.authorAvatar, comment.author, "sm");
+  avatar.classList.add("comment-avatar");
+  wrap.appendChild(avatar);
 
-  const who = document.createElement("div");
-  who.className = "postWho";
-  who.appendChild(avatarNode(comment.authorAvatar, comment.author, "sm"));
+  const body = document.createElement("div");
+  body.className = "comment-body";
 
-  const whoText = document.createElement("div");
-  whoText.className = "whoText";
+  const meta = document.createElement("div");
+  meta.className = "comment-meta";
   const link = document.createElement("a");
+  link.className = "comment-username";
   link.href = `#u/${encodeURIComponent(comment.authorKey)}`;
   link.textContent = `@${comment.author}`;
   const commentBadge = renderUserBadge({ verified: comment.authorVerified, role: comment.authorRole, createdAt: comment.authorCreatedAt });
   if (commentBadge) link.appendChild(commentBadge);
   const time = document.createElement("div");
-  time.className = "time";
+  time.className = "comment-time time";
   time.dataset.iso = comment.createdAt || "";
   time.textContent = fmtTime(comment.createdAt);
-  whoText.appendChild(link);
-  whoText.appendChild(time);
-  who.appendChild(whoText);
-
-  top.appendChild(who);
+  meta.appendChild(link);
+  meta.appendChild(time);
 
   const text = document.createElement("div");
-  text.className = "commentText";
+  text.className = "comment-text commentText";
   text.textContent = comment.text;
 
-  wrap.appendChild(top);
-  wrap.appendChild(text);
+  body.appendChild(meta);
+  body.appendChild(text);
 
   const actionRow = document.createElement("div");
-  actionRow.className = "commentActions";
+  actionRow.className = "comment-actions commentActions";
 
   const replyBtn = document.createElement("button");
   replyBtn.type = "button";
-  replyBtn.className = "pill";
+  replyBtn.className = "comment-reply-btn";
   replyBtn.textContent = "Reply";
   on(replyBtn, "click", () => onReply && onReply(comment));
   actionRow.appendChild(replyBtn);
@@ -3078,12 +3076,13 @@ function commentNode(comment, onReply, onDelete, post) {
   const likeBtn = document.createElement("button");
   likeBtn.type = "button";
   function syncLikeBtn() {
-    likeBtn.className = "pill comment-like-btn" + (localLiked ? " liked" : "");
+    likeBtn.className = "comment-like comment-like-btn" + (localLiked ? " liked" : "");
     likeBtn.textContent = (localLiked ? "❤️" : "🤍") + (localCount > 0 ? ` ${localCount}` : "");
   }
   syncLikeBtn();
   on(likeBtn, "click", async () => {
     if (likeBtn.disabled) return;
+    pulseTap(likeBtn);
     likeBtn.disabled = true;
     localLiked = !localLiked;
     localCount = localLiked ? localCount + 1 : Math.max(0, localCount - 1);
@@ -3107,18 +3106,17 @@ function commentNode(comment, onReply, onDelete, post) {
   if (canDelete) {
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
-    deleteBtn.className = "pill";
+    deleteBtn.className = "comment-reply-btn danger";
     deleteBtn.textContent = "Delete";
     on(deleteBtn, "click", () => onDelete && onDelete(comment));
     actionRow.appendChild(deleteBtn);
   }
-  wrap.appendChild(actionRow);
+  body.appendChild(actionRow);
+  wrap.appendChild(body);
   if (Array.isArray(comment.replies) && comment.replies.length) {
     const replies = document.createElement("div");
-    replies.style.marginInlineStart = "18px";
-    replies.style.display = "grid";
-    replies.style.gap = "8px";
-    for (const r of comment.replies) replies.appendChild(commentNode(r, onReply, onDelete, post));
+    replies.className = "comment-replies";
+    for (const r of comment.replies) replies.appendChild(commentNode(r, onReply, onDelete, post, depth + 1));
     wrap.appendChild(replies);
   }
   return wrap;
@@ -3372,6 +3370,7 @@ function postNode(post) {
     likeBtn.disabled = true;
     try {
       await toggleLike();
+      if (post.likedByMe) showPostHeart();
     } catch {
       // ignore
     } finally {
@@ -5281,6 +5280,30 @@ function bindOverlayClose(overlay, onClose) {
   });
 }
 
+let settingsScrollY = 0;
+function lockSettingsPageScroll() {
+  if (document.body.classList.contains("settings-open")) return;
+  settingsScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+  document.body.style.top = `-${settingsScrollY}px`;
+  document.body.classList.add("settings-open");
+}
+
+function unlockSettingsPageScroll() {
+  if (!document.body.classList.contains("settings-open")) return;
+  document.body.classList.remove("settings-open");
+  document.body.style.top = "";
+  window.scrollTo(0, settingsScrollY);
+}
+
+function hideSettingsPanel() {
+  if (el.settingsView) el.settingsView.hidden = true;
+  unlockSettingsPageScroll();
+}
+
+function closeSettings() {
+  hideSettingsPanel();
+}
+
 function ensureSettingsSections() {
   const body = el.settingsView?.querySelector(".settings-body");
   if (!body || body.dataset.completedSections === "true") return;
@@ -5299,7 +5322,9 @@ function ensureSettingsSections() {
     section.className = "settings-section";
     const opt = document.createElement("div");
     opt.className = "settings-option";
-    if (action) opt.style.cursor = "pointer";
+    opt.style.cursor = "pointer";
+    opt.tabIndex = 0;
+    opt.setAttribute("role", "button");
     const info = document.createElement("div");
     info.className = "settings-option-info";
     const labelEl = document.createElement("span");
@@ -5316,8 +5341,23 @@ function ensureSettingsSections() {
       arrow.textContent = "›";
       arrow.style.cssText = "font-size:20px;opacity:0.5;margin-inline-start:auto";
       opt.appendChild(arrow);
-      on(opt, "click", action);
+      on(opt, "click", () => {
+        try {
+          action();
+        } catch (err) {
+          console.warn("Settings action unavailable:", labelEl.textContent, err);
+          showToast(`${labelEl.textContent || "This feature"} is coming soon.`);
+        }
+      });
+    } else {
+      on(opt, "click", () => showToast(`${labelEl.textContent || "This feature"} is coming soon.`));
     }
+    on(opt, "keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        opt.click();
+      }
+    });
     section.appendChild(opt);
     body.appendChild(section);
   }
@@ -6491,9 +6531,12 @@ async function boot() {
     if (el.settingsPrivate && me) el.settingsPrivate.checked = !!me.isPrivate;
     if (el.settingsLang) el.settingsLang.value = lang;
     el.settingsView.hidden = false;
+    lockSettingsPageScroll();
+    const settingsPanel = el.settingsView.querySelector(".settings-panel");
+    if (settingsPanel) settingsPanel.scrollTop = 0;
   }
   function closeSettings() {
-    if (el.settingsView) el.settingsView.hidden = true;
+    hideSettingsPanel();
   }
 
   // Wire up the top-nav theme toggle button
@@ -6867,29 +6910,57 @@ function initScrollHideNav() {
 // #13: Pull-to-refresh
 function initPullToRefresh() {
   let startY = 0;
+  let startX = 0;
   let active = false;
+  let armed = false;
+  const armDistance = 34;
+  const refreshDistance = 88;
   const indicator = document.getElementById("pullIndicator");
+  const isHomeFeed = () => !location.hash || location.hash === "#home" || location.hash === "#";
+  const setPullIndicator = (distance = 0) => {
+    if (!indicator) return;
+    const progress = Math.max(0, Math.min(1, distance / refreshDistance));
+    indicator.style.setProperty("--pull-progress", progress.toFixed(2));
+    indicator.classList.toggle("show", progress > 0.12);
+    indicator.classList.toggle("ready", distance >= refreshDistance);
+  };
+  const resetPull = () => {
+    active = false;
+    armed = false;
+    setPullIndicator(0);
+  };
   window.addEventListener("touchstart", (e) => {
-    if (window.scrollY === 0 && !feedLoading) {
-      startY = e.touches[0].clientY;
-      active = true;
-    }
+    if (!isHomeFeed() || feedLoading || document.body.classList.contains("settings-open")) return;
+    if ((window.scrollY || document.documentElement.scrollTop || 0) > 2) return;
+    if (!e.touches || e.touches.length !== 1) return;
+    startY = e.touches[0].clientY;
+    startX = e.touches[0].clientX;
+    active = true;
+    armed = false;
+    setPullIndicator(0);
   }, { passive: true });
   window.addEventListener("touchmove", (e) => {
     if (!active) return;
-    if (window.scrollY > 0) { active = false; return; }
-    if (e.touches[0].clientY - startY > 24) indicator?.classList.add("show");
+    if ((window.scrollY || document.documentElement.scrollTop || 0) > 2) { resetPull(); return; }
+    const dy = e.touches[0].clientY - startY;
+    const dx = Math.abs(e.touches[0].clientX - startX);
+    if (dx > 36 && dx > dy) { resetPull(); return; }
+    if (dy <= 0) { resetPull(); return; }
+    armed = dy >= armDistance;
+    setPullIndicator(armed ? dy : 0);
   }, { passive: true });
   window.addEventListener("touchend", (e) => {
     if (!active) return;
-    active = false;
-    indicator?.classList.remove("show");
     const dy = e.changedTouches[0].clientY - startY;
-    if (dy >= 72 && !feedLoading) {
+    const shouldRefresh = armed && dy >= refreshDistance && !feedLoading && isHomeFeed();
+    resetPull();
+    if (shouldRefresh) {
       if (navigator.vibrate) navigator.vibrate(10);
+      feedCache = { key: "", timestamp: 0, payload: null };
       loadFeed({ reset: true }).catch(() => {});
     }
   }, { passive: true });
+  window.addEventListener("touchcancel", resetPull, { passive: true });
 }
 
 // #16 / #17: Swipe gestures
