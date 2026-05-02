@@ -13,3 +13,4 @@ backend/storage/
 backend/.env
 !.env.example
 .DS_Store
+.vscode/
