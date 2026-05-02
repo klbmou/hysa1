@@ -51,6 +51,7 @@ const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY;
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
 const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || "").trim();
+const GOOGLE_CLIENT_SECRET = String(process.env.GOOGLE_CLIENT_SECRET || "").trim();
 
 const USE_POSTGRES = !!process.env.DATABASE_URL;
 const USE_CLOUDINARY = !!(
@@ -60,6 +61,7 @@ const USE_CLOUDINARY = !!(
 );
 const OWNER_USER_KEY = "france";
 const googleOAuthClient = new OAuth2Client(GOOGLE_CLIENT_ID || undefined);
+void GOOGLE_CLIENT_SECRET;
 
 // Enforce production behavior
 if (NODE_ENV === "production") {
@@ -1722,6 +1724,7 @@ function toPublicMediaList(media) {
       kind: String(m && m.kind ? m.kind : ""),
       mime: String(m && m.mime ? m.mime : ""),
       type: String(m && m.type ? m.type : ""),
+      effect: String(m && m.effect ? m.effect : ""),
       duration: Number.isFinite(Number(m && m.duration)) ? Number(m.duration) : undefined,
     }))
     .filter((m) => m.kind && m.mime)
@@ -1746,6 +1749,7 @@ function validateDmMediaList(media) {
       kind: String(m.kind),
       mime: String(m.mime),
       type: String(m.type || ""),
+      effect: String(m.effect || ""),
       duration: Number.isFinite(Number(m.duration)) ? Number(m.duration) : undefined,
     })),
   };
@@ -2156,6 +2160,13 @@ app.post("/api/auth/google", async (req, res) => {
   const saved = USE_POSTGRES ? await pgCreateUser(created) : await User.create(created);
   if (!USE_POSTGRES) await syncDataJson();
   return res.status(200).json({ ok: true, token: saved.token, me: toPublicMe(saved) });
+});
+
+app.get("/api/config", (_req, res) => {
+  return res.status(200).json({
+    ok: true,
+    googleClientId: GOOGLE_CLIENT_ID,
+  });
 });
 
 app.post("/api/logout", async (req, res) => {

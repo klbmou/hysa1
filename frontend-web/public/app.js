@@ -4,10 +4,8 @@ const tokenKey = "token";
 const legacyTokenKey = "hysa_token";
 const langKey = "hysa_lang";
 const themeKey = "hysa_theme";
-const googleClientId = "75355529073-toirg33tfpvdjie4vl3h2sclh673esfr.apps.googleusercontent.com";
-if (/^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)) {
-  console.log("[HYSA Google Auth] client_id:", googleClientId);
-}
+let googleClientId = "";
+let googleClientConfigPromise = null;
 
 function getToken() {
   return localStorage.getItem("token");
@@ -722,6 +720,26 @@ function clearSession({ clearToken = true } = {}) {
 let googleAuthReady = false;
 let googleAuthInitializing = false;
 
+async function loadGoogleClientId() {
+  if (googleClientId) return googleClientId;
+  if (!googleClientConfigPromise) {
+    googleClientConfigPromise = api("/api/config", { method: "GET" })
+      .then((r) => {
+        googleClientId = String(r?.googleClientId || "").trim();
+        if (/^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)) {
+          console.log("[HYSA Google Auth] client_id:", googleClientId || "(missing)");
+        }
+        if (!googleClientId) throw new Error("GOOGLE_AUTH_NOT_CONFIGURED");
+        return googleClientId;
+      })
+      .catch((err) => {
+        googleClientConfigPromise = null;
+        throw err;
+      });
+  }
+  return googleClientConfigPromise;
+}
+
 function loadGoogleIdentityScript() {
   if (window.google?.accounts?.id) return Promise.resolve();
   const existing = document.querySelector("script[src*='accounts.google.com/gsi/client']");
@@ -763,10 +781,11 @@ async function initGoogleAuth() {
   if (googleAuthReady || googleAuthInitializing) return;
   googleAuthInitializing = true;
   try {
+    const clientId = await loadGoogleClientId();
     await loadGoogleIdentityScript();
     if (!window.google?.accounts?.id) throw new Error("GOOGLE_AUTH_NOT_CONFIGURED");
     window.google.accounts.id.initialize({
-      client_id: googleClientId,
+      client_id: clientId,
       callback: (response) => {
         const msg = document.getElementById("googleAuthMsg");
         setMsg(msg, t("loading"));
@@ -837,6 +856,7 @@ let dmRecorder = null;
 let dmRecordingChunks = [];
 let dmRecordingStartedAt = 0;
 let dmRecordingTimer = null;
+let dmVoiceDraft = null;
 
 function formatDuration(seconds) {
   const n = Number.isFinite(Number(seconds)) ? Math.max(0, Math.floor(Number(seconds))) : 0;
@@ -845,13 +865,14 @@ function formatDuration(seconds) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function customAudioPlayer(url, { compact = false } = {}) {
+function customAudioPlayer(url, { compact = false, effect = "" } = {}) {
   const wrap = document.createElement("div");
   wrap.className = `voicePlayer ${compact ? "compact" : ""}`.trim();
 
   const audio = document.createElement("audio");
   audio.src = url;
   audio.preload = "metadata";
+  audio.playbackRate = effect === "deep" ? 0.78 : effect === "high" ? 1.22 : 1;
 
   const play = document.createElement("button");
   play.type = "button";
@@ -1170,7 +1191,7 @@ function renderDmMessage(message) {
     } else if (item.kind === "video") {
       wrap.appendChild(customVideoPlayer(item.url));
     } else if (item.kind === "audio") {
-      wrap.appendChild(customAudioPlayer(item.url, { compact: true }));
+      wrap.appendChild(customAudioPlayer(item.url, { compact: true, effect: item.effect || "" }));
     }
     b.appendChild(wrap);
   }
@@ -1258,14 +1279,36 @@ function ensureDmRecordStatus() {
   status.id = "dmRecordStatus";
   status.className = "dmRecordStatus";
   status.hidden = true;
-  status.innerHTML = '<span class="recordDot"></span><strong>0:00</strong><div class="recordWave"></div><button type="button">Cancel</button>';
+  status.innerHTML = `
+    <span class="recordDot"></span>
+    <strong>0:00</strong>
+    <div class="recordWave"></div>
+    <div class="recordActions">
+      <button type="button" data-record-stop>Stop</button>
+      <button type="button" data-record-cancel>Cancel</button>
+      <button type="button" data-voice-play>Play</button>
+      <button type="button" data-voice-delete>Delete</button>
+      <button type="button" data-voice-effect="deep">Deep</button>
+      <button type="button" data-voice-effect="high">High</button>
+      <button type="button" data-voice-send>Send</button>
+    </div>`;
   const wave = status.querySelector(".recordWave");
   for (let i = 0; i < 18; i += 1) {
     const barNode = document.createElement("span");
     barNode.style.setProperty("--h", `${18 + ((i * 19) % 52)}%`);
     wave.appendChild(barNode);
   }
-  on(status.querySelector("button"), "click", () => stopDmRecording({ cancel: true }));
+  on(status.querySelector("[data-record-stop]"), "click", () => stopDmRecording());
+  on(status.querySelector("[data-record-cancel]"), "click", () => stopDmRecording({ cancel: true }));
+  on(status.querySelector("[data-voice-delete]"), "click", clearDmVoiceDraft);
+  on(status.querySelector("[data-voice-send]"), "click", sendDmVoiceDraft);
+  on(status.querySelector("[data-voice-effect='deep']"), "click", () => setDmVoiceEffect("deep"));
+  on(status.querySelector("[data-voice-effect='high']"), "click", () => setDmVoiceEffect("high"));
+  on(status.querySelector("[data-voice-play]"), "click", () => {
+    if (!dmVoiceDraft?.audio) return;
+    if (dmVoiceDraft.audio.paused) dmVoiceDraft.audio.play().catch(() => {});
+    else dmVoiceDraft.audio.pause();
+  });
   bar.parentElement?.insertBefore(status, bar);
   return status;
 }
@@ -1283,6 +1326,73 @@ function stopDmRecording({ cancel = false } = {}) {
   if (!dmRecorder || dmRecorder.state === "inactive") return;
   dmRecorder._hysaCancel = !!cancel;
   dmRecorder.stop();
+}
+
+function updateDmSendState() {
+  if (!el.dmSend) return;
+  const hasText = !!String(el.dmText?.value || "").trim();
+  el.dmSend.classList.toggle("ready", hasText || !!dmVoiceDraft);
+}
+
+function clearDmVoiceDraft() {
+  if (dmVoiceDraft?.url) URL.revokeObjectURL(dmVoiceDraft.url);
+  if (dmVoiceDraft?.audio) dmVoiceDraft.audio.pause();
+  dmVoiceDraft = null;
+  dmRecordingChunks = [];
+  setDmRecordStatus("idle");
+  updateDmSendState();
+}
+
+function setDmVoiceEffect(effect) {
+  if (!dmVoiceDraft?.audio) return;
+  dmVoiceDraft.effect = effect;
+  dmVoiceDraft.audio.playbackRate = effect === "deep" ? 0.78 : effect === "high" ? 1.22 : 1;
+  const status = ensureDmRecordStatus();
+  if (status) {
+    for (const btn of status.querySelectorAll("[data-voice-effect]")) {
+      btn.classList.toggle("active", btn.getAttribute("data-voice-effect") === effect);
+    }
+  }
+}
+
+function createDmVoiceDraft(blob, duration, mime) {
+  clearDmVoiceDraft();
+  const cleanMime = String(mime || "audio/webm").split(";")[0] || "audio/webm";
+  const voiceBlob = blob.type === cleanMime ? blob : new Blob([blob], { type: cleanMime });
+  const url = URL.createObjectURL(voiceBlob);
+  const audio = new Audio(url);
+  dmVoiceDraft = { blob: voiceBlob, duration, mime: cleanMime, url, audio, effect: "" };
+  setDmRecordStatus("preview", formatDuration(duration));
+  updateDmSendState();
+}
+
+async function sendDmVoiceDraft() {
+  if (!dmVoiceDraft || !activeDmPeer) return;
+  const status = ensureDmRecordStatus();
+  const sendBtn = status?.querySelector("[data-voice-send]");
+  if (sendBtn) sendBtn.disabled = true;
+  try {
+    setDmRecordStatus("uploading", "Uploading...");
+    const mime = dmVoiceDraft.mime || "audio/webm";
+    const ext = mime.includes("mp4") ? "m4a" : mime.includes("ogg") ? "ogg" : "webm";
+    const file = new File([dmVoiceDraft.blob], `voice-message-${Date.now()}.${ext}`, { type: mime });
+    const media = await uploadFile(file);
+    await sendDmMessage({
+      media: [{
+        ...media,
+        type: "voice",
+        duration: dmVoiceDraft.duration,
+        effect: dmVoiceDraft.effect || "",
+      }],
+    });
+    showToast("Voice message sent.");
+    clearDmVoiceDraft();
+  } catch (err) {
+    setDmRecordStatus("error", humanizeError(err?.message, t("error_upload_invalid")));
+    showToast(humanizeError(err?.message, t("error_upload_invalid")), true);
+  } finally {
+    if (sendBtn) sendBtn.disabled = false;
+  }
 }
 
 async function refreshDmInbox({ silent = false } = {}) {
@@ -3395,7 +3505,22 @@ async function loadReels() {
     media.className = "reelMedia";
     const heart = document.createElement("div");
     heart.className = "heartBurst";
+    heart.textContent = "\u2665";
+    const reactionPalette = document.createElement("div");
+    reactionPalette.className = "reelReactionPalette";
+    for (const emoji of ["❤️", "😂", "😮", "😢", "😡"]) {
+      const reactionBtn = document.createElement("button");
+      reactionBtn.type = "button";
+      reactionBtn.textContent = emoji;
+      on(reactionBtn, "click", () => {
+        reactionPalette.classList.remove("show");
+        if (emoji === "❤️" && !reel.likedByMe) likeReel().catch(() => {});
+        showToast(`Reacted ${emoji}`);
+      });
+      reactionPalette.appendChild(reactionBtn);
+    }
     heart.textContent = "♥";
+    heart.textContent = "\u2665";
     const actions = document.createElement("div");
     actions.className = "reelActions";
     const likeAction = document.createElement("button");
@@ -3485,6 +3610,7 @@ async function loadReels() {
     card.appendChild(mute);
     card.appendChild(media);
     card.appendChild(heart);
+    card.appendChild(reactionPalette);
     card.appendChild(actions);
     card.appendChild(caption);
     function flashHeart() {
@@ -3493,18 +3619,43 @@ async function loadReels() {
       heart.classList.add("show");
       window.setTimeout(() => heart.classList.remove("show"), 620);
     }
+    function floatHearts(event) {
+      const rect = card.getBoundingClientRect();
+      const baseX = event && Number.isFinite(event.clientX) ? event.clientX - rect.left : rect.width / 2;
+      const baseY = event && Number.isFinite(event.clientY) ? event.clientY - rect.top : rect.height / 2;
+      for (let i = 0; i < 8; i += 1) {
+        const node = document.createElement("span");
+        node.className = "floatingHeart";
+        node.textContent = "\u2665";
+        node.style.left = `${baseX}px`;
+        node.style.top = `${baseY}px`;
+        node.style.setProperty("--x", `${(i - 3.5) * 18}px`);
+        node.style.setProperty("--y", `${-70 - ((i * 13) % 60)}px`);
+        node.style.setProperty("--r", `${(i % 2 ? 1 : -1) * (10 + i * 4)}deg`);
+        card.appendChild(node);
+        window.setTimeout(() => node.remove(), 950);
+      }
+    }
+    function pulseLikeButton() {
+      likeAction.classList.remove("likedPulse");
+      void likeAction.offsetWidth;
+      likeAction.classList.add("likedPulse");
+      window.setTimeout(() => likeAction.classList.remove("likedPulse"), 320);
+    }
     async function likeReel() {
       const rLike = await api(`/api/posts/${encodeURIComponent(reel.id)}/like`, { method: "POST" });
       reel.likedByMe = rLike.liked;
       reel.likeCount = rLike.likeCount;
       setIconCountState(likeAction, "heart", reel.likeCount || 0, reel.likedByMe);
+      pulseLikeButton();
     }
     if (reelMedia && reelMedia.kind === "video") {
       const player = customVideoPlayer(reelMedia.url, {
         muted: reelMutePreference,
         autoplay: true,
-        onDoubleTap: () => {
+        onDoubleTap: (event) => {
           flashHeart();
+          floatHearts(event);
           if (!reel.likedByMe) likeReel().catch(() => {});
         },
       });
@@ -3528,6 +3679,7 @@ async function loadReels() {
           if (event.target && event.target.closest && event.target.closest("button, a")) return;
           longPressPaused = false;
           pressTimer = window.setTimeout(() => {
+            reactionPalette.classList.add("show");
             if (!video.paused) {
               longPressPaused = true;
               video.pause();
@@ -3581,6 +3733,7 @@ async function loadReels() {
       const target = event && event.target && event.target.closest ? event.target : null;
       if (target && target.closest(".proVideo")) return;
       flashHeart();
+      floatHearts(event);
       if (!reel.likedByMe) likeReel().catch(() => {});
     });
     on(likeAction, "click", () => likeReel().catch(() => {}));
@@ -4851,13 +5004,11 @@ async function boot() {
     if (media.length) await sendDmMessage({ media });
   });
   if (el.dmSend) {
-    on(el.dmSend, "click", () => sendDmMessage({ text: el.dmText?.value || "" }));
+    on(el.dmSend, "click", () => {
+      if (dmVoiceDraft && !String(el.dmText?.value || "").trim()) return sendDmVoiceDraft();
+      return sendDmMessage({ text: el.dmText?.value || "" });
+    });
   }
-  const updateDmSendState = () => {
-    if (!el.dmSend) return;
-    const hasText = !!String(el.dmText?.value || "").trim();
-    el.dmSend.classList.toggle("ready", hasText);
-  };
   on(el.dmText, "input", updateDmSendState);
   updateDmSendState();
   on(el.dmText, "keydown", (e) => {
@@ -4868,6 +5019,10 @@ async function boot() {
   if (el.dmRecord) {
     on(el.dmRecord, "click", async () => {
       if (!activeDmPeer) return;
+      if (dmVoiceDraft) {
+        setDmRecordStatus("preview", formatDuration(dmVoiceDraft.duration));
+        return;
+      }
       if (dmRecorder && dmRecorder.state === "recording") {
         stopDmRecording();
         return;
@@ -4879,18 +5034,20 @@ async function boot() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         dmRecordingChunks = [];
-        dmRecorder = new MediaRecorder(stream);
+        const preferredMime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"]
+          .find((type) => window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(type)) || "";
+        dmRecorder = preferredMime ? new MediaRecorder(stream, { mimeType: preferredMime }) : new MediaRecorder(stream);
         dmRecorder.ondataavailable = (event) => {
           if (event.data && event.data.size) dmRecordingChunks.push(event.data);
         };
-        dmRecorder.onstop = async () => {
+        dmRecorder.onstop = () => {
           stream.getTracks().forEach((track) => track.stop());
           if (dmRecordingTimer) window.clearInterval(dmRecordingTimer);
           dmRecordingTimer = null;
           el.dmRecord.classList.remove("recording");
-          setDmRecordStatus("idle");
           if (dmRecorder._hysaCancel) {
             dmRecordingChunks = [];
+            setDmRecordStatus("idle");
             showToast("Recording cancelled.");
             dmRecorder = null;
             return;
@@ -4900,26 +5057,23 @@ async function boot() {
             const mime = dmRecorder.mimeType || "audio/webm";
             const blob = new Blob(dmRecordingChunks, { type: mime });
             if (!blob.size) throw new Error("UPLOAD_INVALID");
-            const file = new File([blob], `voice-${Date.now()}.webm`, { type: mime });
-            setDmRecordStatus("uploading", "Uploading...");
-            const media = await uploadFile(file);
-            await sendDmMessage({ media: [{ ...media, type: "voice", duration }] });
-            showToast("Voice message sent.");
+            createDmVoiceDraft(blob, duration, mime);
+            showToast("Voice preview ready.");
           } catch (err) {
+            setDmRecordStatus("error", humanizeError(err?.message, t("error_upload_invalid")));
             showToast(humanizeError(err?.message, t("error_upload_invalid")), true);
           } finally {
-            setDmRecordStatus("idle");
             dmRecorder = null;
           }
         };
-        dmRecorder.start();
+        dmRecorder.start(250);
         el.dmRecord.classList.add("recording");
         dmRecordingStartedAt = Date.now();
         setDmRecordStatus("recording", "0:00");
         dmRecordingTimer = window.setInterval(() => {
           setDmRecordStatus("recording", formatDuration((Date.now() - dmRecordingStartedAt) / 1000));
         }, 250);
-        showToast("Recording... tap the microphone again to send.");
+        showToast("Recording... tap Stop to preview.");
       } catch {
         showToast("Microphone permission was denied.", true);
       }
