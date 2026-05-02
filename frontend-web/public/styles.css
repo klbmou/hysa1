@@ -1660,53 +1660,61 @@ select:focus {
   font-size: 11px;
 }
 
+/* ── Comments (Instagram-style clean layout) ─────────────── */
 .comments {
   margin: 0 14px 14px;
-  padding-top: 12px;
+  padding-top: 8px;
   border-top: 1px solid var(--border);
-  display: grid;
-  gap: 10px;
 }
 
-.commentComposer,
+.commentComposer {
+  margin-bottom: 8px;
+}
+
 .commentsList {
-  display: grid;
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 .comment {
   display: flex;
   flex-direction: column;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 10px 0 6px;
   background: none;
   direction: rtl;
   text-align: right;
+  border: none;
 }
 
+/* Reply indentation — thin accent line, no nested box */
 .comment .comment {
-  margin-right: 48px;
-  margin-left: 0;
+  margin-inline-end: 44px;
+  margin-inline-start: 0;
+  padding-inline-end: 8px;
+  border-inline-end: 2px solid rgba(100, 120, 200, 0.25);
+  padding-top: 6px;
+  padding-bottom: 4px;
 }
 
 .commentTop {
   display: flex;
   flex-direction: row-reverse;
   align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 4px;
+  gap: 8px;
+  margin-bottom: 2px;
 }
 
 .commentTop .avatar {
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
 }
 
 .comment .comment .commentTop .avatar {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
 }
 
 .commentTop .whoText {
@@ -1730,7 +1738,8 @@ select:focus {
 }
 
 .commentText {
-  padding-inline-start: 46px;
+  padding-inline-start: 40px;
+  margin-top: 2px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   line-height: 1.5;
@@ -1739,7 +1748,6 @@ select:focus {
 }
 
 .comment .comment .commentText {
-  padding-inline-start: 38px;
   font-size: 13px;
 }
 
@@ -1747,13 +1755,8 @@ select:focus {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 12px;
-  padding-inline-start: 46px;
+  gap: 14px;
   margin-top: 4px;
-}
-
-.comment .comment .commentActions {
-  padding-inline-start: 38px;
 }
 
 .commentActions .pill {
@@ -2611,7 +2614,7 @@ select:focus {
   height: 100%;
   max-width: 100%;
   max-height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   background: #000;
 }
 
