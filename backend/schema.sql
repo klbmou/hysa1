@@ -226,3 +226,12 @@ CREATE INDEX IF NOT EXISTS idx_story_reactions_story_id ON story_reactions(story
 CREATE INDEX IF NOT EXISTS idx_story_reactions_owner_key ON story_reactions(owner_key);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id_unique ON users(google_id) WHERE google_id <> '';
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(LOWER(email));
+
+-- Blocked users (Feature 7 - Block/Unblock)
+CREATE TABLE IF NOT EXISTS blocked_users (
+  blocker_key VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  blocked_key VARCHAR(50) NOT NULL REFERENCES users(user_key) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY(blocker_key, blocked_key)
+);
+CREATE INDEX IF NOT EXISTS idx_blocked_users_blocker ON blocked_users(blocker_key);

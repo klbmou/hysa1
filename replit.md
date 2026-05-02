@@ -1,125 +1,129 @@
 # HYSA - Mini Social Media App
 
 ## Overview
-HYSA is an Arabic-first (RTL) micro-social platform (Twitter/X-like) with Node.js/Express backend + Vanilla JS frontend. Features 6 major feature sets: AI Assistant "بلوطة", Notifications System, Friends System, Security Center, Post Analytics, and Content Features (carousel, highlights, polls, scheduling, bookmarks).
+HYSA is an Arabic-first (RTL) micro-social platform (Twitter/X + TikTok + WhatsApp hybrid). Built with Node.js/Express backend + Vanilla JS frontend. Full dark mode, glass-morphism UI, RTL support, PWA-ready.
 
 ## Feature Set (v2.0)
 
 ### Feature 1 — AI Assistant "بلوطة" 🌰
 - Floating 🌰 FAB button (bottom-right), slides-up chat panel
-- Header: "بلوطة 🌰" + "مساعدك الذكي"
-- 4 suggested prompt chips on first open (caption, hashtags, bio, funny caption)
 - Backend tries Anthropic Claude → OpenAI → smart local fallback
-- Local fallback: 100+ caption templates (food/travel/motivation/funny), hashtag DB by 7 categories, 5+ bio templates, bilingual Arabic/English detection
+- 100+ caption templates (food/travel/motivation/funny), hashtag DB by 7 categories, bilingual Arabic/English
 
 ### Feature 2 — Notifications System
-- Bell icon with red badge showing unread count (polls every 30s via `/api/notifications/unread-count`)
-- Grouped: Today / This Week / Earlier
-- Each item: avatar + text + time + delete (✕) button
+- Bell icon with red badge showing unread count (polls every 30s)
+- Grouped: Today / This Week / Earlier; mark all read, delete individual
 - Tap to navigate to relevant content
-- Mark all read, delete individual
 
 ### Feature 3 — Friends System
 - Mutual follow = Friends (badge shown)
 - Follow requests (for private accounts)
-- Suggested friends (friends-of-friends)
-- Close friends table (green ring on stories)
-- Privacy toggle (private account / public)
+- Suggested friends (friends-of-friends), close friends (green story ring)
 
 ### Feature 4 — Security Center
 - Change password with strength bar
 - Active sessions list (view + logout individual or all)
 - Login history (last 20, color-coded success/fail)
-- 2FA with Google Authenticator (speakeasy + qrcode)
-- Privacy toggle (private account)
+- 2FA with Google Authenticator
 
 ### Feature 5 — Post Analytics
-- 📊 button in own profile header
 - Stats cards: Views / Likes / Followers / Bookmarks / Posts / Engagement %
-- Best performing post highlight
-- Best time to post recommendation
-- Post-level analytics via `/api/posts/:id/analytics`
+- Best performing post highlight, best time to post recommendation
 
 ### Feature 6 — Content Features
 - Story highlights (create/view circles below bio)
 - Polls in posts (vote + see results, 24h expiry)
 - Post scheduling (scheduled_at column, hidden until time)
-- Saved posts page (bookmarks already stored in posts.bookmarks array)
+- Saved posts page (bookmarks)
+
+### Feature 7 — Block/Unblock System (NEW)
+- `POST /api/users/block/:key` — block a user
+- `DELETE /api/users/block/:key` — unblock a user
+- `GET /api/users/blocked` — list blocked users
+- Block button in profile header (for other users)
+- "Block @username" in post ••• menu
+- Schema: `blocked_users` table (blocker_key, blocked_key)
+
+### Feature 8 — Explore Page (NEW)
+- `GET /api/explore` — returns top 40 posts by engagement (likes×3 + views + comments×2)
+- Accessible via "اكتشاف" compass icon in bottom nav (`#explore` route)
+- Instagram-style 3-column masonry grid with hover overlays (like/comment counts)
+- Click any tile → opens full post detail
+
+### Feature 9 — Carousel Posts (NEW)
+- Multi-image posts auto-display as swipeable carousel
+- Touch swipe (left/right), arrow buttons (desktop), dot indicators, count badge (1/N)
+- Fully supports mixed image + video slides
+
+### Feature 10 — @Mention Autocomplete (NEW)
+- Type `@username` in comment textarea → live dropdown of matching users
+- Clicking suggestion inserts `@username ` at cursor position
+- `@mentions` in post text render as clickable links to user profile
 
 ## Project Structure
 
 ```
 /
-├── backend/          # Node.js Express API server (main entry point)
-│   ├── server.js     # Main Express server (~4500 lines) - serves API + static frontend
-│   ├── data.json     # Local JSON "database" (used when DATABASE_URL not set)
-│   ├── schema.sql    # PostgreSQL schema (for production)
-│   ├── migrate.js    # DB migration helper
+├── backend/          # Node.js Express API server
+│   ├── server.js     # Main Express server (~4600 lines)
+│   ├── schema.sql    # PostgreSQL schema (auto-runs on startup)
 │   └── package.json  # Dependencies: express, dotenv, pg, cloudinary, peer
 ├── frontend-web/     # Static web frontend (vanilla JS/HTML/CSS)
 │   └── public/
-│       ├── index.html  # Fully redesigned with glass-morphism 3D UI
-│       ├── app.js      # Main frontend app (~3985 lines, fetch-based API calls, JWT auth)
-│       └── styles.css  # ~2970 lines (original + glass UI extensions)
-├── mobile-app/       # React Native / Expo mobile app (do not touch)
-└── php/              # Alternative PHP implementation (MySQL-based)
+│       ├── index.html  # Glass-morphism UI, RTL Arabic, 6-item bottom nav
+│       ├── app.js      # Main frontend app (~6900 lines)
+│       └── styles.css  # ~5800 lines (full design system)
 ```
 
 ## Architecture
 
-- **Backend**: Express.js server that serves both the REST API (`/api/*`) and static frontend files from `frontend-web/public/`
-- **Storage**: 
-  - Development: Local `data.json` file (JSON-based MongoDB-like model layer)
-  - Production: PostgreSQL via `DATABASE_URL` environment variable (`USE_POSTGRES=true` auto-set)
+- **Backend**: Express.js server that serves both the REST API (`/api/*`) and static frontend files
+- **Storage**: PostgreSQL via `DATABASE_URL` (production) or local `data.json` (dev fallback)
 - **Media**: Local uploads directory by default; Cloudinary when credentials are set
-- **Auth**: Token-based (stored in localStorage on web, expo-secure-store on mobile)
+- **Auth**: Token-based (stored in localStorage)
 - **Real-time**: PeerJS signaling server for WebRTC features
 
 ## Running the App
 
 ### Development (Replit)
-The workflow runs: `cd backend && PORT=5000 node server.js`
-- App available at port 5000
-- Serves frontend static files + API endpoints
+Workflow: `cd backend && PORT=5000 node server.js`
 
 ### Environment Variables
-- `PORT` - Server port (default: 3000, set to 5000 in Replit)
-- `DATABASE_URL` - PostgreSQL connection string (required; exits without it in production)
-- `USE_POSTGRES` - Set automatically when DATABASE_URL is present
-- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` - Cloudinary media storage (optional)
-- `VERIFIED_USERS` - Comma-separated list of verified usernames (default: "hysa,admin,psx")
+- `PORT` — Server port (default: 3000, set to 5000 in Replit)
+- `DATABASE_URL` — PostgreSQL connection string
+- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` — optional media storage
+- `VERIFIED_USERS` — Comma-separated list: "hysa,admin,psx,france"
+- `OWNER_USER_KEY` — Owner account: "france"
 
-## Deployment
-- Target: autoscale
-- Run command: `node backend/server.js`
-- Note: Production requires `DATABASE_URL` to be set
+## Key API Routes
 
-## Key Features
-- User signup/login with token auth
-- Social feed with posts, likes, bookmarks, reposts
-- Stories with 24h expiry
-- Direct messages (DMs)
-- Follow/unfollow system
-- Search users
-- Notifications
-- User profiles with avatar upload
-- WebRTC video calls (PeerJS)
-- Verified user badges
-- AI assistant with smart Arabic/English responses
-- Settings panel: dark mode toggle, accent color picker (6 colors), language select, privacy toggle
-- Theme system: persisted via localStorage (hysa_theme, hysa_accent, hysa_lang)
-- Insights modal: posts, views, likes, saves stats
-- Glass-morphism 3D UI redesign
+### Posts
+- `GET /api/posts` — feed
+- `GET /api/explore` — top posts by engagement
+- `POST /api/posts` — create post
+- `POST /api/posts/:id/like` — like/unlike
 
-## Completed Parts (8-part upgrade)
-- **Part 1 (Feed bug)**: Fixed `pgFindUserByKey` save() closure using `obj.token`, patched PG wrappers
-- **Part 2 (3D glass UI)**: index.html fully rewritten, CSS extended with glass components
-- **Part 3 (Theme system)**: Dark/light mode, accent color picker, persisted in localStorage
-- **Part 4 (Settings page)**: Full settings panel (lang, privacy, dark mode, accent, logout, insights)
-- **Part 5 (AI assistant)**: `aiSmartReply()` with smart Arabic/English local responses
-- **Parts 6-8**: (media upload improvements, stories improvements, final tests) — not yet started
+### Users
+- `POST /api/users/block/:key` — block user
+- `DELETE /api/users/block/:key` — unblock user
+- `GET /api/users/blocked` — list blocked
+- `POST /api/follow/:key` — follow/unfollow
+- `GET /api/search?q=...` — search users + hashtag posts
+
+### Trends
+- `GET /api/trends` — top 8 hashtags (authenticated feed)
+- `GET /api/trending/hashtags` — top 5 hashtags (all posts)
+
+## Bottom Nav (6 items)
+Home → Reels → Explore (🧭 new) → +Create → Notifications → Profile
+
+## Database Schema
+Tables: users, posts, stories, dms, reports, notifications, follow_requests, close_friends, sessions, login_history, post_analytics, profile_views, highlights, highlight_stories, post_polls, blocked_users
 
 ## Known State
-- Duplicate routes cleaned up: removed duplicate `/api/trending/hashtags` and `/api/verification/*`
-- `langToggle` button updated to not be overwritten by `applyI18n()` (uses `langToggleLabel` span)
-- `insightsSaves` properly wired in `openInsights()` 
+- `USE_POSTGRES=true` via `DATABASE_URL`
+- Schema auto-runs on startup using `IF NOT EXISTS` for all tables
+- `OWNER_USER_KEY = "france"` — gets owner badge + full moderation access
+- All timestamps: `fmtTime()` handles null/undefined/invalid dates gracefully (returns "")
+- Carousel: auto-activates for posts with 2+ media items (swipe + arrows + dots)
+- @Mention: live autocomplete in comment textarea via `/api/search?q=...`

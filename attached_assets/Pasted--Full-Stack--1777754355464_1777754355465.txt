@@ -1,0 +1,136 @@
+أنت مهندس برمجيات محترف Full-Stack متخصص في تطوير تطبيقات التواصل الاجتماعي.
+
+أعمل على مشروع اسمه HYSA1 — منصة تواصل اجتماعي مشابهة لـ Instagram و TikTok و WhatsApp.
+
+==================================================
+التقنيات المستخدمة
+==================================================
+- Backend: Node.js + Express
+- Database: PostgreSQL (Neon)
+- Media: Cloudinary
+- Frontend: Vanilla JavaScript (بدون framework)
+- Hosting: Render
+- Version Control: GitHub
+- الملفات الرئيسية:
+  backend/server.js
+  frontend-web/public/app.js
+  frontend-web/public/styles.css
+  frontend-web/public/index.html
+
+==================================================
+ما تم إنجازه حتى الآن
+==================================================
+
+المرحلة 1 — إصلاح المشاكل الأساسية:
+✅ Voice message: تسجيل + preview + إرسال + waveform
+✅ البروفايل: يبدأ دائماً من أعلى الصفحة
+✅ البحث: يدعم الاسم الجزئي و display name
+✅ الستوري: لا ينتقل مبكراً بين المستخدمين
+
+المرحلة 2 — Reels احترافي:
+✅ نظام Views: يحتسب بعد 3 ثواني، لا يتكرر لنفس المستخدم
+✅ خوارزمية ترتيب: score = (likes×3) + (views×1) + recency_bonus
+✅ واجهة TikTok: full screen، أزرار يمين، gradient، overlay
+✅ أداء: preload، cache 60s، skeleton loading، debounce scroll
+
+المرحلة 3 — تصميم 2026:
+✅ Dark mode كامل مع CSS variables
+✅ Glass morphism cards
+✅ Bottom nav احترافي مع زر + وسط
+✅ Stories bar مع gradient rings
+✅ انيميشن على كل العناصر
+
+المرحلة 4 — PWA:
+✅ manifest.json
+✅ Service Worker (offline support)
+✅ Add to Home Screen banner
+✅ تثبيت على الجوال مثل تطبيق عادي
+
+المرحلة 5 — ميزات UI/UX:
+✅ Skeleton loading
+✅ Toast notifications
+✅ Double tap to like
+✅ Caption truncate + "...more"
+✅ Relative timestamps (auto update)
+✅ Image lightbox fullscreen
+✅ Infinite scroll
+✅ Online status (green dot)
+✅ Reaction picker (long press)
+✅ Swipe gestures
+✅ Haptic feedback
+✅ Nav hide on scroll
+✅ Lazy loading images
+✅ API cache 60s
+
+المرحلة 6 — ميزات كبيرة:
+✅ مساعد بلوطة AI 🌰
+✅ نظام الإشعارات (real-time polling 30s)
+✅ نظام الأصدقاء (mutual follow، close friends، follow requests)
+✅ مركز الأمان (2FA، sessions، login history، change password)
+✅ التحليلات (post analytics، profile views، charts)
+✅ ميزات المحتوى (highlights، polls، scheduled posts، saved posts)
+
+==================================================
+المشاكل المتبقية (تحتاج إصلاح)
+==================================================
+
+1. الوقت في المنشورات:
+   - يظهر "1s ago" على منشورات قديمة
+   - السبب: timeAgo() تستخدم حقل خاطئ
+   - الإصلاح: استخدم created_at وليس updated_at
+
+2. Reels UI على الجوال:
+   - يحتاج progress bar في الأعلى
+   - Follow button تحت الأفاتار
+   - Sound button أنيق
+   - شكل أقرب لـ Instagram Reels
+
+==================================================
+الميزات المقترحة المستقبلية
+==================================================
+
+أولوية عالية:
+- Push notifications (Web Push API)
+- Trending hashtags page
+- Explore page (masonry grid)
+- Carousel posts (أكثر من صورة)
+- Comment nested replies
+- Mention @username في التعليقات
+- Group DMs
+
+أولوية متوسطة:
+- Block/Unblock users
+- Report system
+- Private account (follow requests)
+- Story highlights UI
+- QR code للبروفايل
+- Share to external apps
+
+أولوية منخفضة:
+- Video filters
+- Collab posts
+- Polls in stories
+- Music on stories
+
+==================================================
+قواعد مهمة جداً
+==================================================
+- لا تنشئ مشروع جديد أبداً
+- لا تغير PostgreSQL أو Cloudinary
+- لا تحذف ميزات موجودة
+- استخدم ALTER TABLE IF NOT EXISTS (لا DROP)
+- اختبر بعد كل تغيير
+- node --check بعد كل تعديل على JS
+- ارفع على GitHub بعد كل مرحلة
+
+==================================================
+طريقة العمل
+==================================================
+1. اقرأ الملفات أولاً قبل أي تعديل
+2. اعمل ميزة واحدة في كل مرة
+3. اختبر قبل الانتقال للتالية
+4. أخبرني بالملفات والأسطر التي تغيرت
+5. لا تتوقف بين الميزات
+
+ابدأ بإصلاح مشكلة الوقت في المنشورات أولاً،
+ثم أضف الميزات المستقبلية بالترتيب.

@@ -4421,6 +4421,104 @@ function formatPostRow(row, viewer) {
 }
 
 // -----------------------------
+// Explore - popular posts
+// -----------------------------
+app.get("/api/explore", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  try {
+    if (USE_POSTGRES) {
+      const r = await pgPool.query(`
+        SELECT p.*,
+               COALESCE(array_length(p.likes, 1), 0) * 3
+             + COALESCE(p.views, 0)
+             + jsonb_array_length(p.comments) * 2 AS explore_score
+        FROM posts p
+        WHERE (p.scheduled_at IS NULL OR p.scheduled_at <= NOW())
+          AND p.visibility = 'public'
+        ORDER BY explore_score DESC, p.created_at DESC
+        LIMIT 40
+      `);
+      return res.status(200).json({ ok: true, posts: r.rows.map((row) => formatPostRow(row, viewer)) });
+    }
+    const posts = await visiblePostsForViewer(viewer);
+    const sorted = posts.slice().sort((a, b) => {
+      const sA = (a.likeCount || 0) * 3 + (a.views || 0) + (Array.isArray(a.comments) ? a.comments.length : 0) * 2;
+      const sB = (b.likeCount || 0) * 3 + (b.views || 0) + (Array.isArray(b.comments) ? b.comments.length : 0) * 2;
+      return sB - sA;
+    }).slice(0, 40);
+    return res.status(200).json({ ok: true, posts: sorted });
+  } catch (err) {
+    console.error("/api/explore error", err);
+    return res.status(500).json({ ok: false, error: "SERVER_ERROR" });
+  }
+});
+
+// Block user
+app.post("/api/users/block/:key", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const targetKey = String(req.params.key || "").toLowerCase();
+  if (!targetKey || targetKey === String(viewer.userKey)) {
+    return res.status(400).json({ ok: false, error: "INVALID" });
+  }
+  try {
+    if (USE_POSTGRES) {
+      await pgPool.query(
+        `INSERT INTO blocked_users (blocker_key, blocked_key) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [String(viewer.userKey), targetKey]
+      );
+    }
+    return res.status(200).json({ ok: true, blocked: true });
+  } catch (err) {
+    console.error("/api/users/block error", err);
+    return res.status(500).json({ ok: false, error: "SERVER_ERROR" });
+  }
+});
+
+// Unblock user
+app.delete("/api/users/block/:key", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const targetKey = String(req.params.key || "").toLowerCase();
+  try {
+    if (USE_POSTGRES) {
+      await pgPool.query(
+        `DELETE FROM blocked_users WHERE blocker_key = $1 AND blocked_key = $2`,
+        [String(viewer.userKey), targetKey]
+      );
+    }
+    return res.status(200).json({ ok: true, blocked: false });
+  } catch (err) {
+    console.error("/api/users/unblock error", err);
+    return res.status(500).json({ ok: false, error: "SERVER_ERROR" });
+  }
+});
+
+// Get blocked users list
+app.get("/api/users/blocked", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  try {
+    if (USE_POSTGRES) {
+      const r = await pgPool.query(
+        `SELECT bu.blocked_key, u.username, u.avatar_url, u.display_name
+           FROM blocked_users bu
+           JOIN users u ON u.user_key = bu.blocked_key
+          WHERE bu.blocker_key = $1
+          ORDER BY bu.created_at DESC`,
+        [String(viewer.userKey)]
+      );
+      return res.status(200).json({ ok: true, blocked: r.rows });
+    }
+    return res.status(200).json({ ok: true, blocked: [] });
+  } catch (err) {
+    console.error("/api/users/blocked error", err);
+    return res.status(500).json({ ok: false, error: "SERVER_ERROR" });
+  }
+});
+
+// -----------------------------
 // Static files
 // -----------------------------
 

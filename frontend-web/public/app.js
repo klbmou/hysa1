@@ -446,9 +446,13 @@ function applyI18n() {
 
 function fmtTime(iso) {
   try {
+    if (!iso) return "";
     const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
     const ms = Date.now() - d.getTime();
-    const sec = Math.max(1, Math.floor(ms / 1000));
+    if (ms < 0) return "just now";
+    const sec = Math.floor(ms / 1000);
+    if (sec < 5) return "just now";
     if (sec < 60) return `${sec}s ago`;
     const min = Math.floor(sec / 60);
     if (min < 60) return `${min}m ago`;
@@ -463,7 +467,7 @@ function fmtTime(iso) {
     const yr = Math.floor(day / 365);
     return `${yr}y ago`;
   } catch {
-    return iso;
+    return "";
   }
 }
 
@@ -2737,6 +2741,37 @@ function renderProfileHeader(profile) {
     callBtn.title = "Calls coming soon";
     on(callBtn, "click", () => showToast("Calls coming soon.", true));
     right.appendChild(callBtn);
+
+    const blockBtn = document.createElement("button");
+    blockBtn.type = "button";
+    blockBtn.className = "btn ghost danger blockProfileBtn";
+    blockBtn.title = "Block user";
+    blockBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>`;
+    let isBlocked = false;
+    api(`/api/users/blocked`).then((r) => {
+      if (Array.isArray(r.blocked)) {
+        isBlocked = r.blocked.some((b) => b.blocked_key === activeProfileKey);
+        blockBtn.title = isBlocked ? "Unblock" : "Block";
+        blockBtn.style.opacity = isBlocked ? "1" : "0.5";
+      }
+    }).catch(() => {});
+    on(blockBtn, "click", async () => {
+      blockBtn.disabled = true;
+      try {
+        if (isBlocked) {
+          await api(`/api/users/block/${encodeURIComponent(activeProfileKey)}`, { method: "DELETE" });
+          isBlocked = false;
+          showToast("User unblocked.");
+        } else {
+          await api(`/api/users/block/${encodeURIComponent(activeProfileKey)}`, { method: "POST" });
+          isBlocked = true;
+          showToast("User blocked.");
+        }
+        blockBtn.title = isBlocked ? "Unblock" : "Block";
+        blockBtn.style.opacity = isBlocked ? "1" : "0.5";
+      } catch { /* ignore */ } finally { blockBtn.disabled = false; }
+    });
+    right.appendChild(blockBtn);
   }
 
   top.appendChild(ident);
@@ -2828,12 +2863,102 @@ function closeMenu() {
   }
 }
 
+function carouselNode(media, { withControls = false, onVideoDoubleTap = null } = {}) {
+  const wrap = document.createElement("div");
+  wrap.className = "mediaCarousel";
+
+  const track = document.createElement("div");
+  track.className = "carouselTrack";
+
+  let current = 0;
+
+  const renderSlide = (item) => {
+    const slide = document.createElement("div");
+    slide.className = "carouselSlide";
+    if (!isFullMediaUrl(item && item.url)) {
+      const archived = document.createElement("div");
+      archived.className = "mediaArchived";
+      archived.innerHTML = `<strong>Media unavailable</strong>`;
+      slide.appendChild(archived);
+      return slide;
+    }
+    if (item.kind === "video") {
+      slide.appendChild(customVideoPlayer(item.url, { muted: true, onDoubleTap: onVideoDoubleTap }));
+    } else {
+      const img = document.createElement("img");
+      img.src = item.url;
+      img.alt = "";
+      img.loading = "lazy";
+      img.referrerPolicy = "no-referrer";
+      slide.appendChild(img);
+    }
+    return slide;
+  };
+
+  for (const item of media) track.appendChild(renderSlide(item));
+
+  const dots = document.createElement("div");
+  dots.className = "carouselDots";
+  const dotEls = media.map((_, i) => {
+    const dot = document.createElement("span");
+    dot.className = i === 0 ? "carouselDot active" : "carouselDot";
+    on(dot, "click", () => goTo(i));
+    dots.appendChild(dot);
+    return dot;
+  });
+
+  const countBadge = document.createElement("div");
+  countBadge.className = "carouselCount";
+  countBadge.textContent = `1 / ${media.length}`;
+
+  function goTo(idx) {
+    current = Math.max(0, Math.min(media.length - 1, idx));
+    track.style.transform = `translateX(${-current * 100}%)`;
+    dotEls.forEach((d, i) => d.classList.toggle("active", i === current));
+    countBadge.textContent = `${current + 1} / ${media.length}`;
+  }
+
+  let startX = 0, startY = 0, isDragging = false;
+  on(wrap, "touchstart", (e) => { startX = e.touches[0].clientX; startY = e.touches[0].clientY; isDragging = true; }, { passive: true });
+  on(wrap, "touchend", (e) => {
+    if (!isDragging) return;
+    isDragging = false;
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 36) {
+      if (dx < 0) goTo(current + 1); else goTo(current - 1);
+    }
+  }, { passive: true });
+
+  const prev = document.createElement("button");
+  prev.type = "button";
+  prev.className = "carouselArrow prev";
+  prev.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>`;
+  on(prev, "click", (e) => { e.stopPropagation(); goTo(current - 1); });
+
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "carouselArrow next";
+  next.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>`;
+  on(next, "click", (e) => { e.stopPropagation(); goTo(current + 1); });
+
+  wrap.appendChild(track);
+  wrap.appendChild(prev);
+  wrap.appendChild(next);
+  wrap.appendChild(countBadge);
+  wrap.appendChild(dots);
+  return wrap;
+}
+
 function mediaGridNode(media, {
   removable = false,
   onRemove,
   withControls = false,
   onVideoDoubleTap = null,
 } = {}) {
+  if (media && media.length > 1 && !removable) {
+    return carouselNode(media, { withControls, onVideoDoubleTap });
+  }
   const grid = document.createElement("div");
   grid.className = "mediaGrid";
   for (const item of media || []) {
@@ -3003,7 +3128,7 @@ function richTextNode(textValue, { truncate = false } = {}) {
   const raw = String(textValue || "");
   const text = document.createElement("div");
   text.className = "postText";
-  const parts = raw.split(/(#[a-z0-9_]{2,30})/gi);
+  const parts = raw.split(/(#[a-z0-9_]{2,30}|@[a-z0-9_]{1,30})/gi);
   for (const part of parts) {
     if (/^#[a-z0-9_]{2,30}$/i.test(part)) {
       const tag = document.createElement("button");
@@ -3018,6 +3143,12 @@ function richTextNode(textValue, { truncate = false } = {}) {
         }
       });
       text.appendChild(tag);
+    } else if (/^@[a-z0-9_]{1,30}$/i.test(part)) {
+      const mention = document.createElement("a");
+      mention.className = "mentionLink";
+      mention.textContent = part;
+      mention.href = `#u/${encodeURIComponent(part.slice(1).toLowerCase())}`;
+      text.appendChild(mention);
     } else {
       text.appendChild(document.createTextNode(part));
     }
@@ -3149,6 +3280,23 @@ function postNode(post) {
 
   menu.appendChild(shareBtn);
   menu.appendChild(reportBtn);
+
+  if (!isMineKey(post.authorId || post.authorKey)) {
+    const blockMenuBtn = document.createElement("button");
+    blockMenuBtn.type = "button";
+    blockMenuBtn.className = "menuItem";
+    blockMenuBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg><span>Block @${post.author}</span>`;
+    on(blockMenuBtn, "click", async () => {
+      closeMenu();
+      showDeleteConfirm(`Block @${post.author}?`, "They won't be able to see your posts, and their posts will be hidden from your feed.", async () => {
+        await api(`/api/users/block/${encodeURIComponent(post.authorKey)}`, { method: "POST" });
+        root.remove();
+        showToast(`@${post.author} blocked.`);
+      });
+    });
+    menu.appendChild(blockMenuBtn);
+  }
+
   if (isMineKey(post.authorId || post.authorKey)) {
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
@@ -3381,6 +3529,7 @@ function postNode(post) {
   commentInput.rows = 2;
   commentInput.maxLength = 200;
   commentInput.placeholder = t("writeComment");
+  attachMentionAutocomplete(commentInput);
 
   const bar = document.createElement("div");
   bar.className = "commentBar";
@@ -4511,6 +4660,160 @@ function observePostView(node, postId) {
   postViewObserver.observe(node);
 }
 
+function attachMentionAutocomplete(textarea) {
+  let dropdown = null;
+  let mentionStart = -1;
+  let searchTimer = null;
+
+  function hideDrop() {
+    if (dropdown) { dropdown.remove(); dropdown = null; }
+    mentionStart = -1;
+  }
+
+  function showDrop(users, curPos) {
+    hideDrop();
+    if (!users.length) return;
+    const parent = textarea.parentNode;
+    if (!parent) return;
+    if (getComputedStyle(parent).position === "static") parent.style.position = "relative";
+    dropdown = document.createElement("div");
+    dropdown.className = "mentionDrop glass";
+    for (const u of users) {
+      const item = document.createElement("div");
+      item.className = "mentionItem";
+      item.innerHTML = `<span class="mentionAt">@${u.username}</span>${u.displayName || u.display_name ? `<small class="muted"> ${u.displayName || u.display_name}</small>` : ""}`;
+      on(item, "mousedown", (e) => {
+        e.preventDefault();
+        const val = textarea.value;
+        const before = val.substring(0, mentionStart);
+        const after = val.substring(curPos);
+        textarea.value = `${before}@${u.username} ${after}`;
+        const newPos = mentionStart + u.username.length + 2;
+        textarea.setSelectionRange(newPos, newPos);
+        hideDrop();
+        textarea.focus();
+      });
+      dropdown.appendChild(item);
+    }
+    parent.appendChild(dropdown);
+  }
+
+  on(textarea, "input", () => {
+    const val = textarea.value;
+    const pos = textarea.selectionStart;
+    const textBefore = val.substring(0, pos);
+    const match = /@([a-z0-9_]*)$/i.exec(textBefore);
+    if (match && match[1].length >= 1) {
+      mentionStart = match.index;
+      const query = match[1];
+      if (searchTimer) clearTimeout(searchTimer);
+      searchTimer = setTimeout(async () => {
+        try {
+          const r = await api(`/api/search?q=${encodeURIComponent(query)}&limit=5`);
+          const users = Array.isArray(r.results) ? r.results.filter((x) => x.type === "user" || x.username) : [];
+          showDrop(users.slice(0, 5), pos);
+        } catch { hideDrop(); }
+      }, 250);
+    } else {
+      hideDrop();
+    }
+  });
+
+  on(textarea, "blur", () => setTimeout(hideDrop, 200));
+  on(textarea, "keydown", (e) => { if (dropdown && e.key === "Escape") { hideDrop(); e.preventDefault(); } });
+}
+
+async function openExplorePage() {
+  if (!getToken()) return;
+  activeProfileKey = null;
+  activePostId = null;
+  closeDmView();
+  if (el.reelsView) el.reelsView.hidden = true;
+  clearProfileHeader();
+  setViewTitle("استكشاف");
+
+  if (!el.exploreView) return;
+
+  if (el.feed) el.feed.hidden = true;
+  if (el.storiesBar) el.storiesBar.hidden = true;
+  if (el.trendsBar) el.trendsBar.hidden = true;
+  el.exploreView.hidden = false;
+  el.exploreView.textContent = "";
+
+  const header = document.createElement("div");
+  header.className = "exploreHeader";
+  header.innerHTML = `<h3 class="exploreTitle">🔍 استكشاف</h3><p class="muted" style="font-size:13px">المنشورات الأكثر تفاعلاً</p>`;
+  el.exploreView.appendChild(header);
+
+  const grid = document.createElement("div");
+  grid.className = "exploreGrid";
+  el.exploreView.appendChild(grid);
+
+  const skeletons = document.createElement("div");
+  skeletons.className = "exploreSkeleton";
+  skeletons.innerHTML = Array(9).fill('<div class="skeletonTile"></div>').join("");
+  grid.appendChild(skeletons);
+
+  try {
+    const r = await api("/api/explore");
+    const posts = Array.isArray(r.posts) ? r.posts : [];
+    grid.textContent = "";
+    if (!posts.length) {
+      grid.innerHTML = `<p class="muted" style="text-align:center;padding:32px">لا توجد منشورات بعد</p>`;
+      return;
+    }
+    for (const p of posts) {
+      const tile = document.createElement("div");
+      tile.className = "exploreTile";
+      tile.setAttribute("role", "button");
+      tile.tabIndex = 0;
+      const hasMedia = Array.isArray(p.media) && p.media.length && isFullMediaUrl(p.media[0] && p.media[0].url);
+      if (hasMedia) {
+        const m = p.media[0];
+        if (m.kind === "video") {
+          const vid = document.createElement("video");
+          vid.src = m.url;
+          vid.muted = true;
+          vid.preload = "metadata";
+          tile.appendChild(vid);
+        } else {
+          const img = document.createElement("img");
+          img.src = m.url;
+          img.alt = "";
+          img.loading = "lazy";
+          img.referrerPolicy = "no-referrer";
+          tile.appendChild(img);
+        }
+        if (p.media.length > 1) {
+          const multi = document.createElement("span");
+          multi.className = "exploreTileMulti";
+          multi.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`;
+          tile.appendChild(multi);
+        }
+      } else {
+        const textTile = document.createElement("div");
+        textTile.className = "exploreTileText";
+        textTile.textContent = String(p.text || "").slice(0, 80);
+        tile.appendChild(textTile);
+      }
+      const overlay = document.createElement("div");
+      overlay.className = "exploreTileOverlay";
+      overlay.innerHTML = `<span>❤️ ${formatCount(p.likeCount || 0)}</span><span>💬 ${formatCount(Array.isArray(p.comments) ? p.comments.length : 0)}</span>`;
+      tile.appendChild(overlay);
+      on(tile, "click", () => { location.hash = `#p/${encodeURIComponent(p.id)}`; });
+      on(tile, "keydown", (e) => { if (e.key === "Enter") tile.click(); });
+      grid.appendChild(tile);
+    }
+  } catch (err) {
+    grid.innerHTML = `<p class="muted" style="text-align:center;padding:32px">تعذّر تحميل المحتوى</p>`;
+  }
+}
+
+function closeExplorePage() {
+  if (el.exploreView) el.exploreView.hidden = true;
+  if (el.feed) el.feed.hidden = false;
+}
+
 function route() {
   if (!getToken()) return;
   const h = location.hash || "#home";
@@ -4519,12 +4822,14 @@ function route() {
   const mDm = /^#dm\/(.+)$/.exec(h);
 
   if (mProfile) {
+    closeExplorePage();
     closeDmView();
     const key = decodeURIComponent(mProfile[1]);
     openProfile(key).catch(() => {});
     return;
   }
   if (mPost) {
+    closeExplorePage();
     closeDmView();
     const id = decodeURIComponent(mPost[1]);
     openPost(id).catch(() => {});
@@ -4532,24 +4837,33 @@ function route() {
   }
 
   if (h === "#dm") {
+    closeExplorePage();
     openDmInbox().catch(() => {});
     return;
   }
   if (mDm) {
+    closeExplorePage();
     const key = decodeURIComponent(mDm[1]);
     openDmInbox().then(() => openDmThread(key)).catch(() => {});
     return;
   }
   if (h === "#reels") {
+    closeExplorePage();
     closeDmView();
     clearProfileHeader();
     setViewTitle("Reels");
     loadReels().catch(() => {});
     return;
   }
+  if (h === "#explore") {
+    closeDmView();
+    openExplorePage().catch(() => {});
+    return;
+  }
 
   activeProfileKey = null;
   activePostId = null;
+  closeExplorePage();
   closeDmView();
   if (el.reelsView) el.reelsView.hidden = true;
   if (el.feed) el.feed.hidden = false;
@@ -5699,6 +6013,7 @@ async function boot() {
     storiesBar: document.getElementById("storiesBar"),
     trendsBar: document.getElementById("trendsBar"),
     reelsView: document.getElementById("reelsView"),
+    exploreView: document.getElementById("exploreView"),
 
     composeFab: document.getElementById("composeFab"),
     composeModal: document.getElementById("composeModal"),
@@ -5976,6 +6291,7 @@ async function boot() {
         else if (nav === "search" && el.searchInput) el.searchInput.focus();
         else if (nav === "create") openCompose();
         else if (nav === "reels") location.hash = "#reels";
+        else if (nav === "explore") location.hash = "#explore";
         else if (nav === "profile" && me) location.hash = `#u/${encodeURIComponent(me.username.toLowerCase())}`;
         else if (nav === "aiChat") {
           if (el.aiFab) el.aiFab.click();
@@ -5991,6 +6307,7 @@ async function boot() {
   on(el.composeClose, "click", () => closeCompose());
   if (el.composeModal) bindOverlayClose(el.composeModal, () => closeCompose());
   on(el.composeText, "input", () => updateComposeCount());
+  if (el.composeText) attachMentionAutocomplete(el.composeText);
   on(el.composeAddMedia, "click", () => {
     if (el.composeFiles) openMediaPicker("post");
   });

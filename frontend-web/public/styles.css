@@ -824,7 +824,7 @@ video {
   bottom: calc(12px + env(safe-area-inset-bottom));
   z-index: 1000;
   transform: translateX(-50%);
-  width: min(100% - 26px, 440px);
+  width: min(100% - 16px, 500px);
   height: 68px;
   padding: 0 12px;
   display: flex;
@@ -850,7 +850,7 @@ video {
 
 .bottom-nav .nav-item {
   flex: 1 1 0;
-  max-width: 74px;
+  max-width: 66px;
   height: 50px;
   color: var(--faint);
   border-radius: 999px;
@@ -5548,3 +5548,246 @@ body.nav-hidden .bottom-nav {
   box-shadow: 0 0 0 2px #27ae60;
 }
 
+
+/* =====================================================
+   Carousel (multi-image posts)
+   ===================================================== */
+.mediaCarousel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--bg-card, #111);
+  touch-action: pan-y;
+  user-select: none;
+}
+.carouselTrack {
+  display: flex;
+  transition: transform 0.3s cubic-bezier(.25,.46,.45,.94);
+  will-change: transform;
+}
+.carouselSlide {
+  flex: 0 0 100%;
+  width: 100%;
+  min-height: 200px;
+  max-height: 500px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.carouselSlide img,
+.carouselSlide video {
+  width: 100%;
+  height: 100%;
+  max-height: 500px;
+  object-fit: cover;
+  display: block;
+}
+.carouselArrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0,0,0,0.45);
+  border: none;
+  color: #fff;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.mediaCarousel:hover .carouselArrow { opacity: 1; }
+.carouselArrow.prev { left: 8px; }
+.carouselArrow.next { right: 8px; }
+.carouselArrow:disabled { opacity: 0.2 !important; cursor: default; }
+.carouselDots {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 5px;
+  z-index: 3;
+}
+.carouselDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.45);
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+.carouselDot.active {
+  background: #fff;
+  transform: scale(1.3);
+}
+.carouselCount {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 20px;
+  z-index: 3;
+  letter-spacing: 0.5px;
+}
+
+/* =====================================================
+   Explore Page (Masonry Grid)
+   ===================================================== */
+#exploreView {
+  padding: 0 0 80px;
+  min-height: 60vh;
+}
+.exploreHeader {
+  padding: 16px 16px 8px;
+}
+.exploreTitle {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 2px;
+}
+.exploreGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 0 2px;
+}
+.exploreTile {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: var(--bg-card, #1a1a2e);
+  cursor: pointer;
+  border-radius: 2px;
+}
+.exploreTile img,
+.exploreTile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.3s ease;
+}
+.exploreTile:hover img,
+.exploreTile:hover video { transform: scale(1.05); }
+.exploreTileText {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-primary);
+  background: var(--bg-card, #1a1a2e);
+  text-align: center;
+  word-break: break-word;
+}
+.exploreTileOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+}
+.exploreTile:hover .exploreTileOverlay,
+.exploreTile:focus .exploreTileOverlay {
+  opacity: 1;
+  background: rgba(0,0,0,0.4);
+}
+.exploreTileMulti {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  color: #fff;
+  background: rgba(0,0,0,0.5);
+  border-radius: 4px;
+  padding: 3px 4px;
+  display: flex;
+  align-items: center;
+}
+.exploreSkeleton {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 0 2px;
+}
+.skeletonTile {
+  aspect-ratio: 1;
+  background: linear-gradient(90deg, var(--bg-card, #1a1a2e) 25%, rgba(255,255,255,0.04) 50%, var(--bg-card, #1a1a2e) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 2px;
+}
+
+/* =====================================================
+   @Mention Autocomplete Dropdown
+   ===================================================== */
+.mentionDrop {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  border-radius: 10px;
+  overflow: hidden;
+  max-height: 200px;
+  overflow-y: auto;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.mentionItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+.mentionItem:hover { background: rgba(255,255,255,0.07); }
+.mentionAt {
+  font-weight: 600;
+  color: var(--accent, #6478c8);
+}
+
+/* =====================================================
+   Mention links in post text
+   ===================================================== */
+.mentionLink {
+  color: var(--accent, #6478c8);
+  text-decoration: none;
+  font-weight: 500;
+}
+.mentionLink:hover { text-decoration: underline; }
+
+/* =====================================================
+   Block button on profile
+   ===================================================== */
+.blockProfileBtn {
+  padding: 6px 8px !important;
+  min-width: unset !important;
+  font-size: 12px;
+  color: #ff4d4d !important;
+  border-color: rgba(255,77,77,0.3) !important;
+}
+.blockProfileBtn:hover {
+  background: rgba(255,77,77,0.1) !important;
+}
