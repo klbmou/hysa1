@@ -535,15 +535,14 @@ small,
 
 .postMedia .mediaItem:only-child {
   grid-column: 1 / -1;
-  aspect-ratio: 4 / 5;
+  aspect-ratio: 1 / 1;
 }
 
 .mediaItem img,
 .mediaItem video {
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  background: #000;
+  object-fit: cover;
 }
 
 video {
@@ -681,13 +680,12 @@ video {
 
 .postMedia .mediaItem {
   width: 100%;
-  max-width: 600px;
-  max-height: 500px;
-  aspect-ratio: auto;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
 }
 
 .postMedia .mediaItem:only-child {
-  aspect-ratio: auto;
+  aspect-ratio: 1 / 1;
 }
 
 .postMedia .mediaItem img,
@@ -697,18 +695,20 @@ video {
 .media-preview .mediaItem video,
 .media-preview .proVideo {
   width: 100%;
-  max-width: 600px;
-  max-height: 500px;
-  height: auto;
-  object-fit: contain;
-  background: #000;
+  height: 100%;
+  object-fit: cover;
+}
+
+.postMedia .proVideo video {
+  object-fit: cover;
+  background: none;
 }
 
 .postMedia .mediaItem video,
 .postMedia .proVideo,
 .media-preview .mediaItem video,
 .media-preview .proVideo {
-  height: min(500px, 70vh);
+  height: 100%;
 }
 
 .quotedPost {
@@ -1675,11 +1675,13 @@ select:focus {
 }
 
 .comment {
-  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 0;
   border-bottom: 1px solid var(--border);
   background: none;
-  border-radius: 0;
-  border: none;
+  direction: rtl;
+  text-align: right;
 }
 
 .comment .comment {
@@ -1688,13 +1690,46 @@ select:focus {
 
 .commentTop {
   display: flex;
-  align-items: center;
+  flex-direction: row;
+  align-items: flex-start;
   gap: 10px;
   margin-bottom: 4px;
 }
 
+.commentTop .avatar {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+}
+
+.comment .comment .commentTop .avatar {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+}
+
+.commentTop .whoText {
+  flex: 1;
+  min-width: 0;
+}
+
+.commentTop .whoText a {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.commentTop .whoText .time {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
 .commentText {
-  padding-inline-start: 40px;
+  padding-inline-start: 46px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   line-height: 1.5;
@@ -1702,12 +1737,22 @@ select:focus {
   color: var(--text);
 }
 
+.comment .comment .commentText {
+  padding-inline-start: 38px;
+  font-size: 13px;
+}
+
 .commentActions {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 12px;
-  padding-inline-start: 40px;
+  padding-inline-start: 46px;
   margin-top: 4px;
+}
+
+.comment .comment .commentActions {
+  padding-inline-start: 38px;
 }
 
 .commentActions .pill {
@@ -1717,11 +1762,15 @@ select:focus {
   border-radius: 0;
   min-height: auto;
   padding: 0;
-  color: var(--accent);
+  color: var(--muted);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   transition: opacity 140ms ease;
+}
+
+.commentActions .pill:not(.comment-like-btn) {
+  color: var(--accent);
 }
 
 .commentActions .pill:hover {
@@ -3481,8 +3530,8 @@ select:focus {
   .postMedia .mediaItem,
   .postMedia .mediaItem:only-child {
     max-width: 100%;
-    max-height: 400px;
-    aspect-ratio: auto;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
   }
 
   .postMedia .mediaItem img,
@@ -3492,9 +3541,9 @@ select:focus {
   .media-preview .mediaItem video,
   .media-preview .proVideo {
     max-width: 100%;
-    max-height: 400px;
-    object-fit: contain;
-    background: #000;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
   .dmMedia img,
