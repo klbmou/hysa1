@@ -75,6 +75,14 @@ const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || "").trim();
 const GOOGLE_CLIENT_SECRET = String(process.env.GOOGLE_CLIENT_SECRET || "").trim();
 const AUTH_COOKIE_NAME = "hysa_auth";
 const AUTH_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const CSRF_HEADER_NAME = "x-csrf-token";
+const CSRF_SECRET = String(
+  process.env.CSRF_SECRET ||
+  process.env.SESSION_SECRET ||
+  process.env.JWT_SECRET ||
+  process.env.DATABASE_URL ||
+  crypto.randomBytes(32).toString("hex")
+);
 
 const USE_POSTGRES = !!process.env.DATABASE_URL;
 const USE_CLOUDINARY = !!(
@@ -1438,6 +1446,21 @@ function clearAuthCookie(res) {
   });
 }
 
+function csrfTokenForAuthToken(authToken) {
+  const token = String(authToken || "");
+  if (!token) return "";
+  return crypto
+    .createHmac("sha256", CSRF_SECRET)
+    .update(token)
+    .digest("base64url");
+}
+
+function safeEqualString(a, b) {
+  const left = Buffer.from(String(a || ""));
+  const right = Buffer.from(String(b || ""));
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
 async function authUserFromReq(req) {
   const token = getAuthToken(req);
   if (!token) return null;
@@ -2204,9 +2227,31 @@ app.use((req, res, next) => {
   const allowedOrigin = !origin || origin === `http://${req.headers.host}` || origin === `https://${req.headers.host}`;
   if (allowedOrigin && origin) res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", `Content-Type, ${CSRF_HEADER_NAME}`);
   res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS");
   if (req.method === "OPTIONS") return res.status(204).end();
+  return next();
+});
+
+app.use((req, res, next) => {
+  const method = String(req.method || "GET").toUpperCase();
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(method)) return next();
+  if (!String(req.path || "").startsWith("/api/")) return next();
+
+  const publicAuthPaths = new Set([
+    "/api/login",
+    "/api/register",
+    "/api/signup",
+    "/api/auth/google",
+  ]);
+  if (publicAuthPaths.has(String(req.path || ""))) return next();
+
+  const authToken = getAuthToken(req);
+  const expected = csrfTokenForAuthToken(authToken);
+  const provided = String(req.headers[CSRF_HEADER_NAME] || "");
+  if (!authToken || !expected || !provided || !safeEqualString(provided, expected)) {
+    return res.status(403).json({ ok: false, error: "INVALID_CSRF_TOKEN" });
+  }
   return next();
 });
 
@@ -2270,7 +2315,7 @@ async function handleRegister(req, res) {
   }
   
   setAuthCookie(res, createdUser.token);
-  return res.status(200).json({ ok: true, me: toPublicMe(createdUser) });
+  return res.status(200).json({ ok: true, csrfToken: csrfTokenForAuthToken(createdUser.token), me: toPublicMe(createdUser) });
 }
 
 app.post("/api/register", rateLimit("auth"), handleRegister);
@@ -2292,7 +2337,7 @@ app.post("/api/login", rateLimit("auth"), async (req, res) => {
     await syncDataJson();
   }
   setAuthCookie(res, u.token);
-  return res.status(200).json({ ok: true, me: toPublicMe(u) });
+  return res.status(200).json({ ok: true, csrfToken: csrfTokenForAuthToken(u.token), me: toPublicMe(u) });
 });
 
 app.post("/api/auth/google", rateLimit("auth"), async (req, res) => {
@@ -2348,7 +2393,7 @@ app.post("/api/auth/google", rateLimit("auth"), async (req, res) => {
     await user.save();
     if (!USE_POSTGRES) await syncDataJson();
     setAuthCookie(res, user.token);
-    return res.status(200).json({ ok: true, me: toPublicMe(user) });
+    return res.status(200).json({ ok: true, csrfToken: csrfTokenForAuthToken(user.token), me: toPublicMe(user) });
   }
 
   const username = await uniqueGoogleUsername(email, displayName);
@@ -2373,7 +2418,7 @@ app.post("/api/auth/google", rateLimit("auth"), async (req, res) => {
   const saved = USE_POSTGRES ? await pgCreateUser(created) : await User.create(created);
   if (!USE_POSTGRES) await syncDataJson();
   setAuthCookie(res, saved.token);
-  return res.status(200).json({ ok: true, me: toPublicMe(saved) });
+  return res.status(200).json({ ok: true, csrfToken: csrfTokenForAuthToken(saved.token), me: toPublicMe(saved) });
 });
 
 app.get("/api/config", (_req, res) => {
@@ -2398,7 +2443,7 @@ app.post("/api/logout", async (req, res) => {
 app.get("/api/me", async (req, res) => {
   const u = await requireAuth(req, res);
   if (!u) return;
-  return res.status(200).json({ ok: true, me: toPublicMe(u) });
+  return res.status(200).json({ ok: true, csrfToken: csrfTokenForAuthToken(getAuthToken(req)), me: toPublicMe(u) });
 });
 
 function paginationFromReq(req) {

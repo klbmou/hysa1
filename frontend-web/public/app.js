@@ -5,6 +5,7 @@ const langKey = "hysa_lang";
 const themeKey = "hysa_theme";
 let googleClientId = "";
 let googleClientConfigPromise = null;
+let csrfToken = "";
 
 function getToken() {
   return token;
@@ -24,6 +25,7 @@ function saveToken(nextToken) {
 
 function clearStoredToken() {
   token = "";
+  csrfToken = "";
   localStorage.removeItem("token");
   localStorage.removeItem(legacyTokenKey);
 }
@@ -639,6 +641,10 @@ async function fetchJson(path, opts = {}) {
   const headers = new Headers(opts.headers || {});
   headers.set("Accept", "application/json");
   if (opts.body && !(opts.body instanceof FormData)) headers.set("Content-Type", "application/json; charset=utf-8");
+  const method = String(opts.method || "GET").toUpperCase();
+  if (csrfToken && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    headers.set("X-CSRF-Token", csrfToken);
+  }
 
   let res;
   try {
@@ -652,6 +658,9 @@ async function fetchJson(path, opts = {}) {
     json = await res.json();
   } catch {
     // ignore
+  }
+  if (json && typeof json.csrfToken === "string" && json.csrfToken) {
+    csrfToken = json.csrfToken;
   }
 
   return { res, json };
@@ -704,6 +713,7 @@ function humanizeError(message, fallback) {
   if (m === "REPORT_INVALID") return t("error_report_invalid");
   if (m === "GOOGLE_AUTH_NOT_CONFIGURED") return t("error_google_auth_not_configured");
   if (m === "INVALID_GOOGLE_CREDENTIAL") return t("error_invalid_google_credential");
+  if (m === "INVALID_CSRF_TOKEN") return "Security check failed. Please refresh and try again.";
   if (m && m !== "SERVER_ERROR") return m;
   return fallback || t("error_unknown");
 }
