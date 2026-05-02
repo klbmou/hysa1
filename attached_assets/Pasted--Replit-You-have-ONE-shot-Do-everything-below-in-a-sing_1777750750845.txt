@@ -1,0 +1,79 @@
+قوله في Replit:
+
+```
+You have ONE shot. Do everything below in a single pass.
+No stopping, no asking, no confirmation between steps.
+Commit to GitHub when done.
+
+FILES YOU CAN TOUCH:
+- frontend-web/public/styles.css
+- frontend-web/public/app.js  
+- frontend-web/public/index.html
+DO NOT touch server.js
+
+═══════════════════════════════════════
+FIXES (critical)
+═══════════════════════════════════════
+
+1. Add Messages/DM icon back to top nav
+2. Feed full width on mobile, max 600px on desktop
+3. padding-bottom: 90px on feed so actions bar visible
+4. Avatar fallback: colored circle with first letter if no image
+
+═══════════════════════════════════════
+UI IMPROVEMENTS
+═══════════════════════════════════════
+
+5. Skeleton loading: 3 shimmer cards while feed loads
+6. Toast notifications: success/error/info slide from top, auto dismiss 2.5s
+7. Double tap image = big heart animation + like API call
+8. Caption truncate: 2 lines + "...more" expand button
+9. Relative timestamps: "just now" / "2m" / "1h" auto-update every 60s
+10. Image lightbox: tap photo = fullscreen + swipe down to close
+11. Infinite scroll: load more posts at bottom, no pagination buttons
+12. Smooth tab transitions: fade + slide-up 250ms between pages
+13. Pull to refresh: pull down = spinner + reload feed
+14. Online status: green dot on avatars, poll every 60s
+15. Reaction picker: long press like = ❤️😂😮😢😡👏 popup
+
+═══════════════════════════════════════
+MOBILE FEEL
+═══════════════════════════════════════
+
+16. Swipe right on feed = open DMs
+17. Swipe left in DM = go back
+18. Haptic feedback: navigator.vibrate(10) on like/follow/send
+19. Hide top nav on scroll down, show on scroll up
+20. Bottom nav hide on scroll down, show on scroll up
+
+═══════════════════════════════════════
+PWA
+═══════════════════════════════════════
+
+21. Create manifest.json: app name HYSA, theme color #6C63FF
+22. Register service worker: cache app shell for offline
+23. "Add to Home Screen" banner after 30s
+
+═══════════════════════════════════════
+PERFORMANCE
+═══════════════════════════════════════
+
+24. Lazy load all images (loading="lazy" + IntersectionObserver)
+25. Debounce scroll events 16ms
+26. Cache API responses 60s in memory
+27. Preload next 2 posts while reading current
+
+═══════════════════════════════════════
+RULES
+═══════════════════════════════════════
+- No external libraries
+- No breaking existing features
+- node --check after every JS change
+- Do all 27 in one pass
+- Commit to GitHub at the end
+- Report what changed in which file and line
+
+GO. DO NOT STOP.
+```
+
+🚀 هذا أقصى استفادة من اليوم المجاني!
