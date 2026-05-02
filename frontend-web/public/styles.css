@@ -1675,24 +1675,59 @@ select:focus {
 }
 
 .comment {
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04);
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  border-radius: 0;
+  border: none;
+}
+
+.comment .comment {
+  margin-inline-start: 48px;
 }
 
 .commentTop {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .commentText {
+  padding-inline-start: 40px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   line-height: 1.5;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.commentActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-inline-start: 40px;
+  margin-top: 4px;
+}
+
+.commentActions .pill {
+  appearance: none;
+  background: none;
+  border: none;
+  border-radius: 0;
+  min-height: auto;
+  padding: 0;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 140ms ease;
+}
+
+.commentActions .pill:hover {
+  background: none;
+  transform: none;
+  opacity: 0.75;
 }
 
 #profileHeader {
