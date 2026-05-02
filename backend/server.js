@@ -1550,9 +1550,10 @@ async function toPublicStory(s, viewer) {
   };
 }
 
-async function toPublicComment(c) {
+async function toPublicComment(c, viewerKey = "") {
   const authorKey = String((c && c.authorKey) || normalizeUsername(c && c.author).key || "");
   const authorUser = await findUserByKey(authorKey);
+  const likes = asArray(c && c.likes).map(String);
   return {
     id: String((c && c.id) || ""),
     authorKey,
@@ -1564,6 +1565,8 @@ async function toPublicComment(c) {
     text: String((c && c.text) || ""),
     parentId: String((c && c.parentId) || ""),
     createdAt: String((c && c.createdAt) || new Date().toISOString()),
+    likeCount: likes.length,
+    likedByMe: !!(viewerKey && likes.includes(viewerKey)),
   };
 }
 
@@ -2754,7 +2757,8 @@ app.get("/api/posts/:id/comments", async (req, res) => {
 
   const limitRaw = Number.parseInt(String(req.query.limit || "50"), 10);
   const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, limitRaw)) : 50;
-  const comments = await Promise.all(asArray(post.comments).slice(-limit).map(toPublicComment));
+  const vk = String(viewer.userKey);
+  const comments = await Promise.all(asArray(post.comments).slice(-limit).map((c) => toPublicComment(c, vk)));
   return res.status(200).json({ ok: true, comments: nestComments(comments), commentCount: asArray(post.comments).length });
 });
 
@@ -2822,6 +2826,37 @@ app.post("/api/posts/:id/comments/:commentId/replies", async (req, res) => {
   await syncDataJson();
   await addNotification({ userKey: String(post.authorKey), type: "comment_reply", actorKey: String(viewer.userKey), postId: id, commentId: comment.id });
   return res.status(200).json({ ok: true, comment: await toPublicComment(comment), commentCount: asArray(post.comments).length });
+});
+
+app.post("/api/posts/:id/comments/:commentId/like", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const id = String(req.params.id || "");
+  const commentId = String(req.params.commentId || "");
+  const post = await findPostById(id);
+  if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (!await canViewerSeePost(post, viewer)) {
+    return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  }
+
+  const comment = asArray(post.comments).find((c) => String(c && c.id) === commentId);
+  if (!comment) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+  if (!Array.isArray(comment.likes)) comment.likes = [];
+  const k = String(viewer.userKey);
+  const idx = comment.likes.indexOf(k);
+  let liked = false;
+  if (idx >= 0) {
+    comment.likes.splice(idx, 1);
+    liked = false;
+  } else {
+    comment.likes.push(k);
+    liked = true;
+  }
+  await post.save();
+  await syncDataJson();
+  return res.status(200).json({ ok: true, liked, likeCount: comment.likes.length });
 });
 
 app.delete("/api/posts/:id/comments/:commentId", async (req, res) => {

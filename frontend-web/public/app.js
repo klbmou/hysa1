@@ -2926,14 +2926,47 @@ function commentNode(comment, onReply, onDelete, post) {
 
   wrap.appendChild(top);
   wrap.appendChild(text);
+
   const actionRow = document.createElement("div");
   actionRow.className = "commentActions";
+
   const replyBtn = document.createElement("button");
   replyBtn.type = "button";
   replyBtn.className = "pill";
   replyBtn.textContent = "Reply";
   on(replyBtn, "click", () => onReply && onReply(comment));
   actionRow.appendChild(replyBtn);
+
+  let localLiked = !!comment.likedByMe;
+  let localCount = Number(comment.likeCount || 0);
+  const likeBtn = document.createElement("button");
+  likeBtn.type = "button";
+  function syncLikeBtn() {
+    likeBtn.className = "pill comment-like-btn" + (localLiked ? " liked" : "");
+    likeBtn.textContent = (localLiked ? "❤️" : "🤍") + (localCount > 0 ? ` ${localCount}` : "");
+  }
+  syncLikeBtn();
+  on(likeBtn, "click", async () => {
+    if (likeBtn.disabled) return;
+    likeBtn.disabled = true;
+    localLiked = !localLiked;
+    localCount = localLiked ? localCount + 1 : Math.max(0, localCount - 1);
+    syncLikeBtn();
+    try {
+      const r = await api(`/api/posts/${encodeURIComponent(post.id)}/comments/${encodeURIComponent(comment.id)}/like`, { method: "POST" });
+      localLiked = r.liked;
+      localCount = r.likeCount;
+      syncLikeBtn();
+    } catch {
+      localLiked = !localLiked;
+      localCount = localLiked ? localCount + 1 : Math.max(0, localCount - 1);
+      syncLikeBtn();
+    } finally {
+      likeBtn.disabled = false;
+    }
+  });
+  actionRow.appendChild(likeBtn);
+
   const canDelete = isMineKey(comment.authorKey) || isMineKey(post && (post.authorId || post.authorKey));
   if (canDelete) {
     const deleteBtn = document.createElement("button");

@@ -1730,6 +1730,10 @@ select:focus {
   opacity: 0.75;
 }
 
+.commentActions .comment-like-btn.liked {
+  color: #f4456a;
+}
+
 #profileHeader {
   width: 100%;
   max-width: 600px;
