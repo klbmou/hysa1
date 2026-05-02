@@ -5216,6 +5216,38 @@ body[dir="rtl"] .comment.reply {
   100% { transform: scale(1); }
 }
 
+/* Premium feed reveal animation */
+.post.feed-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  animation: none;
+  will-change: opacity, transform;
+}
+
+.post.feed-reveal.is-visible {
+  animation: feedPostReveal 420ms cubic-bezier(0.2, 0.84, 0.28, 1) var(--feed-reveal-delay, 0ms) both;
+}
+
+@keyframes feedPostReveal {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .post.feed-reveal,
+  .post.feed-reveal.is-visible {
+    opacity: 1;
+    transform: none;
+    animation: none;
+  }
+}
+
 /* ===================================================================
    27-ITEM UI IMPROVEMENT PASS
    =================================================================== */

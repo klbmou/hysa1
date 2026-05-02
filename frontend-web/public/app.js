@@ -1109,6 +1109,31 @@ function observeMediaPlayback(root) {
   for (const v of videos) mediaPlaybackObserver.observe(v);
 }
 
+let feedRevealObserver = null;
+let feedRevealIndex = 0;
+function observeFeedReveal(node, index = feedRevealIndex++) {
+  if (!node || !node.classList) return;
+  node.classList.add("feed-reveal");
+  node.style.setProperty("--feed-reveal-delay", `${Math.min(index, 8) * 70}ms`);
+  if (!("IntersectionObserver" in window)) {
+    window.requestAnimationFrame(() => node.classList.add("is-visible"));
+    return;
+  }
+  if (!feedRevealObserver) {
+    feedRevealObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.classList.add("is-visible");
+          feedRevealObserver.unobserve(entry.target);
+        }
+      },
+      { root: null, rootMargin: "0px 0px -8% 0px", threshold: 0.14 },
+    );
+  }
+  feedRevealObserver.observe(node);
+}
+
 function scrollDmToLatest({ smooth = false } = {}) {
   if (!el.dmMessages) return;
   el.dmMessages.scrollTo({ top: el.dmMessages.scrollHeight, behavior: smooth ? "smooth" : "auto" });
@@ -3746,9 +3771,11 @@ async function loadFeed({ reset = false } = {}) {
       empty.dataset.empty = "true";
       el.feed.appendChild(empty);
     } else {
+      feedRevealIndex = 0;
       for (const p of posts) {
         const node = postNode(p);
         el.feed.appendChild(node);
+        observeFeedReveal(node);
         observeMediaPlayback(node);
       }
       window.setTimeout(wireLightboxToFeed, 80);
@@ -3763,6 +3790,7 @@ async function loadFeed({ reset = false } = {}) {
     el.feed.textContent = "";
     feedCursor = null;
     feedPage = 1;
+    feedRevealIndex = 0;
     for (let i = 0; i < 3; i++) {
       el.feed.appendChild(createSkeletonPost());
     }
@@ -3797,6 +3825,7 @@ async function loadFeed({ reset = false } = {}) {
     for (const p of posts) {
       const node = postNode(p);
       el.feed.appendChild(node);
+      observeFeedReveal(node);
       observeMediaPlayback(node);
     }
     window.setTimeout(wireLightboxToFeed, 80);
