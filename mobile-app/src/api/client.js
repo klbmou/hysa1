@@ -91,7 +91,7 @@ export const authAPI = {
 
 // Feed API
 export const feedAPI = {
-  getFeed: (limit = 20, cursor = 0) =>
+  getFeed: (limit = 10, cursor = 0) =>
     api.get(`/api/feed?limit=${limit}&cursor=${cursor}`),
   getReels: (limit = 15) => api.get(`/api/reels?limit=${limit}`),
   getTrends: () => api.get('/api/trends'),

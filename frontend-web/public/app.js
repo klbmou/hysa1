@@ -41,10 +41,13 @@ function clearStoredToken() {
 let token = readStoredToken();
 let me = null;
 let feedCursor = null;
+let feedPage = 1;
 let feedLoading = false;
 let feedObserver = null;
 let postViewObserver = null;
 const sentViews = new Set();
+const FEED_CACHE_TTL = 30000;
+let feedCache = { key: "", timestamp: 0, payload: null };
 let activeProfileKey = null;
 let activePostId = null;
 let activeProfileTab = "posts";
@@ -1298,7 +1301,7 @@ function startDmInboxPolling() {
   dmInboxPollTimer = window.setInterval(() => {
     if (generation !== dmPollGeneration || location.hash.startsWith("#dm/")) return;
     refreshDmInbox({ silent: true }).catch(() => {});
-  }, 8000);
+  }, 30000);
 }
 
 function applyDmThreadPayload(payload, { preserveScroll = false } = {}) {
@@ -1340,7 +1343,7 @@ function startDmThreadPolling(peerKey) {
   dmThreadPollTimer = window.setInterval(() => {
     if (generation !== dmPollGeneration || activeDmPeer !== peerKey) return;
     openDmThread(peerKey, { silent: true, preserveScroll: true }).catch(() => {});
-  }, 3000);
+  }, 30000);
 }
 
 async function openDmThread(peerKey, { silent = false, preserveScroll = false } = {}) {
@@ -2041,6 +2044,7 @@ function renderStoryDraft() {
   } else {
     const img = document.createElement("img");
     img.alt = "";
+    img.loading = "lazy";
     img.src = storyDraftPreviewUrl;
     img.className = `storyDraftMedia story-filter-${storyDraftFilter}`;
     el.storyPreview.appendChild(img);
@@ -2345,6 +2349,7 @@ function renderStoryViewer() {
   } else {
     const img = document.createElement("img");
     img.alt = "";
+    img.loading = "lazy";
     img.src = story.media.url;
     img.className = mediaClass;
     el.storyViewerMedia.appendChild(img);
@@ -3274,12 +3279,36 @@ async function loadFeed({ reset = false } = {}) {
     return;
   }
   if (feedLoading) return;
+  const cacheKey = "home:page1:limit10";
+  if (reset && feedCache.key === cacheKey && feedCache.payload && Date.now() - feedCache.timestamp < FEED_CACHE_TTL) {
+    const cached = feedCache.payload;
+    const posts = Array.isArray(cached.posts) ? cached.posts : [];
+    feedCursor = cached.nextCursor || null;
+    feedPage = cached.nextPage || 2;
+    el.feed.textContent = "";
+    if (!posts.length) {
+      const empty = document.createElement("div");
+      empty.className = "muted";
+      empty.textContent = t("noPosts");
+      empty.dataset.empty = "true";
+      el.feed.appendChild(empty);
+    } else {
+      for (const p of posts) {
+        const node = postNode(p);
+        el.feed.appendChild(node);
+        observeMediaPlayback(node);
+      }
+    }
+    updateFeedSentinel();
+    return;
+  }
   feedLoading = true;
   if (el.feedLoader) el.feedLoader.hidden = false;
 
   if (reset) {
     el.feed.textContent = "";
     feedCursor = null;
+    feedPage = 1;
     for (let i = 0; i < 3; i++) {
       el.feed.appendChild(createSkeletonPost());
     }
@@ -3290,15 +3319,17 @@ async function loadFeed({ reset = false } = {}) {
       await loadStories();
       await loadTrends();
     }
-    const url = new URL("/api/feed", location.origin);
-    url.searchParams.set("limit", "20");
-    if (feedCursor) url.searchParams.set("cursor", feedCursor);
+    const url = new URL("/api/posts", location.origin);
+    url.searchParams.set("limit", "10");
+    url.searchParams.set("page", String(feedPage));
 
     const r = await api(url.pathname + url.search, { method: "GET" });
     const posts = Array.isArray(r.posts) ? r.posts : [];
     feedCursor = r.nextCursor;
+    feedPage = r.nextPage || (feedPage + 1);
+    if (reset) feedCache = { key: cacheKey, timestamp: Date.now(), payload: r };
 
-    el.feed.textContent = "";
+    if (reset) el.feed.textContent = "";
 
     if (reset && !posts.length) {
       const empty = document.createElement("div");
@@ -3542,6 +3573,7 @@ async function loadReels() {
     } else if (reelMedia && reelMedia.kind === "image") {
       const img = document.createElement("img");
       img.alt = "";
+      img.loading = "lazy";
       img.src = reelMedia.url;
       media.appendChild(img);
     }
@@ -4048,6 +4080,7 @@ function renderComposeMedia() {
     else {
       const img = document.createElement("img");
       img.alt = "";
+      img.loading = "lazy";
       img.src = item.previewUrl || item.url;
       tile.appendChild(img);
     }
@@ -4964,6 +4997,7 @@ async function boot() {
       let visibility = el.composeVisibility ? String(el.composeVisibility.value || "public") : "public";
       if (visibility !== "public" && visibility !== "private") visibility = "public";
       await api("/api/posts", { method: "POST", body: JSON.stringify({ text, media: readyMedia, visibility }) });
+      feedCache = { key: "", timestamp: 0, payload: null };
       closeCompose();
       showToast(t("postSent"));
       location.hash = "#home";

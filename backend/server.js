@@ -1967,6 +1967,26 @@ for (const method of ["get", "post", "put", "patch", "delete"]) {
 app.use(express.json({ limit: JSON_LIMIT }));
 app.use(express.urlencoded({ limit: JSON_LIMIT, extended: true }));
 
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  let approxBytes = 0;
+  const originalWrite = res.write.bind(res);
+  const originalEnd = res.end.bind(res);
+
+  res.write = (chunk, encoding, cb) => {
+    if (chunk) approxBytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(String(chunk), encoding);
+    return originalWrite(chunk, encoding, cb);
+  };
+  res.end = (chunk, encoding, cb) => {
+    if (chunk) approxBytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(String(chunk), encoding);
+    const result = originalEnd(chunk, encoding, cb);
+    const route = req.route && req.route.path ? req.route.path : req.path;
+    console.log(`[bandwidth] ${req.method} ${route} ${res.statusCode} ${approxBytes}b ${Date.now() - startedAt}ms`);
+    return result;
+  };
+  next();
+});
+
 // (Optional) CORS for debugging / split deployments.
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -2155,19 +2175,45 @@ app.get("/api/me", async (req, res) => {
   return res.status(200).json({ ok: true, me: toPublicMe(u) });
 });
 
-app.get("/api/feed", async (req, res) => {
-  const viewer = await requireAuth(req, res);
-  if (!viewer) return;
+function paginationFromReq(req) {
+  const pageRaw = Number.parseInt(String(req.query.page || "1"), 10);
+  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1;
+  const limitRaw = Number.parseInt(String(req.query.limit || "10"), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(20, limitRaw)) : 10;
+  const cursorRaw = Number.parseInt(String(req.query.cursor || ""), 10);
+  const cursor = Number.isFinite(cursorRaw) && cursorRaw >= 0 ? cursorRaw : (page - 1) * limit;
+  return { page, limit, cursor };
+}
 
-  const limitRaw = Number.parseInt(String(req.query.limit || "20"), 10);
-  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(50, limitRaw)) : 20;
-  const cursorRaw = Number.parseInt(String(req.query.cursor || "0"), 10);
-  const cursor = Number.isFinite(cursorRaw) && cursorRaw >= 0 ? cursorRaw : 0;
-
+async function paginatedPostsForViewer(req, viewer) {
+  const { page, limit, cursor } = paginationFromReq(req);
   const posts = await visiblePostsForViewer(viewer);
   const slice = await Promise.all(posts.slice(cursor, cursor + limit).map((p) => toPublicPost(p, viewer)));
   const nextCursor = cursor + slice.length < posts.length ? String(cursor + slice.length) : null;
-  return res.status(200).json({ ok: true, posts: slice, nextCursor });
+  const nextPage = nextCursor ? page + 1 : null;
+  return {
+    page,
+    limit,
+    total: posts.length,
+    data: slice,
+    posts: slice,
+    nextPage,
+    nextCursor,
+  };
+}
+
+app.get("/api/posts", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const result = await paginatedPostsForViewer(req, viewer);
+  return res.status(200).json(result);
+});
+
+app.get("/api/feed", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const result = await paginatedPostsForViewer(req, viewer);
+  return res.status(200).json({ ok: true, ...result });
 });
 
 app.get("/api/reels", async (req, res) => {
@@ -3354,6 +3400,10 @@ app.post("/api/upload", async (req, res) => {
     }
   }
 
+  if (!mediaUrl && NODE_ENV === "production") {
+    return res.status(503).json({ ok: false, error: "CLOUDINARY_REQUIRED" });
+  }
+
   if (!mediaUrl) {
     await fsp.mkdir(UPLOADS_DIR, { recursive: true });
     const filename = `${Date.now()}_${crypto.randomBytes(8).toString("base64url")}.${ext}`;
@@ -3483,7 +3533,11 @@ app.post("/api/messages/typing", async (req, res) => {
 // -----------------------------
 
 app.use(express.static(path.resolve(PUBLIC_DIR)));
-app.use("/uploads", express.static(path.resolve(UPLOADS_DIR)));
+app.use("/uploads", express.static(path.resolve(UPLOADS_DIR), {
+  maxAge: "7d",
+  immutable: true,
+  fallthrough: true,
+}));
 
 // Health Check route
 app.get('/healthz', (req, res) => res.sendStatus(200));

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -20,11 +20,14 @@ const Feed = ({ navigation }) => {
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
+  const feedRequestInFlight = useRef(false);
 
   const fetchFeed = async (isRefresh = false) => {
+    if (feedRequestInFlight.current) return;
+    feedRequestInFlight.current = true;
     try {
       setError(null);
-      const response = await feedAPI.getFeed(20, isRefresh ? 0 : (nextCursor || 0));
+      const response = await feedAPI.getFeed(10, isRefresh ? 0 : (nextCursor || 0));
       
       if (response.data.ok) {
         const newPosts = response.data.posts || [];
@@ -39,6 +42,7 @@ const Feed = ({ navigation }) => {
       console.error('Feed error:', err);
       setError('Failed to load feed');
     } finally {
+      feedRequestInFlight.current = false;
       setLoading(false);
       setRefreshing(false);
       setLoadingMore(false);
