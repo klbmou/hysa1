@@ -84,6 +84,30 @@ const CSRF_SECRET = String(
   crypto.randomBytes(32).toString("hex")
 );
 
+function contentSecurityPolicy(req, nonce) {
+  const host = String(req && req.headers && req.headers.host || "").trim();
+  const websocketSelf = host ? [`wss://${host}`, NODE_ENV === "production" ? "" : `ws://${host}`].filter(Boolean) : [];
+  const directives = [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'self'",
+    "form-action 'self'",
+    `script-src 'self' 'nonce-${nonce}' https://accounts.google.com https://unpkg.com`,
+    "script-src-attr 'none'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "img-src 'self' data: blob: https://res.cloudinary.com https://*.cloudinary.com https://lh3.googleusercontent.com",
+    "media-src 'self' data: blob: https://res.cloudinary.com https://*.cloudinary.com",
+    `connect-src 'self' https://accounts.google.com ${websocketSelf.join(" ")}`.trim(),
+    "frame-src https://accounts.google.com",
+    "worker-src 'self'",
+    "manifest-src 'self'",
+  ];
+  if (NODE_ENV === "production") directives.push("upgrade-insecure-requests");
+  return directives.join("; ");
+}
+
 const USE_POSTGRES = !!process.env.DATABASE_URL;
 const USE_CLOUDINARY = !!(
   process.env.CLOUDINARY_CLOUD_NAME &&
@@ -2192,6 +2216,8 @@ app.use(express.json({ limit: JSON_LIMIT }));
 app.use(express.urlencoded({ limit: JSON_LIMIT, extended: true }));
 
 app.use((req, res, next) => {
+  res.locals.cspNonce = crypto.randomBytes(16).toString("base64url");
+  res.setHeader("Content-Security-Policy", contentSecurityPolicy(req, res.locals.cspNonce));
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()");
@@ -4691,7 +4717,29 @@ app.get("/api/users/blocked", async (req, res) => {
 // Static files
 // -----------------------------
 
-app.use(express.static(path.resolve(PUBLIC_DIR)));
+function sendIndexHtml(req, res) {
+  if (!isFile(INDEX_HTML)) {
+    return res
+      .status(500)
+      .type("text/plain")
+      .send(
+        [
+          "public/index.html is missing.",
+          `INDEX_HTML=${INDEX_HTML}`,
+          `PUBLIC_DIR=${PUBLIC_DIR}`,
+          `CWD=${process.cwd()}`,
+          "If you're on Render and using Root Directory (monorepo), ensure the selected Root Directory includes the public/ folder.",
+        ].join("\n"),
+      );
+  }
+  const nonce = String(res.locals.cspNonce || "");
+  const html = fs.readFileSync(INDEX_HTML, "utf8").replace(/__CSP_NONCE__/g, nonce);
+  return res.status(200).type("html").send(html);
+}
+
+app.get(["/", "/index.html"], (req, res) => sendIndexHtml(req, res));
+
+app.use(express.static(path.resolve(PUBLIC_DIR), { index: false }));
 app.use("/uploads", express.static(path.resolve(UPLOADS_DIR), {
   maxAge: "7d",
   immutable: true,
@@ -4706,19 +4754,7 @@ app.use((req, res, next) => {
   if (req.method !== "GET" && req.method !== "HEAD") return next();
   if (String(req.path || "").startsWith("/api/")) return next();
   if (path.extname(String(req.path || ""))) return next();
-  if (isFile(INDEX_HTML)) return res.sendFile(INDEX_HTML);
-  return res
-    .status(500)
-    .type("text/plain")
-    .send(
-      [
-        "public/index.html is missing.",
-        `INDEX_HTML=${INDEX_HTML}`,
-        `PUBLIC_DIR=${PUBLIC_DIR}`,
-        `CWD=${process.cwd()}`,
-        "If you're on Render and using Root Directory (monorepo), ensure the selected Root Directory includes the public/ folder.",
-      ].join("\n"),
-    );
+  return sendIndexHtml(req, res);
 });
 
 // Error handler (JSON for API)

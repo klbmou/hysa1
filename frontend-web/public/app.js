@@ -6456,6 +6456,7 @@ async function boot() {
         else if (nav === "create") openCompose();
         else if (nav === "reels") location.hash = "#reels";
         else if (nav === "explore") location.hash = "#explore";
+        else if (nav === "notifications") openNotificationsPanel();
         else if (nav === "profile" && me) location.hash = `#u/${encodeURIComponent(me.username.toLowerCase())}`;
         else if (nav === "aiChat") {
           if (el.aiFab) el.aiFab.click();
