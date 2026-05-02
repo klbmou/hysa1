@@ -93,9 +93,10 @@ function contentSecurityPolicy(req, nonce) {
     "object-src 'none'",
     "frame-ancestors 'self'",
     "form-action 'self'",
-    `script-src 'self' 'nonce-${nonce}' https://accounts.google.com https://unpkg.com`,
+    `script-src 'self' 'nonce-${nonce}' https://accounts.google.com`,
     "script-src-attr 'none'",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    `style-src-elem 'self' 'nonce-${nonce}' https://fonts.googleapis.com`,
+    "style-src-attr 'unsafe-inline'",
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' data: blob: https://res.cloudinary.com https://*.cloudinary.com https://lh3.googleusercontent.com",
     "media-src 'self' data: blob: https://res.cloudinary.com https://*.cloudinary.com",
@@ -103,7 +104,11 @@ function contentSecurityPolicy(req, nonce) {
     "frame-src https://accounts.google.com",
     "worker-src 'self'",
     "manifest-src 'self'",
+    "report-uri /csp-report",
   ];
+  if (String(process.env.ENABLE_TRUSTED_TYPES || "").toLowerCase() === "true") {
+    directives.push("require-trusted-types-for 'script'");
+  }
   if (NODE_ENV === "production") directives.push("upgrade-insecure-requests");
   return directives.join("; ");
 }
@@ -2280,6 +2285,21 @@ app.use((req, res, next) => {
   }
   return next();
 });
+
+app.post(
+  "/csp-report",
+  express.json({
+    type: ["application/csp-report", "application/reports+json", "application/json"],
+    limit: "16kb",
+  }),
+  (req, res) => {
+    const report = req.body && (req.body["csp-report"] || req.body);
+    const blocked = String(report && (report["blocked-uri"] || report.blockedURL || report.blockedURL) || "");
+    const directive = String(report && (report["violated-directive"] || report.effectiveDirective || "") || "");
+    console.warn(`[csp] violation directive=${directive || "unknown"} blocked=${blocked || "unknown"}`);
+    return res.status(204).end();
+  }
+);
 
 // PeerJS server with error handling
 try {

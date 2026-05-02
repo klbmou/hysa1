@@ -7,6 +7,11 @@ let googleClientId = "";
 let googleClientConfigPromise = null;
 let csrfToken = "";
 
+function getCspNonce() {
+  const script = document.querySelector("script[nonce]");
+  return script ? String(script.nonce || script.getAttribute("nonce") || "") : "";
+}
+
 function getToken() {
   return token;
 }
@@ -767,6 +772,7 @@ function loadGoogleIdentityScript() {
     script.src = "https://accounts.google.com/gsi/client";
     script.async = true;
     script.defer = true;
+    script.nonce = getCspNonce();
     script.onload = resolve;
     script.onerror = reject;
     document.head.appendChild(script);
@@ -1695,9 +1701,10 @@ function loadPeerJsClient() {
   }
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
+    script.src = "/vendor/peerjs.min.js";
     script.async = true;
     script.dataset.peerjs = "true";
+    script.nonce = getCspNonce();
     script.onload = resolve;
     script.onerror = () => reject(new Error("Video calling failed to load."));
     document.head.appendChild(script);
@@ -1708,6 +1715,7 @@ function ensureVideoCallStyles() {
   if (document.getElementById("videoCallStyles")) return;
   const style = document.createElement("style");
   style.id = "videoCallStyles";
+  style.nonce = getCspNonce();
   style.textContent = `
     .video-call-overlay{position:fixed;inset:0;z-index:1200;background:rgba(5,8,14,.78);backdrop-filter:blur(22px);display:grid;place-items:center;padding:18px}
     .video-call-panel{width:min(960px,100%);height:min(720px,100%);display:grid;grid-template-rows:auto 1fr;gap:12px}
