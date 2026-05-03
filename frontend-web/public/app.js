@@ -118,7 +118,8 @@ function autoLowDataPreferred() {
 }
 
 let lowDataMode = localStorage.getItem(lowDataKey);
-lowDataMode = lowDataMode == null ? autoLowDataPreferred() : lowDataMode === "true";
+const isLocalDevHost = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(window.location.hostname);
+lowDataMode = lowDataMode == null ? (!isLocalDevHost || autoLowDataPreferred()) : lowDataMode === "true";
 
 function setLowDataMode(nextValue) {
   lowDataMode = !!nextValue;
@@ -653,16 +654,47 @@ function isFullMediaUrl(url) {
 
 function mediaDisplayUrl(item) {
   if (lowDataMode) return mediaThumbUrl(item);
-  return String((item && (item.previewUrl || item.thumbnailUrl || item.url)) || "");
+  return String((item && (item.thumbnailUrl || item.previewUrl || item.url || item.fullUrl)) || "");
 }
 
 function mediaFullUrl(item) {
-  return String((item && (item.fullUrl || item.url || item.previewUrl || item.thumbnailUrl)) || "");
+  return String((item && (item.fullUrl || item.url || item.previewUrl || item.thumbnailUrl || "")) || "");
+}
+
+function mediaVisibleUrl(item) {
+  return String((item && (item.url || item.previewUrl || item.thumbnailUrl || item.fullUrl)) || "");
 }
 
 function mediaThumbUrl(item) {
-  if (lowDataMode) return String((item && (item.thumbnailUrl || item.previewUrl || item.url || item.fullUrl)) || "");
   return String((item && (item.thumbnailUrl || item.previewUrl || item.url || item.fullUrl)) || "");
+}
+
+function videoPosterUrl(item) {
+  return String((item && (item.thumbnailUrl || item.previewUrl || item.url || item.fullUrl)) || "");
+}
+
+function videoSourceUrl(item) {
+  return String((item && (item.fullUrl || item.url || item.previewUrl || "")) || "");
+}
+
+let fullImageObserver = null;
+function observeImageUpgrade(img) {
+  if (!img || lowDataMode) return;
+  const nextSrc = String(img.dataset.visibleSrc || "");
+  if (!nextSrc || nextSrc === img.src) return;
+  if (!("IntersectionObserver" in window)) return;
+  if (!fullImageObserver) {
+    fullImageObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const node = entry.target;
+        if (!entry.isIntersecting || !(node instanceof HTMLImageElement)) continue;
+        const src = String(node.dataset.visibleSrc || "");
+        if (src) node.src = src;
+        fullImageObserver.unobserve(node);
+      }
+    }, { root: null, rootMargin: "160px 0px", threshold: 0.1 });
+  }
+  fullImageObserver.observe(img);
 }
 
 function currentUserKey() {
@@ -676,6 +708,7 @@ function isMineKey(key) {
 
 let authFailureCount = 0;
 const inflightGets = new Map();
+let activeVideoElement = null;
 
 async function fetchJson(path, opts = {}) {
   const p = String(path || "");
@@ -1011,17 +1044,20 @@ function customVideoPlayer(url, {
 } = {}) {
   const player = document.createElement("div");
   player.className = "proVideo";
-  if (!poster) player.classList.add("noPoster");
 
   const video = document.createElement("video");
   const fullUrl = String(url || "");
   const lightUrl = String(previewUrl || "");
-  video.dataset.src = fullUrl;
+  const posterUrl = String(poster || lightUrl || fullUrl || "");
+  if (!posterUrl) player.classList.add("noPoster");
+  if (posterUrl) player.style.setProperty("--video-poster", `url("${posterUrl.replace(/"/g, "%22")}")`);
+  video.dataset.src = fullUrl || lightUrl;
+  video.dataset.previewSrc = lightUrl;
   if (autoplay) {
     video.src = lightUrl || fullUrl;
     video.dataset.autoplay = "1";
   }
-  if (poster) video.poster = poster;
+  video.poster = posterUrl || "";
   video.playsInline = true;
   video.preload = autoplay ? "metadata" : "none";
   video.muted = !!muted;
@@ -1081,6 +1117,7 @@ function customVideoPlayer(url, {
   }
   function setLoadingState(isLoading) {
     player.classList.toggle("isLoading", !!isLoading);
+    if (!isLoading) player.classList.remove("isBuffering");
   }
   function setReadyState() {
     setLoadingState(false);
@@ -1099,12 +1136,22 @@ function customVideoPlayer(url, {
     }
   }
   function togglePlay() {
-    if (!video.currentSrc && video.dataset.src) {
+    const sourceUrl = String(video.dataset.src || video.dataset.previewSrc || "");
+    if (!video.currentSrc && sourceUrl) {
+      console.debug("[video] assigning src", { sourceUrl, poster: video.poster || posterUrl, previewUrl: lightUrl });
       setLoadingState(true);
-      video.src = video.dataset.src;
+      video.src = sourceUrl;
       video.load();
+    } else if (!sourceUrl) {
+      console.warn("[video] missing source URL", { fullUrl, previewUrl: lightUrl, poster: posterUrl });
+      player.classList.add("hasError");
+      return;
     }
-    if (video.paused) video.play().catch(() => {});
+    if (video.paused) {
+      pauseOtherVideos(video);
+      activeVideoElement = video;
+      video.play().catch(() => {});
+    }
     else video.pause();
   }
   function clearTapTimer() {
@@ -1139,6 +1186,7 @@ function customVideoPlayer(url, {
   on(video, "pause", () => {
     setPausedState();
     setLoadingState(false);
+    if (activeVideoElement === video) activeVideoElement = null;
   });
   on(video, "loadedmetadata", () => {
     sync();
@@ -1183,6 +1231,29 @@ function customVideoPlayer(url, {
   return player;
 }
 
+function pauseOtherVideos(current) {
+  for (const other of document.querySelectorAll(".proVideo video, #storyViewer video, #lightbox video")) {
+    if (other === current || !(other instanceof HTMLVideoElement)) continue;
+    other.pause();
+  }
+}
+
+function unloadVideo(video) {
+  if (!(video instanceof HTMLVideoElement)) return;
+  if (video === activeVideoElement || video.closest("#storyViewer") || video.closest("#lightbox")) return;
+  video.pause();
+  if (video.currentSrc || video.getAttribute("src")) {
+    video.removeAttribute("src");
+    video.load();
+  }
+  video.preload = "metadata";
+  const player = video.closest(".proVideo");
+  if (player) {
+    player.classList.remove("isReady", "isLoading");
+    player.classList.add("isPaused");
+  }
+}
+
 let mediaPlaybackObserver = null;
 function observeMediaPlayback(root) {
   const videos = Array.from((root || document).querySelectorAll(".proVideo video"));
@@ -1194,15 +1265,21 @@ function observeMediaPlayback(root) {
           const v = entry.target;
           if (!(v instanceof HTMLVideoElement)) continue;
           if (entry.isIntersecting) {
-            if (v.dataset.autoplay !== "1") continue;
+            if (v.closest("#reelsView") && !lowDataMode && v.dataset.autoplay === "1" && !v.currentSrc && v.dataset.src) {
+              v.src = v.dataset.src;
+              v.load();
+            }
+            if (v.dataset.autoplay !== "1" || lowDataMode) continue;
             if (v.closest("#reelsView")) {
               for (const other of document.querySelectorAll("#reelsView .reelCard video")) {
                 if (other !== v) other.pause();
               }
             }
+            pauseOtherVideos(v);
+            activeVideoElement = v;
             v.play().catch(() => {});
           } else {
-            v.pause();
+            unloadVideo(v);
           }
         }
       },
@@ -1378,11 +1455,13 @@ function renderDmMessage(message) {
       img.referrerPolicy = "no-referrer";
       img.src = mediaDisplayUrl(item);
       img.dataset.fullSrc = mediaFullUrl(item);
+      img.dataset.visibleSrc = mediaVisibleUrl(item);
+      observeImageUpgrade(img);
       wrap.appendChild(img);
     } else if (item.kind === "video") {
       wrap.appendChild(customVideoPlayer(mediaFullUrl(item), {
-        poster: mediaThumbUrl(item),
-        previewUrl: String(item.previewUrl || ""),
+        poster: videoPosterUrl(item),
+        previewUrl: String(item.previewUrl || item.url || item.fullUrl || ""),
       }));
     } else if (item.kind === "audio") {
       wrap.appendChild(customAudioPlayer(item.url, { compact: true, effect: item.effect || "", speed: item.speed || 1 }));
@@ -2736,9 +2815,9 @@ function renderStoryViewer() {
   const mediaClass = `storyFullMedia story-filter-${story.filter || "normal"}`;
   if (story.media.kind === "video") {
     const video = document.createElement("video");
-    video.poster = mediaThumbUrl(story.media);
+    video.poster = videoPosterUrl(story.media);
     if (!lowDataMode) video.src = String(story.media.previewUrl || story.media.url || "");
-    video.dataset.src = mediaFullUrl(story.media);
+    video.dataset.src = videoSourceUrl(story.media) || String(story.media.previewUrl || "");
     video.className = mediaClass;
     video.autoplay = !lowDataMode;
     video.controls = false;
@@ -3108,8 +3187,8 @@ function carouselNode(media, { withControls = false, onVideoDoubleTap = null } =
     if (item.kind === "video") {
       slide.appendChild(customVideoPlayer(mediaFullUrl(item), {
         muted: true,
-        poster: mediaThumbUrl(item),
-        previewUrl: String(item && item.previewUrl || ""),
+        poster: videoPosterUrl(item),
+        previewUrl: String((item && (item.previewUrl || item.url || item.fullUrl)) || ""),
         onDoubleTap: onVideoDoubleTap,
       }));
     } else {
@@ -3120,6 +3199,8 @@ function carouselNode(media, { withControls = false, onVideoDoubleTap = null } =
       img.decoding = "async";
       img.referrerPolicy = "no-referrer";
       img.dataset.fullSrc = mediaFullUrl(item);
+      img.dataset.visibleSrc = mediaVisibleUrl(item);
+      observeImageUpgrade(img);
       slide.appendChild(img);
     }
     return slide;
@@ -3205,9 +3286,9 @@ function mediaGridNode(media, {
     }
 
     if (item.kind === "video") {
-      const videoUrl = mediaFullUrl(item);
-      const posterUrl = mediaThumbUrl(item);
-      const previewUrl = String(item && item.previewUrl || "");
+      const videoUrl = videoSourceUrl(item);
+      const posterUrl = videoPosterUrl(item);
+      const previewUrl = String((item && (item.previewUrl || item.url || item.fullUrl)) || "");
       if (withControls) {
         tile.appendChild(customVideoPlayer(videoUrl, { muted: true, poster: posterUrl, previewUrl, onDoubleTap: onVideoDoubleTap }));
       } else {
@@ -3221,6 +3302,8 @@ function mediaGridNode(media, {
       img.referrerPolicy = "no-referrer";
       img.src = mediaDisplayUrl(item);
       img.dataset.fullSrc = mediaFullUrl(item);
+      img.dataset.visibleSrc = mediaVisibleUrl(item);
+      observeImageUpgrade(img);
       on(img, "load", () => {
         const width = Number(img.naturalWidth || 0);
         const height = Number(img.naturalHeight || 0);
@@ -4004,7 +4087,7 @@ async function loadFeed({ reset = false } = {}) {
     return;
   }
   if (feedLoading) return;
-  const feedLimit = lowDataMode ? 5 : 8;
+  const feedLimit = 5;
   const cacheKey = `home:page1:limit${feedLimit}:low${lowDataMode ? 1 : 0}`;
   if (reset && feedCache.key === cacheKey && feedCache.payload && Date.now() - feedCache.timestamp < FEED_CACHE_TTL) {
     const cached = feedCache.payload;
@@ -4132,7 +4215,7 @@ async function loadReels() {
     if (reelsCache.payload && Date.now() - reelsCache.timestamp < REELS_CACHE_TTL) {
       r = reelsCache.payload;
     } else {
-      r = await api(`/api/reels?limit=${lowDataMode ? 5 : 8}`, { method: "GET" });
+      r = await api(`/api/reels?limit=${lowDataMode ? 3 : 5}`, { method: "GET" });
       reelsCache = { timestamp: Date.now(), payload: r };
     }
   } finally {
@@ -4395,9 +4478,9 @@ async function loadReels() {
     if (reelMedia && reelMedia.kind === "video") {
       const player = customVideoPlayer(mediaFullUrl(reelMedia), {
         muted: reelMutePreference,
-        autoplay: !lowDataMode,
-        poster: mediaThumbUrl(reelMedia),
-        previewUrl: String(reelMedia.previewUrl || ""),
+        autoplay: false,
+        poster: videoPosterUrl(reelMedia),
+        previewUrl: String(reelMedia.previewUrl || reelMedia.url || reelMedia.fullUrl || ""),
         onDoubleTap: (event) => {
           flashHeart();
           floatHearts(event);
@@ -4422,10 +4505,7 @@ async function loadReels() {
           progressFill.style.width = `${pct * 100}%`;
           if (pct >= 0.8) {
             const nextVideo = card.nextElementSibling?.querySelector?.("video");
-            if (nextVideo && nextVideo.preload !== "auto") {
-              nextVideo.preload = "metadata";
-              nextVideo.load();
-            }
+            if (nextVideo) nextVideo.preload = "metadata";
           }
         });
         on(media, "pointerdown", (event) => {
@@ -4576,8 +4656,8 @@ async function loadReels() {
   }
 
   const videos = Array.from(el.reelsView.querySelectorAll(".reelCard video"));
-  videos.forEach((video, index) => {
-    video.preload = index < 2 ? "auto" : "metadata";
+  videos.forEach((video) => {
+    video.preload = "metadata";
   });
   observeMediaPlayback(el.reelsView);
   on(el.reelsView, "scroll", () => {
@@ -5287,7 +5367,7 @@ function renderComposeMedia() {
   for (const item of composeMedia) {
     const tile = document.createElement("div");
     tile.className = `mediaItem ${item.uploading ? "uploading" : ""}`.trim();
-    if (item.kind === "video") tile.appendChild(customVideoPlayer(item.previewUrl || item.url, { muted: true, poster: item.thumbnailUrl || "" }));
+    if (item.kind === "video") tile.appendChild(customVideoPlayer(videoSourceUrl(item), { muted: true, poster: videoPosterUrl(item), previewUrl: item.previewUrl || item.url || "" }));
     else if (item.kind === "audio") tile.appendChild(customAudioPlayer(item.previewUrl || item.url, { compact: true }));
     else {
       const img = document.createElement("img");
@@ -5413,7 +5493,7 @@ async function compressedImageDataUrl(file) {
   let bitmap = null;
   try {
     bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-    const maxSide = 1600;
+    const maxSide = 1080;
     const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
     const height = Math.max(1, Math.round(bitmap.height * scale));
@@ -5424,7 +5504,7 @@ async function compressedImageDataUrl(file) {
     if (!ctx) return readFileAsDataUrl(file);
     ctx.drawImage(bitmap, 0, 0, width, height);
     const mime = file.type === "image/png" ? "image/png" : "image/jpeg";
-    const quality = mime === "image/png" ? undefined : 0.82;
+    const quality = mime === "image/png" ? undefined : 0.68;
     const dataUrl = canvas.toDataURL(mime, quality);
     return dataUrl.length < file.size * 1.45 ? dataUrl : readFileAsDataUrl(file);
   } catch {
@@ -7111,12 +7191,11 @@ function openLightbox(src, kind = "image", onLike = null) {
     video.src = src;
     video.controls = true;
     video.playsInline = true;
-    video.autoplay = true;
+    video.autoplay = false;
     video.loop = true;
     video.preload = "metadata";
     lb.appendChild(video);
     mediaEl = video;
-    video.play().catch(() => {});
   }
   const heart = document.createElement("div");
   heart.className = "lightbox-heart";

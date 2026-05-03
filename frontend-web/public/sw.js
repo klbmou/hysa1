@@ -41,7 +41,22 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (url.pathname.startsWith("/uploads/") || url.hostname.includes("cloudinary.com")) {
+  if (url.hostname.includes("cloudinary.com")) {
+    event.respondWith(
+      caches.open(CACHE).then((cache) =>
+        caches.match(event.request).then((cached) => {
+          const fetched = fetch(event.request, { cache: "force-cache" }).then((response) => {
+            if (response && response.ok) cache.put(event.request, response.clone()).catch(() => {});
+            return response;
+          }).catch(() => cached);
+          return cached || fetched;
+        })
+      )
+    );
+    return;
+  }
+
+  if (url.pathname.startsWith("/uploads/")) {
     event.respondWith(fetch(event.request, { cache: "force-cache" }).catch(() => caches.match(event.request)));
     return;
   }

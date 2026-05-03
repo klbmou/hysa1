@@ -1969,33 +1969,57 @@ function cloudinaryTransformUrl(url, transform) {
 function publicMediaVariants(url, kind) {
   const publicUrl = publicStoredUrl(url);
   const mediaKind = String(kind || "");
-  if (!publicUrl) return { url: "", previewUrl: "", thumbnailUrl: "" };
+  if (!publicUrl) return { url: "", fullUrl: "", previewUrl: "", thumbnailUrl: "" };
   if (!/^https?:\/\/(res\.cloudinary\.com|.*\.cloudinary\.com)\//i.test(publicUrl)) {
     return { url: publicUrl, fullUrl: publicUrl, previewUrl: "", thumbnailUrl: "" };
   }
   if (mediaKind === "image") {
     return {
-      url: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:eco,c_limit,w_1600"),
+      url: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:eco,c_limit,w_720"),
       fullUrl: publicUrl,
-      previewUrl: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:low,c_fill,w_720,h_720"),
+      previewUrl: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:low,c_limit,w_720"),
       thumbnailUrl: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:low,c_fill,w_240,h_240"),
     };
   }
   if (mediaKind === "video") {
     return {
-      url: publicUrl,
+      url: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:eco,c_limit,w_720"),
       fullUrl: publicUrl,
-      previewUrl: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:eco,c_limit,w_960"),
-      thumbnailUrl: cloudinaryTransformUrl(publicUrl, "so_0,f_jpg,q_auto:low,c_fill,w_640,h_900"),
+      previewUrl: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:low,c_limit,w_720"),
+      thumbnailUrl: cloudinaryTransformUrl(publicUrl, "so_0,f_jpg,q_auto:low,c_fill,w_360,h_640"),
     };
   }
   return { url: publicUrl, fullUrl: publicUrl, previewUrl: "", thumbnailUrl: "" };
+}
+
+function normalizePublicMediaUrls(media) {
+  const kind = String(media && media.kind || "");
+  const originalFull = publicStoredUrl(media && media.fullUrl);
+  const originalUrl = publicStoredUrl(media && media.url);
+  const originalPreview = publicStoredUrl(media && media.previewUrl);
+  const originalThumb = publicStoredUrl(media && media.thumbnailUrl);
+  const baseUrl = originalFull || originalUrl || originalPreview || originalThumb;
+  const variants = publicMediaVariants(baseUrl, kind);
+  const fullUrl = originalFull || variants.fullUrl || originalUrl || originalPreview || variants.url || variants.previewUrl || "";
+  const url = variants.url || originalUrl || originalPreview || fullUrl;
+  const previewUrl = originalPreview || variants.previewUrl || url || fullUrl;
+  let thumbnailUrl = originalThumb || variants.thumbnailUrl || "";
+  if (!thumbnailUrl && /^https?:\/\/(res\.cloudinary\.com|.*\.cloudinary\.com)\//i.test(fullUrl || url || previewUrl)) {
+    thumbnailUrl = cloudinaryTransformUrl(fullUrl || url || previewUrl, kind === "video"
+      ? "so_0,f_jpg,q_auto:low,c_fill,w_360,h_640"
+      : "f_auto,q_auto:low,c_fill,w_240,h_240");
+  }
+  if (!thumbnailUrl) thumbnailUrl = previewUrl || url || fullUrl;
+  return { url, fullUrl, previewUrl, thumbnailUrl };
 }
 
 function toPublicMediaList(media) {
   return asArray(media)
     .map((m) => ({
       url: String(m && m.url ? m.url : ""),
+      fullUrl: String(m && m.fullUrl ? m.fullUrl : ""),
+      previewUrl: String(m && m.previewUrl ? m.previewUrl : ""),
+      thumbnailUrl: String(m && m.thumbnailUrl ? m.thumbnailUrl : ""),
       kind: String(m && m.kind ? m.kind : ""),
       mime: String(m && m.mime ? m.mime : ""),
       type: String(m && m.type ? m.type : ""),
@@ -2005,8 +2029,9 @@ function toPublicMediaList(media) {
     }))
     .filter((m) => m.kind && m.mime)
     .map((m) => {
-      if (!m.url || !uploadUrlExists(m.url)) return { ...m, url: "", fullUrl: "", previewUrl: "", thumbnailUrl: "", missing: true };
-      return { ...m, ...publicMediaVariants(m.url, m.kind) };
+      const candidateUrl = m.fullUrl || m.url || m.previewUrl || m.thumbnailUrl;
+      if (!candidateUrl || !uploadUrlExists(candidateUrl)) return { ...m, url: "", fullUrl: "", previewUrl: "", thumbnailUrl: "", missing: true };
+      return { ...m, ...normalizePublicMediaUrls(m) };
     });
 }
 
@@ -2539,8 +2564,8 @@ app.get("/api/me", async (req, res) => {
 function paginationFromReq(req) {
   const pageRaw = Number.parseInt(String(req.query.page || "1"), 10);
   const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1;
-  const limitRaw = Number.parseInt(String(req.query.limit || "8"), 10);
-  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(10, limitRaw)) : 8;
+  const limitRaw = Number.parseInt(String(req.query.limit || "5"), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(5, limitRaw)) : 5;
   const cursorRaw = Number.parseInt(String(req.query.cursor || ""), 10);
   const cursor = Number.isFinite(cursorRaw) && cursorRaw >= 0 ? cursorRaw : (page - 1) * limit;
   return { page, limit, cursor };
@@ -2593,8 +2618,8 @@ app.get("/api/feed", async (req, res) => {
 app.get("/api/reels", async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
-  const limitRaw = Number.parseInt(String(req.query.limit || "8"), 10);
-  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(12, limitRaw)) : 8;
+  const limitRaw = Number.parseInt(String(req.query.limit || "3"), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(5, limitRaw)) : 3;
   const cursorRaw = Number.parseInt(String(req.query.cursor || "0"), 10);
   const cursor = Number.isFinite(cursorRaw) && cursorRaw >= 0 ? cursorRaw : 0;
   let slice;
@@ -3954,6 +3979,11 @@ app.post("/api/upload", rateLimit("uploads"), async (req, res) => {
         folder: "hysa1",
         use_filename: true,
         unique_filename: true,
+        quality: "auto:eco",
+        fetch_format: "auto",
+        transformation: kind === "image"
+          ? [{ width: 1080, crop: "limit", quality: "auto:eco", fetch_format: "auto" }]
+          : [{ width: 720, crop: "limit", quality: "auto:eco", fetch_format: "auto" }],
       });
       mediaUrl = result.secure_url;
     } catch (err) {
@@ -4804,11 +4834,17 @@ function sendIndexHtml(req, res) {
 app.get(["/", "/index.html"], (req, res) => sendIndexHtml(req, res));
 
 app.use(express.static(path.resolve(PUBLIC_DIR), { index: false }));
-app.use("/uploads", express.static(path.resolve(UPLOADS_DIR), {
-  maxAge: "7d",
-  immutable: true,
-  fallthrough: true,
-}));
+if (NODE_ENV !== "production") {
+  app.use("/uploads", express.static(path.resolve(UPLOADS_DIR), {
+    maxAge: "7d",
+    immutable: true,
+    fallthrough: true,
+  }));
+} else {
+  app.use("/uploads", (_req, res) => {
+    res.status(410).json({ ok: false, error: "CLOUDINARY_REQUIRED" });
+  });
+}
 
 // Health Check route
 app.get('/healthz', (req, res) => res.sendStatus(200));

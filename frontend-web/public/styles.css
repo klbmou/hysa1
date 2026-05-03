@@ -5701,6 +5701,7 @@ body[dir="rtl"] .comment.reply {
   place-items: center;
   color: rgba(255,255,255,0.68);
   background:
+    var(--video-poster, none) center / cover no-repeat,
     linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.025)),
     #0b0d13;
 }
@@ -5714,9 +5715,12 @@ body[dir="rtl"] .comment.reply {
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15);
 }
 
-.proVideo:not(.noPoster) .videoPosterPlaceholder,
 .proVideo.isReady .videoPosterPlaceholder {
   display: none;
+}
+
+.proVideo:not(.noPoster):not(.isReady) video {
+  opacity: 0;
 }
 
 .proVideo.isPaused .videoCenterPlay {
@@ -5742,6 +5746,7 @@ body[dir="rtl"] .comment.reply {
   border-radius: 999px;
   font-size: 13px;
   font-weight: 800;
+  animation: none !important;
 }
 
 .videoControls {
