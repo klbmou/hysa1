@@ -5954,6 +5954,12 @@ function route() {
     closeExplorePage();
     closeDmView();
     clearProfileHeader();
+    if (el.actionSheet && el.actionSheet.hidden) document.body.classList.remove("sheet-open");
+    if (document.getElementById("lightbox")?.hidden) document.body.classList.remove("lightbox-open");
+    if (document.body.classList.contains("settings-open")) {
+      document.body.classList.remove("settings-open");
+      document.body.style.top = "";
+    }
     activeProfileKey = null;
     activePostId = null;
     if (el.feed) {
