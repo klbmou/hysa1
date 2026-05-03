@@ -3,6 +3,7 @@
 const legacyTokenKey = "hysa_token";
 const langKey = "hysa_lang";
 const themeKey = "hysa_theme";
+const lowDataKey = "hysa_low_data_mode";
 let googleClientId = "";
 let googleClientConfigPromise = null;
 let csrfToken = "";
@@ -59,6 +60,10 @@ try {
   seenPostIds = new Set();
 }
 let storyGroups = [];
+let storiesLoading = false;
+let storiesLoadedAt = 0;
+let trendsLoading = false;
+let trendsLoadedAt = 0;
 let activeStoryIndex = 0;
 let storyProgressTimer = null;
 let storyFileInput = null;
@@ -105,6 +110,24 @@ function setTheme(newTheme) {
   document.documentElement.setAttribute("data-theme", theme);
 }
 setTheme(theme); // Apply on load
+
+function autoLowDataPreferred() {
+  const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (!c) return false;
+  return !!c.saveData || /(^|-)2g$/i.test(String(c.effectiveType || ""));
+}
+
+let lowDataMode = localStorage.getItem(lowDataKey);
+lowDataMode = lowDataMode == null ? autoLowDataPreferred() : lowDataMode === "true";
+
+function setLowDataMode(nextValue) {
+  lowDataMode = !!nextValue;
+  localStorage.setItem(lowDataKey, String(lowDataMode));
+  document.documentElement.toggleAttribute("data-low-data", lowDataMode);
+  feedCache = { key: "", timestamp: 0, payload: null };
+}
+
+setLowDataMode(lowDataMode);
 
 const I18N = {
   ar: {
@@ -629,15 +652,17 @@ function isFullMediaUrl(url) {
 }
 
 function mediaDisplayUrl(item) {
+  if (lowDataMode) return mediaThumbUrl(item);
   return String((item && (item.previewUrl || item.thumbnailUrl || item.url)) || "");
 }
 
 function mediaFullUrl(item) {
-  return String((item && (item.url || item.previewUrl || item.thumbnailUrl)) || "");
+  return String((item && (item.fullUrl || item.url || item.previewUrl || item.thumbnailUrl)) || "");
 }
 
 function mediaThumbUrl(item) {
-  return String((item && (item.thumbnailUrl || item.previewUrl || item.url)) || "");
+  if (lowDataMode) return String((item && (item.thumbnailUrl || item.previewUrl || item.url || item.fullUrl)) || "");
+  return String((item && (item.thumbnailUrl || item.previewUrl || item.url || item.fullUrl)) || "");
 }
 
 function currentUserKey() {
@@ -650,6 +675,7 @@ function isMineKey(key) {
 }
 
 let authFailureCount = 0;
+const inflightGets = new Map();
 
 async function fetchJson(path, opts = {}) {
   const p = String(path || "");
@@ -687,8 +713,16 @@ async function api(path, opts = {}) {
   if (location.protocol === "file:") throw new Error("FILE_ORIGIN");
 
   const p = String(path || "");
+  const method = String(opts.method || "GET").toUpperCase();
+  if (method === "GET" && inflightGets.has(p)) return inflightGets.get(p);
+  if (method === "GET") {
+    const pending = api(p, { ...opts, method: "__GET_INTERNAL__" }).finally(() => inflightGets.delete(p));
+    inflightGets.set(p, pending);
+    return pending;
+  }
+  const actualOpts = method === "__GET_INTERNAL__" ? { ...opts, method: "GET" } : opts;
   const isAuthEndpoint = p.startsWith("/api/login") || p.startsWith("/api/register") || p.startsWith("/api/signup") || p.startsWith("/api/auth/google");
-  let { res, json } = await fetchJson(p, opts);
+  let { res, json } = await fetchJson(p, actualOpts);
 
   if (res.status === 401 && !isAuthEndpoint) {
     authFailureCount += 1;
@@ -2005,6 +2039,36 @@ function showApp() {
   if (me) ensurePeerClient().catch(() => {});
 }
 
+function ensureLowDataToggle() {
+  if (!el.settingsView || document.getElementById("settingsLowData")) return;
+  const body = el.settingsView.querySelector(".settings-body");
+  if (!body) return;
+  const section = document.createElement("div");
+  section.className = "settings-section";
+  section.innerHTML = `
+    <h3 class="settings-section-title">Data</h3>
+    <div class="settings-option">
+      <div class="settings-option-info">
+        <span class="settings-option-label">Low Data Mode</span>
+        <span class="settings-option-desc muted">Use smaller thumbnails and stop automatic video loading</span>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="settingsLowData">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+  `;
+  body.insertBefore(section, body.children[1] || null);
+  const input = section.querySelector("#settingsLowData");
+  input.checked = lowDataMode;
+  on(input, "change", () => {
+    setLowDataMode(input.checked);
+    storiesLoadedAt = 0;
+    trendsLoadedAt = 0;
+    if (me) loadFeed({ reset: true }).catch(() => {});
+  });
+}
+
 function showFeedError(err, { reset = false } = {}) {
   if (!el.feed) return;
   const code = String(err && err.message || "");
@@ -2214,6 +2278,10 @@ function myStoryNode(myGroup) {
 
 async function loadStories() {
   if (!el.storiesBar || !getToken()) return;
+  if (storiesLoading) return;
+  const ttl = lowDataMode ? 180000 : 45000;
+  if (storiesLoadedAt && Date.now() - storiesLoadedAt < ttl && storyCache.length) return;
+  storiesLoading = true;
   try {
     const r = await api("/api/stories", { method: "GET" });
     const stories = safeStoryList(r.stories);
@@ -2228,8 +2296,11 @@ async function loadStories() {
       el.storiesBar.appendChild(storyNode(group));
     }
     el.storiesBar.hidden = !me && !stories.length;
+    storiesLoadedAt = Date.now();
   } catch {
     el.storiesBar.hidden = true;
+  } finally {
+    storiesLoading = false;
   }
 }
 
@@ -2630,15 +2701,22 @@ function renderStoryViewer() {
   if (story.media.kind === "video") {
     const video = document.createElement("video");
     video.poster = mediaThumbUrl(story.media);
-    video.src = String(story.media.previewUrl || story.media.url || "");
+    if (!lowDataMode) video.src = String(story.media.previewUrl || story.media.url || "");
     video.dataset.src = mediaFullUrl(story.media);
     video.className = mediaClass;
-    video.autoplay = true;
+    video.autoplay = !lowDataMode;
     video.controls = false;
     video.muted = reelMutePreference;
     video.playsInline = true;
-    video.preload = "metadata";
+    video.preload = lowDataMode ? "none" : "metadata";
     activeStoryVideo = video;
+    on(video, "click", () => {
+      if (!video.currentSrc && video.dataset.src) {
+        video.src = video.dataset.src;
+        video.load();
+      }
+      video.play().catch(() => {});
+    });
     if (el.storyMute) el.storyMute.textContent = video.muted ? "Muted" : "Sound";
     on(video, "loadedmetadata", () => {
       const duration = Number.isFinite(video.duration) && video.duration > 0 ? Math.min(video.duration * 1000, 15000) : 8000;
@@ -2701,6 +2779,12 @@ function previousStory() {
 
 async function loadTrends() {
   if (!el.trendsBar || !getToken()) return;
+  if (lowDataMode) {
+    el.trendsBar.hidden = true;
+    return;
+  }
+  if (trendsLoading || (trendsLoadedAt && Date.now() - trendsLoadedAt < 120000)) return;
+  trendsLoading = true;
   try {
     const r = await api("/api/trends", { method: "GET" });
     const trends = Array.isArray(r.trends) ? r.trends : [];
@@ -2724,8 +2808,11 @@ async function loadTrends() {
       el.trendsBar.appendChild(chip);
     }
     el.trendsBar.hidden = false;
+    trendsLoadedAt = Date.now();
   } catch {
     el.trendsBar.hidden = true;
+  } finally {
+    trendsLoading = false;
   }
 }
 
@@ -3872,7 +3959,8 @@ async function loadFeed({ reset = false } = {}) {
     return;
   }
   if (feedLoading) return;
-  const cacheKey = "home:page1:limit10";
+  const feedLimit = lowDataMode ? 5 : 8;
+  const cacheKey = `home:page1:limit${feedLimit}:low${lowDataMode ? 1 : 0}`;
   if (reset && feedCache.key === cacheKey && feedCache.payload && Date.now() - feedCache.timestamp < FEED_CACHE_TTL) {
     const cached = feedCache.payload;
     const posts = smartRankFeedPosts(cached.posts);
@@ -3918,7 +4006,7 @@ async function loadFeed({ reset = false } = {}) {
       await loadTrends();
     }
     const url = new URL("/api/posts", location.origin);
-    url.searchParams.set("limit", "10");
+    url.searchParams.set("limit", String(feedLimit));
     url.searchParams.set("page", String(feedPage));
 
     const r = await api(url.pathname + url.search, { method: "GET" });
@@ -3999,7 +4087,7 @@ async function loadReels() {
     if (reelsCache.payload && Date.now() - reelsCache.timestamp < REELS_CACHE_TTL) {
       r = reelsCache.payload;
     } else {
-      r = await api("/api/reels?limit=20", { method: "GET" });
+      r = await api(`/api/reels?limit=${lowDataMode ? 5 : 8}`, { method: "GET" });
       reelsCache = { timestamp: Date.now(), payload: r };
     }
   } finally {
@@ -4262,7 +4350,7 @@ async function loadReels() {
     if (reelMedia && reelMedia.kind === "video") {
       const player = customVideoPlayer(mediaFullUrl(reelMedia), {
         muted: reelMutePreference,
-        autoplay: true,
+        autoplay: !lowDataMode,
         poster: mediaThumbUrl(reelMedia),
         previewUrl: String(reelMedia.previewUrl || ""),
         onDoubleTap: (event) => {
@@ -6355,6 +6443,7 @@ async function boot() {
   applyI18n();
   switchAuthTab("login");
   ensureAiAssistant();
+  ensureLowDataToggle();
 
   function applyLang(newLang) {
     if (!["ar", "en", "fr"].includes(newLang)) newLang = "ar";

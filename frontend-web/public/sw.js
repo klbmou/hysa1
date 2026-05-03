@@ -1,5 +1,5 @@
-/* HYSA Service Worker — offline-first app shell cache */
-const CACHE = "hysa-v1";
+/* HYSA Service Worker - bandwidth-aware app shell cache */
+const CACHE = "hysa-v2";
 const SHELL = [
   "/",
   "/index.html",
@@ -9,41 +9,54 @@ const SHELL = [
   "/favicon.svg"
 ];
 
-self.addEventListener("install", (e) => {
-  e.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE)
+      .then((cache) => cache.addAll(SHELL))
+      .then(() => self.skipWaiting())
   );
 });
 
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+      .then(() => self.clients.claim())
   );
 });
 
-self.addEventListener("fetch", (e) => {
-  const url = new URL(e.request.url);
-  if (e.request.method !== "GET") return;
+self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+  if (event.request.method !== "GET") return;
+
   if (url.pathname.startsWith("/api/")) {
-    e.respondWith(
-      fetch(e.request).catch(() =>
+    event.respondWith(
+      fetch(event.request).catch(() =>
         new Response(JSON.stringify({ ok: false, message: "OFFLINE" }), {
+          status: 503,
           headers: { "Content-Type": "application/json" }
         })
       )
     );
     return;
   }
-  e.respondWith(
-    caches.match(e.request).then((cached) => {
-      const fetched = fetch(e.request).then((res) => {
-        if (res.ok) {
-          caches.open(CACHE).then((c) => c.put(e.request, res.clone()));
-        }
-        return res;
-      });
+
+  if (url.pathname.startsWith("/uploads/") || url.hostname.includes("cloudinary.com")) {
+    event.respondWith(fetch(event.request, { cache: "force-cache" }).catch(() => caches.match(event.request)));
+    return;
+  }
+
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      const fetched = fetch(event.request)
+        .then((response) => {
+          if (response && response.ok && url.origin === location.origin && SHELL.includes(url.pathname || "/")) {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(event.request, copy)).catch(() => {});
+          }
+          return response;
+        })
+        .catch(() => cached);
       return cached || fetched;
     })
   );

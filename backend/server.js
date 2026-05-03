@@ -123,12 +123,8 @@ const OWNER_USER_KEY = "france";
 const googleOAuthClient = new OAuth2Client(GOOGLE_CLIENT_ID || undefined);
 void GOOGLE_CLIENT_SECRET;
 
-// Enforce production behavior
-if (NODE_ENV === "production") {
-  if (!USE_POSTGRES) {
-    console.error("[FATAL] Production requires DATABASE_URL to be set");
-    process.exit(1);
-  }
+if (NODE_ENV === "production" && !USE_POSTGRES) {
+  console.warn("[data] DATABASE_URL is not set; using data.json fallback");
 }
 
 // Initialize PostgreSQL pool if DATABASE_URL is present
@@ -1975,11 +1971,12 @@ function publicMediaVariants(url, kind) {
   const mediaKind = String(kind || "");
   if (!publicUrl) return { url: "", previewUrl: "", thumbnailUrl: "" };
   if (!/^https?:\/\/(res\.cloudinary\.com|.*\.cloudinary\.com)\//i.test(publicUrl)) {
-    return { url: publicUrl, previewUrl: "", thumbnailUrl: "" };
+    return { url: publicUrl, fullUrl: publicUrl, previewUrl: "", thumbnailUrl: "" };
   }
   if (mediaKind === "image") {
     return {
       url: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:eco,c_limit,w_1600"),
+      fullUrl: publicUrl,
       previewUrl: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:low,c_fill,w_720,h_720"),
       thumbnailUrl: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:low,c_fill,w_240,h_240"),
     };
@@ -1987,11 +1984,12 @@ function publicMediaVariants(url, kind) {
   if (mediaKind === "video") {
     return {
       url: publicUrl,
+      fullUrl: publicUrl,
       previewUrl: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:eco,c_limit,w_960"),
       thumbnailUrl: cloudinaryTransformUrl(publicUrl, "so_0,f_jpg,q_auto:low,c_fill,w_640,h_900"),
     };
   }
-  return { url: publicUrl, previewUrl: "", thumbnailUrl: "" };
+  return { url: publicUrl, fullUrl: publicUrl, previewUrl: "", thumbnailUrl: "" };
 }
 
 function toPublicMediaList(media) {
@@ -2007,7 +2005,7 @@ function toPublicMediaList(media) {
     }))
     .filter((m) => m.kind && m.mime)
     .map((m) => {
-      if (!m.url || !uploadUrlExists(m.url)) return { ...m, url: "", previewUrl: "", thumbnailUrl: "", missing: true };
+      if (!m.url || !uploadUrlExists(m.url)) return { ...m, url: "", fullUrl: "", previewUrl: "", thumbnailUrl: "", missing: true };
       return { ...m, ...publicMediaVariants(m.url, m.kind) };
     });
 }
@@ -2347,6 +2345,18 @@ try {
 // Health check for Render
 app.get("/healthz", (req, res) => res.status(200).send("ok"));
 
+app.use((req, res, next) => {
+  const pathName = String(req.path || "");
+  if (pathName.startsWith("/api/")) {
+    res.setHeader("Cache-Control", "no-store");
+  } else if (pathName.startsWith("/uploads/")) {
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  } else if (/\.(?:js|css|svg|png|jpg|jpeg|webp|gif|woff2?)$/i.test(pathName)) {
+    res.setHeader("Cache-Control", "public, max-age=86400");
+  }
+  next();
+});
+
 // -----------------------------
 // API
 // -----------------------------
@@ -2529,8 +2539,8 @@ app.get("/api/me", async (req, res) => {
 function paginationFromReq(req) {
   const pageRaw = Number.parseInt(String(req.query.page || "1"), 10);
   const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1;
-  const limitRaw = Number.parseInt(String(req.query.limit || "10"), 10);
-  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(20, limitRaw)) : 10;
+  const limitRaw = Number.parseInt(String(req.query.limit || "8"), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(10, limitRaw)) : 8;
   const cursorRaw = Number.parseInt(String(req.query.cursor || ""), 10);
   const cursor = Number.isFinite(cursorRaw) && cursorRaw >= 0 ? cursorRaw : (page - 1) * limit;
   return { page, limit, cursor };
@@ -2583,8 +2593,8 @@ app.get("/api/feed", async (req, res) => {
 app.get("/api/reels", async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
-  const limitRaw = Number.parseInt(String(req.query.limit || "15"), 10);
-  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(40, limitRaw)) : 15;
+  const limitRaw = Number.parseInt(String(req.query.limit || "8"), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(12, limitRaw)) : 8;
   const cursorRaw = Number.parseInt(String(req.query.cursor || "0"), 10);
   const cursor = Number.isFinite(cursorRaw) && cursorRaw >= 0 ? cursorRaw : 0;
   let slice;
@@ -4851,8 +4861,7 @@ async function start() {
     try {
       await initPostgresSchema();
     } catch (err) {
-      if (NODE_ENV === "production") throw err;
-      console.warn(`[postgres] Unavailable in development; falling back to data.json (${err && err.code ? err.code : err.message})`);
+      console.warn(`[postgres] Unavailable; falling back to data.json (${err && err.code ? err.code : err.message})`);
       USE_POSTGRES = false;
       pgPool = null;
       await connectDataFile();
