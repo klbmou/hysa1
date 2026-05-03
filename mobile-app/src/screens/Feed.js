@@ -9,17 +9,20 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '../context/AuthContext';
 import { feedAPI, postAPI } from '../api/client';
 import PostCard from '../components/PostCard';
-import { FeedIcon, TrendingUp } from 'lucide-react-native';
+import { TrendingUp } from 'lucide-react-native';
 
 const Feed = ({ navigation }) => {
+  const { logout } = useAuth();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
+  const [errorStatus, setErrorStatus] = useState(null);
   const feedRequestInFlight = useRef(false);
 
   const fetchFeed = async (isRefresh = false) => {
@@ -40,7 +43,15 @@ const Feed = ({ navigation }) => {
       }
     } catch (err) {
       console.error('Feed error:', err);
-      setError('Failed to load feed');
+      const status = err.response?.status;
+      setErrorStatus(status);
+      if (status === 401) {
+        setError('UNAUTHORIZED');
+      } else if (status === 503) {
+        setError('Server is starting up. Please wait and try again.');
+      } else {
+        setError('Failed to load feed');
+      }
     } finally {
       feedRequestInFlight.current = false;
       setLoading(false);
@@ -139,6 +150,16 @@ const Feed = ({ navigation }) => {
     }
 
     if (error) {
+      if (errorStatus === 401) {
+        return (
+          <View style={styles.centerContainer}>
+            <Text style={styles.errorText}>Please sign in again.</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={() => logout()}>
+              <Text style={styles.retryText}>Sign In</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
       return (
         <View style={styles.centerContainer}>
           <Text style={styles.errorText}>{error}</Text>
@@ -151,7 +172,7 @@ const Feed = ({ navigation }) => {
 
     return (
       <View style={styles.centerContainer}>
-        <FeedIcon size={48} color="#ccc" />
+        <Text style={{ fontSize: 48 }}>📝</Text>
         <Text style={styles.emptyText}>No posts yet</Text>
         <Text style={styles.emptySubtext}>Be the first to post!</Text>
       </View>

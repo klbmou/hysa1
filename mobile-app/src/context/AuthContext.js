@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { authAPI } from '../api/client';
+import { authAPI, normalizeAuthResponse, parseAuthCookieFromResponse } from '../api/client';
 
 const AuthContext = createContext({});
 
@@ -15,7 +15,7 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState(null);
+  const [authCookie, setAuthCookie] = useState(null);
 
   useEffect(() => {
     loadStoredAuth();
@@ -23,13 +23,17 @@ export const AuthProvider = ({ children }) => {
 
   const loadStoredAuth = async () => {
     try {
-      const storedToken = await SecureStore.getItemAsync('userToken');
+      const storedCookie = await SecureStore.getItemAsync('authCookie');
       const storedUser = await SecureStore.getItemAsync('userData');
-      
-      if (storedToken && storedUser) {
+
+      if (storedCookie && storedUser) {
         const userData = JSON.parse(storedUser);
-        setToken(storedToken);
+        setAuthCookie(storedCookie);
         setUser(userData);
+      } else if (storedUser && !storedCookie) {
+        // Orphaned user data without auth cookie — clean up
+        await SecureStore.deleteItemAsync('userData');
+        await SecureStore.deleteItemAsync('csrfToken');
       }
     } catch (error) {
       console.error('Error loading stored auth:', error);
@@ -42,24 +46,31 @@ export const AuthProvider = ({ children }) => {
     try {
       console.log('Attempting login for user:', username);
       const response = await authAPI.login(username, password);
-      console.log('Login response:', response.data);
-      const { token: newToken, me } = response.data;
-      
-      await SecureStore.setItemAsync('userToken', newToken);
-      await SecureStore.setItemAsync('userData', JSON.stringify(me));
-      
-      setToken(newToken);
-      setUser(me);
-      
+      const { csrfToken, user: newUser } = normalizeAuthResponse(response);
+
+      // Extract the real auth cookie from Set-Cookie header
+      const cookieValue = parseAuthCookieFromResponse(response) || csrfToken;
+
+      if (!newUser) {
+        return { ok: false, error: 'Login succeeded but no user data was returned.' };
+      }
+
+      if (cookieValue) {
+        await SecureStore.setItemAsync('authCookie', cookieValue);
+      }
+      if (csrfToken) {
+        await SecureStore.setItemAsync('csrfToken', csrfToken);
+      }
+      await SecureStore.setItemAsync('userData', JSON.stringify(newUser));
+
+      setAuthCookie(cookieValue);
+      setUser(newUser);
+
       return { ok: true };
     } catch (error) {
-      console.log('API Error:', error.response?.data);
-      console.log('Full error:', error.message);
+      console.log('API Error:', error.response?.data?.error || error.message);
       if (error.response) {
         console.log('Error status:', error.response.status);
-        console.log('Error data:', JSON.stringify(error.response.data));
-      } else if (error.request) {
-        console.log('No response received:', error.request);
       }
       const errorMessage = error.response?.data?.error || 'LOGIN_FAILED';
       return { ok: false, error: errorMessage };
@@ -70,24 +81,31 @@ export const AuthProvider = ({ children }) => {
     try {
       console.log('Attempting signup for user:', username);
       const response = await authAPI.signup(username, password);
-      console.log('Signup response:', response.data);
-      const { token: newToken, me } = response.data;
-      
-      await SecureStore.setItemAsync('userToken', newToken);
-      await SecureStore.setItemAsync('userData', JSON.stringify(me));
-      
-      setToken(newToken);
-      setUser(me);
-      
+      const { csrfToken, user: newUser } = normalizeAuthResponse(response);
+
+      // Extract the real auth cookie from Set-Cookie header
+      const cookieValue = parseAuthCookieFromResponse(response) || csrfToken;
+
+      if (!newUser) {
+        return { ok: false, error: 'Signup succeeded but no user data was returned.' };
+      }
+
+      if (cookieValue) {
+        await SecureStore.setItemAsync('authCookie', cookieValue);
+      }
+      if (csrfToken) {
+        await SecureStore.setItemAsync('csrfToken', csrfToken);
+      }
+      await SecureStore.setItemAsync('userData', JSON.stringify(newUser));
+
+      setAuthCookie(cookieValue);
+      setUser(newUser);
+
       return { ok: true };
     } catch (error) {
-      console.log('API Error:', error.response?.data);
-      console.log('Full error:', error.message);
+      console.log('API Error:', error.response?.data?.error || error.message);
       if (error.response) {
         console.log('Error status:', error.response.status);
-        console.log('Error data:', JSON.stringify(error.response.data));
-      } else if (error.request) {
-        console.log('No response received:', error.request);
       }
       const errorMessage = error.response?.data?.error || 'SIGNUP_FAILED';
       return { ok: false, error: errorMessage };
@@ -98,13 +116,15 @@ export const AuthProvider = ({ children }) => {
     try {
       await authAPI.logout();
     } catch (error) {
-      console.error('Logout error:', error);
+      // Logout may fail (403) if CSRF/auth is already invalid — still clear local state
+      console.log('Logout request failed (expected if session expired):', error.message);
     }
-    
-    await SecureStore.deleteItemAsync('userToken');
+
+    await SecureStore.deleteItemAsync('authCookie');
+    await SecureStore.deleteItemAsync('csrfToken');
     await SecureStore.deleteItemAsync('userData');
-    
-    setToken(null);
+
+    setAuthCookie(null);
     setUser(null);
   };
 
@@ -116,13 +136,13 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
-    token,
+    authCookie,
     loading,
     login,
     signup,
     logout,
     updateProfile,
-    isAuthenticated: !!token && !!user,
+    isAuthenticated: !!authCookie && !!user,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

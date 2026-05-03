@@ -1,7 +1,48 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-const API_BASE_URL = 'https://hysa1-4.onrender.com';
+// TODO: Make this an environment variable (e.g. EXPO_PUBLIC_API_URL) so dev/prod can differ without code changes.
+const API_BASE_URL = 'https://hysa1-us9q.onrender.com';
+
+// Backend uses cookie-based auth (hysa_auth) ONLY.
+// There is NO Authorization: Bearer support in the backend.
+// Mobile extracts the auth cookie from Set-Cookie header on login/signup,
+// stores it in SecureStore, and sends it as Cookie + x-csrf-token on every request.
+
+// Normalize various backend auth response shapes into { csrfToken, user }.
+// The csrfToken is used for CSRF protection on unsafe HTTP methods.
+// The real auth token comes from Set-Cookie header (parsed separately).
+// Supports:
+//   { ok, token, user }            -- legacy/future Bearer style
+//   { ok, accessToken, user }
+//   { ok, jwt, user }
+//   { ok, csrfToken, me }          <-- current HYSA backend shape
+//   { ok, me }
+function normalizeAuthResponse(response) {
+  const data = response.data || {};
+  const user = data.user || data.me || null;
+  // csrfToken for CSRF header on POST/PUT/PATCH/DELETE
+  const csrfToken = data.csrfToken || data.token || data.accessToken || data.jwt || null;
+
+  return { csrfToken, user };
+}
+
+export { normalizeAuthResponse };
+
+// Parse the hysa_auth cookie value from Set-Cookie response header.
+// Returns the cookie value string, or null if not found.
+function parseAuthCookieFromResponse(response) {
+  const setCookie = response.headers['set-cookie'];
+  if (!setCookie) return null;
+  const cookies = Array.isArray(setCookie) ? setCookie : [setCookie];
+  for (const c of cookies) {
+    const match = c.match(/hysa_auth=([^;]+)/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+export { parseAuthCookieFromResponse };
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -10,38 +51,33 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
   timeout: 30000,
-  // Enable withCredentials for CORS
-  withCredentials: false,
 });
 
-// Simple retry mechanism for Render server wake-up
-const retryRequest = async (config, maxRetries = 2) => {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      return await axios(config);
-    } catch (error) {
-      if (attempt === maxRetries - 1) throw error;
-      // Wait before retry (exponential backoff)
-      await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-    }
-  }
-};
-
-// Request interceptor to add JWT token and handle retries
+// Request interceptor: send Cookie + CSRF header for backend auth
 api.interceptors.request.use(
   async (config) => {
     try {
-      const token = await SecureStore.getItemAsync('userToken');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+      const authCookie = await SecureStore.getItemAsync('authCookie');
+      if (authCookie) {
+        // Backend reads auth ONLY from hysa_auth cookie, not Authorization header
+        config.headers['Cookie'] = `hysa_auth=${authCookie}`;
+      }
+
+      // For unsafe methods, send CSRF token required by backend
+      const method = String(config.method || '').toUpperCase();
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+        const csrfToken = await SecureStore.getItemAsync('csrfToken');
+        if (csrfToken) {
+          config.headers['x-csrf-token'] = csrfToken;
+        }
       }
     } catch (error) {
-      console.error('Error retrieving token:', error);
+      console.error('Error retrieving auth headers:', error);
     }
-    
-    // Log request for debugging
+
+    // Log request for debugging (no sensitive data)
     console.log(`API Request: ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
-    
+
     return config;
   },
   (error) => {
@@ -54,13 +90,12 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     // Handle network errors with retry
-    if (!error.response && error.code === 'ECONNABORTED' || error.code === 'NETWORK_ERROR') {
+    if (!error.response && (error.code === 'ECONNABORTED' || error.code === 'NETWORK_ERROR')) {
       console.log('Network error, this may be due to Render server sleep. Retrying...');
       try {
         const originalRequest = error.config;
         if (!originalRequest._retry) {
           originalRequest._retry = true;
-          // Wait a bit for Render to wake up
           await new Promise(resolve => setTimeout(resolve, 2000));
           return api(originalRequest);
         }
@@ -68,13 +103,14 @@ api.interceptors.response.use(
         console.error('Retry failed:', retryError.message);
       }
     }
-    
+
     if (error.response?.status === 401) {
-      // Token expired or invalid - clear storage
-      await SecureStore.deleteItemAsync('userToken');
+      // Token expired or invalid — clear local auth storage
+      await SecureStore.deleteItemAsync('authCookie');
+      await SecureStore.deleteItemAsync('csrfToken');
       await SecureStore.deleteItemAsync('userData');
     }
-    
+
     return Promise.reject(error);
   }
 );
