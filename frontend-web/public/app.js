@@ -4088,6 +4088,28 @@ function commentNode(comment, onReply, onDelete, post, depth = 0) {
   return wrap;
 }
 
+function normalizeCommentTree(input) {
+  const source = Array.isArray(input) ? input : [];
+  const byId = new Map();
+  const roots = [];
+  for (const original of source) {
+    if (!original || !original.id) continue;
+    const existingReplies = Array.isArray(original.replies) ? original.replies : [];
+    byId.set(String(original.id), { ...original, replies: existingReplies.slice() });
+  }
+  for (const comment of byId.values()) {
+    const parentId = String(comment.parentCommentId || comment.parentId || "");
+    if (parentId && byId.has(parentId)) {
+      const parent = byId.get(parentId);
+      const alreadyNested = parent.replies.some((reply) => String(reply && reply.id) === String(comment.id));
+      if (!alreadyNested) parent.replies.push(comment);
+      continue;
+    }
+    roots.push(comment);
+  }
+  return roots;
+}
+
 function richTextNode(textValue, { truncate = false } = {}) {
   const raw = String(textValue || "");
   const text = document.createElement("div");
@@ -4604,7 +4626,7 @@ function postNode(post) {
     commentsList.textContent = "";
     try {
       const r = await api(`/api/posts/${encodeURIComponent(post.id)}/comments?limit=50&sort=${encodeURIComponent(commentSortMode)}`, { method: "GET" });
-      const list = Array.isArray(r.comments) ? r.comments : [];
+      const list = normalizeCommentTree(r.comments);
       if (!list.length) {
         const empty = document.createElement("div");
         empty.className = "muted";
@@ -4636,12 +4658,16 @@ function postNode(post) {
     pulseTap(commentBtn);
     commentsWrap.hidden = !commentsWrap.hidden;
     if (!commentsWrap.hidden) {
+      document.body.classList.add("comments-open");
       commentInput.focus();
       if (!commentsLoaded) await loadComments();
+    } else {
+      document.body.classList.remove("comments-open");
     }
   });
   on(commentsClose, "click", () => {
     commentsWrap.hidden = true;
+    document.body.classList.remove("comments-open");
   });
   on(topSortBtn, "click", async () => {
     commentSortMode = "top";
@@ -4669,18 +4695,15 @@ function postNode(post) {
       });
       const empty = commentsList.querySelector("[data-empty='true']");
       if (empty) empty.remove();
-      commentsList.appendChild(commentNode(r.comment, (targetComment) => {
-        replyToCommentId = targetComment.id;
-        commentInput.focus();
-        commentInput.placeholder = `Reply to @${targetComment.author}`;
-      }, deleteComment, post));
       commentInput.value = "";
       replyToCommentId = null;
       commentInput.placeholder = t("writeComment");
       post.commentCount = r.commentCount ?? (Number(post.commentCount) || 0) + 1;
       commentBtn.innerHTML = `${icon("comment")}<strong>${formatCount(post.commentCount || 0)}</strong>`;
-      commentsLoaded = true;
+      commentsLoaded = false;
       commentsWrap.hidden = false;
+      document.body.classList.add("comments-open");
+      await loadComments();
     } catch (err) {
       setMsg(commentMsg, humanizeError(err?.message), true);
     } finally {
@@ -5350,6 +5373,7 @@ async function loadReels() {
   }
 
   const videos = Array.from(el.reelsView.querySelectorAll(".reelCard video"));
+  for (const node of el.reelsView.querySelectorAll(".post, .postActions, .postMedia")) node.remove();
   videos.forEach((video) => {
     video.preload = "metadata";
   });
@@ -5398,7 +5422,7 @@ async function openReelComments(reel, commentAction) {
     let replyTo = "";
     async function load() {
       const r = await api(`/api/posts/${encodeURIComponent(reel.id)}/comments?limit=80`, { method: "GET" });
-      const comments = Array.isArray(r.comments) ? r.comments : [];
+      const comments = normalizeCommentTree(r.comments);
       list.textContent = "";
       if (!comments.length) {
         const empty = document.createElement("div");
@@ -5915,6 +5939,7 @@ function route() {
   rememberHomeScroll();
   const h = location.hash || "#home";
   document.body.classList.toggle("reels-active", h === "#reels");
+  if (h === "#reels") document.body.classList.remove("comments-open");
   const mProfile = /^#u\/(.+)$/.exec(h);
   const mPost = /^#p\/(.+)$/.exec(h);
   const mDm = /^#dm\/(.+)$/.exec(h);
