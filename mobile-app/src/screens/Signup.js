@@ -10,8 +10,10 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  StatusBar,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import theme from '../theme';
 
 const Signup = ({ navigation }) => {
   const { signup } = useAuth();
@@ -25,22 +27,18 @@ const Signup = ({ navigation }) => {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-
     if (username.trim().length < 3 || username.trim().length > 20) {
       Alert.alert('Error', 'Username must be between 3 and 20 characters');
       return;
     }
-
     if (!/^[a-z0-9_]+$/i.test(username.trim())) {
       Alert.alert('Error', 'Username can only contain letters, numbers, and underscores');
       return;
     }
-
     if (password.trim().length < 6 || password.trim().length > 200) {
       Alert.alert('Error', 'Password must be between 6 and 200 characters');
       return;
     }
-
     if (password !== confirmPassword) {
       Alert.alert('Error', 'Passwords do not match');
       return;
@@ -74,10 +72,14 @@ const Signup = ({ navigation }) => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      <StatusBar barStyle="light-content" />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
+        <View style={styles.glowOrb1} />
+        <View style={styles.glowOrb2} />
+
         <View style={styles.header}>
           <Text style={styles.title}>HYSA1</Text>
           <Text style={styles.subtitle}>Create your account</Text>
@@ -89,7 +91,7 @@ const Signup = ({ navigation }) => {
             <TextInput
               style={styles.input}
               placeholder="Choose a username"
-              placeholderTextColor="#999"
+              placeholderTextColor={theme.colors.textMuted}
               value={username}
               onChangeText={setUsername}
               autoCapitalize="none"
@@ -104,7 +106,7 @@ const Signup = ({ navigation }) => {
             <TextInput
               style={styles.input}
               placeholder="Create a password"
-              placeholderTextColor="#999"
+              placeholderTextColor={theme.colors.textMuted}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -118,7 +120,7 @@ const Signup = ({ navigation }) => {
             <TextInput
               style={styles.input}
               placeholder="Confirm your password"
-              placeholderTextColor="#999"
+              placeholderTextColor={theme.colors.textMuted}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
@@ -153,26 +155,46 @@ const Signup = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.bgPrimary,
   },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
     padding: 24,
   },
+  glowOrb1: {
+    position: 'absolute',
+    top: -60,
+    right: -60,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: theme.colors.accentSecondary,
+    opacity: 0.10,
+  },
+  glowOrb2: {
+    position: 'absolute',
+    bottom: -40,
+    left: -40,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: theme.colors.accent,
+    opacity: 0.08,
+  },
   header: {
     alignItems: 'center',
     marginBottom: 40,
   },
   title: {
-    fontSize: 42,
-    fontWeight: 'bold',
-    color: '#1a1a2e',
+    ...theme.typography.h1,
+    fontSize: 48,
+    color: '#FFFFFF',
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#666',
+    ...theme.typography.body,
+    color: theme.colors.textSecondary,
   },
   form: {
     width: '100%',
@@ -181,53 +203,52 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   label: {
-    fontSize: 14,
+    ...theme.typography.bodySm,
     fontWeight: '600',
-    color: '#333',
+    color: theme.colors.textSecondary,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
+    backgroundColor: theme.colors.bgInput,
+    borderRadius: theme.radius.md,
     padding: 16,
     fontSize: 16,
-    color: '#333',
+    color: theme.colors.textPrimary,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: theme.colors.borderLight,
   },
   hint: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 4,
+    ...theme.typography.caption,
+    color: theme.colors.textMuted,
+    marginTop: 6,
   },
   button: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 12,
+    backgroundColor: theme.colors.accentSecondary,
+    borderRadius: theme.radius.md,
     padding: 16,
     alignItems: 'center',
     marginTop: 8,
   },
   buttonDisabled: {
-    opacity: 0.7,
+    opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    ...theme.typography.button,
+    color: '#FFFFFF',
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 24,
+    marginTop: 28,
   },
   footerText: {
-    fontSize: 14,
-    color: '#666',
+    ...theme.typography.bodySm,
+    color: theme.colors.textMuted,
   },
   linkText: {
-    fontSize: 14,
-    color: '#1a1a2e',
-    fontWeight: '600',
+    ...theme.typography.bodySm,
+    fontWeight: '700',
+    color: theme.colors.accent,
   },
 });
 

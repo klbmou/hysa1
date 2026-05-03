@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Search as SearchIcon, User, TrendingUp } from 'lucide-react-native';
 import { searchAPI, feedAPI } from '../api/client';
+import theme from '../theme';
 
 const Search = ({ navigation }) => {
   const [query, setQuery] = useState('');
@@ -35,17 +36,19 @@ const Search = ({ navigation }) => {
   };
 
   const handleSearch = async () => {
-    if (!query.trim()) return;
-    
+    const trimmed = query.trim();
+    if (!trimmed) return;
+
     setLoading(true);
     setSearched(true);
-    
+
     try {
-      const response = await searchAPI.search(query);
+      const response = await searchAPI.search(trimmed);
       if (response.data.ok) {
-        const posts = response.data.posts || [];
-        const users = response.data.users || [];
-        setResults([...users.map(u => ({ ...u, isUser: true })), ...posts]);
+        const rawResults = response.data.results || [];
+        setResults(rawResults);
+      } else {
+        setResults([]);
       }
     } catch (err) {
       console.error('Search error:', err);
@@ -55,17 +58,39 @@ const Search = ({ navigation }) => {
     }
   };
 
+  const clearSearch = () => {
+    setQuery('');
+    setSearched(false);
+    setResults([]);
+  };
+
   const handleTrendPress = (tag) => {
     setQuery(tag);
-    handleSearch();
+    setTimeout(() => {
+      const trimmed = tag.trim();
+      if (trimmed) {
+        setLoading(true);
+        setSearched(true);
+        searchAPI.search(trimmed)
+          .then((response) => {
+            if (response.data.ok) {
+              setResults(response.data.results || []);
+            } else {
+              setResults([]);
+            }
+          })
+          .catch(() => setResults([]))
+          .finally(() => setLoading(false));
+      }
+    }, 0);
   };
 
   const handleUserPress = (userKey) => {
-    navigation.navigate('Profile', { userKey });
+    if (userKey) navigation.navigate('Profile', { userKey });
   };
 
   const handlePostPress = (postId) => {
-    navigation.navigate('PostDetail', { postId });
+    if (postId) navigation.navigate('PostDetail', { postId });
   };
 
   const renderTrendItem = ({ item }) => (
@@ -73,7 +98,9 @@ const Search = ({ navigation }) => {
       style={styles.trendItem}
       onPress={() => handleTrendPress(item.tag)}
     >
-      <TrendingUp size={18} color="#1a1a2e" />
+      <View style={styles.trendIcon}>
+        <TrendingUp size={18} color={theme.colors.accent} />
+      </View>
       <View style={styles.trendInfo}>
         <Text style={styles.trendTag}>{item.tag}</Text>
         <Text style={styles.trendCount}>{item.count} posts</Text>
@@ -82,8 +109,8 @@ const Search = ({ navigation }) => {
   );
 
   const renderResultItem = ({ item }) => {
-    if (item.isUser) {
-      const userKey = item.userKey || item.key || item.username;
+    if (item.type === 'user') {
+      const userKey = item.key || item.userKey || item.username;
       return (
         <TouchableOpacity
           style={styles.resultItem}
@@ -93,12 +120,19 @@ const Search = ({ navigation }) => {
             <Image source={{ uri: item.avatarUrl }} style={styles.resultAvatar} />
           ) : (
             <View style={styles.avatarPlaceholder}>
-              <User size={18} color="#666" />
+              <User size={18} color={theme.colors.textMuted} />
             </View>
           )}
           <View style={styles.resultContent}>
-            <Text style={styles.resultAuthor}>{item.username || item.key || 'User'}</Text>
-            {item.bio ? <Text style={styles.resultText} numberOfLines={1}>{item.bio}</Text> : null}
+            <View style={styles.resultHeader}>
+              <Text style={styles.resultAuthor}>
+                {item.displayName || item.username || 'User'}
+              </Text>
+              {item.verified && (
+                <Text style={styles.verifiedBadge}>&#10003;</Text>
+              )}
+            </View>
+            <Text style={styles.resultHandle}>@{item.username || item.key || ''}</Text>
           </View>
         </TouchableOpacity>
       );
@@ -109,84 +143,111 @@ const Search = ({ navigation }) => {
         style={styles.resultItem}
         onPress={() => handlePostPress(item.id)}
       >
-        <TouchableOpacity onPress={() => handleUserPress(item.authorKey)}>
+        <TouchableOpacity
+          onPress={() => handleUserPress(item.authorKey)}
+        >
           {item.authorAvatar ? (
             <Image source={{ uri: item.authorAvatar }} style={styles.resultAvatar} />
           ) : (
             <View style={styles.avatarPlaceholder}>
-              <User size={18} color="#666" />
+              <User size={18} color={theme.colors.textMuted} />
             </View>
           )}
         </TouchableOpacity>
         <View style={styles.resultContent}>
           <View style={styles.resultHeader}>
-            <Text style={styles.resultAuthor}>{item.author}</Text>
-            <Text style={styles.resultTime}>
-              {new Date(item.createdAt).toLocaleDateString()}
-            </Text>
+            <Text style={styles.resultAuthor}>{item.author || 'User'}</Text>
+            {item.createdAt && (
+              <Text style={styles.resultTime}>
+                {new Date(item.createdAt).toLocaleDateString()}
+              </Text>
+            )}
           </View>
           <Text style={styles.resultText} numberOfLines={2}>
-            {item.text}
+            {item.text || ''}
           </Text>
+          {item.hashtag && (
+            <Text style={styles.hashtag}>{item.hashtag}</Text>
+          )}
         </View>
       </TouchableOpacity>
+    );
+  };
+
+  const renderEmpty = () => {
+    if (loading) {
+      return (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color={theme.colors.accent} />
+        </View>
+      );
+    }
+    if (searched) {
+      return (
+        <View style={styles.centerContainer}>
+          <Text style={styles.emptyText}>No results found</Text>
+        </View>
+      );
+    }
+    return (
+      <View>
+        <Text style={styles.sectionTitle}>Trending</Text>
+        {trends.length > 0 ? (
+          trends.map((item) => (
+            <TouchableOpacity
+              key={item.tag || item.id || Math.random()}
+              style={styles.trendItem}
+              onPress={() => handleTrendPress(item.tag)}
+            >
+              <View style={styles.trendIcon}>
+                <TrendingUp size={18} color={theme.colors.accent} />
+              </View>
+              <View style={styles.trendInfo}>
+                <Text style={styles.trendTag}>{item.tag}</Text>
+                <Text style={styles.trendCount}>{item.count || 0} posts</Text>
+              </View>
+            </TouchableOpacity>
+          ))
+        ) : (
+          <Text style={styles.emptyText}>No trends available</Text>
+        )}
+      </View>
     );
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.searchBar}>
-        <SearchIcon size={20} color="#999" />
+        <SearchIcon size={20} color={theme.colors.textMuted} />
         <TextInput
           style={styles.searchInput}
           placeholder="Search HYSA1"
-          placeholderTextColor="#999"
+          placeholderTextColor={theme.colors.textMuted}
           value={query}
           onChangeText={setQuery}
           onSubmitEditing={handleSearch}
           returnKeyType="search"
+          autoCapitalize="none"
         />
         {query.length > 0 && (
-          <TouchableOpacity onPress={() => setQuery('')}>
+          <TouchableOpacity onPress={clearSearch}>
             <Text style={styles.clearButton}>Clear</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {!searched ? (
-        <View style={styles.content}>
-          <Text style={styles.sectionTitle}>Trending</Text>
-          {trends.length > 0 ? (
-            <FlatList
-              data={trends}
-              renderItem={renderTrendItem}
-              keyExtractor={(item, index) => `trend-${index}`}
-              scrollEnabled={false}
-            />
-          ) : (
-            <Text style={styles.emptyText}>No trends available</Text>
-          )}
-        </View>
-      ) : (
-        <View style={styles.content}>
-          {loading ? (
-            <View style={styles.centerContainer}>
-              <ActivityIndicator size="large" color="#1a1a2e" />
-            </View>
-          ) : results.length > 0 ? (
-            <FlatList
-              data={results}
-              renderItem={renderResultItem}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-            />
-          ) : (
-            <View style={styles.centerContainer}>
-              <Text style={styles.emptyText}>No results found</Text>
-            </View>
-          )}
-        </View>
-      )}
+      <FlatList
+        data={!searched && trends.length > 0 && results.length === 0 ? trends : results}
+        renderItem={!searched ? renderTrendItem : renderResultItem}
+        keyExtractor={(item, index) => {
+          if (item.type === 'user') return `user-${item.key || item.username || index}`;
+          if (item.type === 'post') return `post-${item.id || index}`;
+          return `trend-${item.tag || index}`;
+        }}
+        ListEmptyComponent={renderEmpty}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
+      />
     </View>
   );
 };
@@ -194,37 +255,36 @@ const Search = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.bgPrimary,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
+    backgroundColor: theme.colors.bgInput,
+    borderRadius: theme.radius.md,
     margin: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: theme.colors.borderLight,
   },
   searchInput: {
     flex: 1,
     marginLeft: 8,
     fontSize: 16,
-    color: '#333',
+    color: theme.colors.textPrimary,
   },
   clearButton: {
-    color: '#666',
+    color: theme.colors.accentSecondary,
     fontSize: 14,
+    fontWeight: '600',
     paddingHorizontal: 8,
   },
   content: {
-    flex: 1,
     padding: 12,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a1a2e',
+    ...theme.typography.h3,
+    color: theme.colors.textPrimary,
     marginBottom: 16,
   },
   trendItem: {
@@ -232,7 +292,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: theme.colors.borderLight,
+  },
+  trendIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.bgInput,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   trendInfo: {
     marginLeft: 12,
@@ -240,18 +309,18 @@ const styles = StyleSheet.create({
   trendTag: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a2e',
+    color: theme.colors.textPrimary,
   },
   trendCount: {
     fontSize: 13,
-    color: '#999',
+    color: theme.colors.textMuted,
     marginTop: 2,
   },
   resultItem: {
     flexDirection: 'row',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: theme.colors.borderLight,
   },
   resultAvatar: {
     width: 40,
@@ -262,7 +331,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: theme.colors.bgInput,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -273,31 +342,46 @@ const styles = StyleSheet.create({
   resultHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   resultAuthor: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1a1a2e',
+    color: theme.colors.textPrimary,
+  },
+  verifiedBadge: {
+    fontSize: 12,
+    color: theme.colors.verified,
+    marginLeft: 4,
+  },
+  resultHandle: {
+    fontSize: 13,
+    color: theme.colors.textMuted,
   },
   resultTime: {
     fontSize: 12,
-    color: '#999',
+    color: theme.colors.textMuted,
     marginLeft: 8,
   },
   resultText: {
     fontSize: 14,
-    color: '#666',
+    color: theme.colors.textSecondary,
     lineHeight: 20,
+  },
+  hashtag: {
+    fontSize: 13,
+    color: theme.colors.accent,
+    marginTop: 4,
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 40,
   },
   emptyText: {
     fontSize: 16,
-    color: '#999',
+    color: theme.colors.textMuted,
     textAlign: 'center',
   },
 });

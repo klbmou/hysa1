@@ -18,19 +18,19 @@ import ProfileScreen from '../screens/Profile';
 import PostDetailScreen from '../screens/PostDetail';
 import LoginScreen from '../screens/Login';
 import SignupScreen from '../screens/Signup';
+import theme from '../theme';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Main Tab Navigator
 const MainTabs = () => {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: '#1a1a2e',
-        tabBarInactiveTintColor: '#999',
+        tabBarActiveTintColor: theme.colors.accent,
+        tabBarInactiveTintColor: theme.colors.textMuted,
         tabBarLabelStyle: styles.tabBarLabel,
         tabBarItemStyle: styles.tabBarItem,
         tabBarIcon: ({ focused, color, size }) => {
@@ -73,7 +73,6 @@ const MainTabs = () => {
   );
 };
 
-// Auth Stack Navigator
 const AuthStack = () => {
   return (
     <Stack.Navigator
@@ -87,7 +86,6 @@ const AuthStack = () => {
   );
 };
 
-// App Stack (wraps tabs so PostDetail can be pushed from any tab)
 const AppStack = () => {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -97,14 +95,12 @@ const AppStack = () => {
   );
 };
 
-// Main App Navigator
 const AppNavigator = () => {
   const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        {/* Loading spinner would go here */}
       </View>
     );
   }
@@ -121,12 +117,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.bgPrimary,
   },
   tabBar: {
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.bgCard,
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    borderTopColor: theme.colors.border,
     paddingTop: 6,
     height: 60,
     paddingBottom: 6,

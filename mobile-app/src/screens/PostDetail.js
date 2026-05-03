@@ -24,6 +24,7 @@ import {
   Send,
 } from 'lucide-react-native';
 import { postAPI } from '../api/client';
+import theme from '../theme';
 
 const PostDetail = ({ navigation, route }) => {
   const postId = route.params?.postId;
@@ -138,7 +139,7 @@ const PostDetail = ({ navigation, route }) => {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#1a1a2e" />
+        <ActivityIndicator size="large" color={theme.colors.accent} />
       </View>
     );
   }
@@ -148,7 +149,7 @@ const PostDetail = ({ navigation, route }) => {
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <ArrowLeft size={24} color="#1a1a2e" />
+            <ArrowLeft size={24} color={theme.colors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Post</Text>
         </View>
@@ -170,13 +171,12 @@ const PostDetail = ({ navigation, route }) => {
     >
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <ArrowLeft size={24} color="#1a1a2e" />
+          <ArrowLeft size={24} color={theme.colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Post</Text>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Author */}
         <View style={styles.authorSection}>
           <TouchableOpacity
             style={styles.avatarContainer}
@@ -190,27 +190,24 @@ const PostDetail = ({ navigation, route }) => {
               <Image source={{ uri: post.authorAvatar }} style={styles.avatar} />
             ) : (
               <View style={styles.avatarPlaceholder}>
-                <User size={24} color="#666" />
+                <User size={24} color={theme.colors.textMuted} />
               </View>
             )}
           </TouchableOpacity>
           <View style={styles.authorInfo}>
             <View style={styles.nameRow}>
               <Text style={styles.authorName}>{post.author || post.authorKey || 'Unknown'}</Text>
-              {post.verified && <Verified size={16} color="#1DA1F2" fill="#1DA1F2" />}
+              {post.verified && <Verified size={16} color={theme.colors.verified} fill={theme.colors.verified} />}
             </View>
             <Text style={styles.authorKey}>@{post.authorKey || ''}</Text>
             <Text style={styles.timestamp}>{formatDate(post.createdAt)}</Text>
           </View>
         </View>
 
-        {/* Text */}
         {post.text ? <Text style={styles.postText}>{post.text}</Text> : null}
 
-        {/* Media */}
         {renderMedia()}
 
-        {/* Quoted post */}
         {post.quotedPost && (
           <View style={styles.quotedPost}>
             <Text style={styles.quotedAuthor}>{post.quotedPost.author}</Text>
@@ -220,26 +217,24 @@ const PostDetail = ({ navigation, route }) => {
           </View>
         )}
 
-        {/* Actions */}
         <View style={styles.actions}>
           <View style={styles.action}>
-            <Heart size={20} color="#666" />
+            <Heart size={20} color={theme.colors.textSecondary} />
             <Text style={styles.actionText}>{post.likeCount || 0}</Text>
           </View>
           <View style={styles.action}>
-            <MessageCircle size={20} color="#666" />
+            <MessageCircle size={20} color={theme.colors.textSecondary} />
             <Text style={styles.actionText}>{post.commentCount || comments.length || 0}</Text>
           </View>
           <View style={styles.action}>
-            <Repeat size={20} color="#666" />
+            <Repeat size={20} color={theme.colors.textSecondary} />
             <Text style={styles.actionText}>{post.repostCount || 0}</Text>
           </View>
           <View style={[styles.action, { marginLeft: 'auto' }]}>
-            <Bookmark size={20} color="#666" />
+            <Bookmark size={20} color={theme.colors.textSecondary} />
           </View>
         </View>
 
-        {/* Comments */}
         <View style={styles.commentsSection}>
           <Text style={styles.commentsTitle}>
             Comments ({comments.length})
@@ -250,7 +245,7 @@ const PostDetail = ({ navigation, route }) => {
             comments.map((comment) => (
               <View key={comment.id || comment.text} style={styles.commentItem}>
                 <View style={styles.commentAvatar}>
-                  <User size={16} color="#666" />
+                  <User size={16} color={theme.colors.textMuted} />
                 </View>
                 <View style={styles.commentContent}>
                   <Text style={styles.commentAuthor}>
@@ -264,12 +259,11 @@ const PostDetail = ({ navigation, route }) => {
         </View>
       </ScrollView>
 
-      {/* Comment input */}
       <View style={styles.commentInputRow}>
         <TextInput
           style={styles.commentInput}
           placeholder="Write a comment..."
-          placeholderTextColor="#999"
+          placeholderTextColor={theme.colors.textMuted}
           value={commentText}
           onChangeText={setCommentText}
           multiline
@@ -293,7 +287,7 @@ const PostDetail = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.bgPrimary,
   },
   centerContainer: {
     flex: 1,
@@ -307,7 +301,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.bgGlass,
   },
   backButton: {
     padding: 4,
@@ -316,7 +311,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1a1a2e',
+    color: theme.colors.textPrimary,
   },
   content: {
     flex: 1,
@@ -337,7 +332,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: theme.colors.bgInput,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -351,22 +346,22 @@ const styles = StyleSheet.create({
   authorName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a2e',
+    color: theme.colors.textPrimary,
   },
   authorKey: {
     fontSize: 13,
-    color: '#999',
+    color: theme.colors.textMuted,
     marginTop: 2,
   },
   timestamp: {
     fontSize: 13,
-    color: '#999',
+    color: theme.colors.textMuted,
     marginTop: 4,
   },
   postText: {
     fontSize: 16,
     lineHeight: 22,
-    color: '#1a1a2e',
+    color: theme.colors.textPrimary,
     paddingHorizontal: 16,
     paddingBottom: 12,
   },
@@ -377,26 +372,26 @@ const styles = StyleSheet.create({
   media: {
     width: '100%',
     height: 250,
-    borderRadius: 12,
+    borderRadius: theme.radius.md,
   },
   quotedPost: {
     marginHorizontal: 16,
     marginBottom: 12,
     padding: 12,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
+    backgroundColor: theme.colors.bgInput,
+    borderRadius: theme.radius.md,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: theme.colors.borderLight,
   },
   quotedAuthor: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#1a1a2e',
+    color: theme.colors.textPrimary,
     marginBottom: 4,
   },
   quotedText: {
     fontSize: 14,
-    color: '#666',
+    color: theme.colors.textSecondary,
   },
   actions: {
     flexDirection: 'row',
@@ -405,7 +400,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: theme.colors.borderLight,
   },
   action: {
     flexDirection: 'row',
@@ -414,7 +409,7 @@ const styles = StyleSheet.create({
   },
   actionText: {
     fontSize: 13,
-    color: '#666',
+    color: theme.colors.textSecondary,
     marginLeft: 4,
   },
   commentsSection: {
@@ -423,12 +418,12 @@ const styles = StyleSheet.create({
   commentsTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a2e',
+    color: theme.colors.textPrimary,
     marginBottom: 12,
   },
   noComments: {
     fontSize: 14,
-    color: '#999',
+    color: theme.colors.textMuted,
     textAlign: 'center',
     paddingVertical: 20,
   },
@@ -440,7 +435,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: theme.colors.bgInput,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
@@ -451,12 +446,12 @@ const styles = StyleSheet.create({
   commentAuthor: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#1a1a2e',
+    color: theme.colors.textPrimary,
     marginBottom: 2,
   },
   commentText: {
     fontSize: 14,
-    color: '#333',
+    color: theme.colors.textSecondary,
     lineHeight: 18,
   },
   commentInputRow: {
@@ -464,17 +459,17 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     padding: 12,
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-    backgroundColor: '#fff',
+    borderTopColor: theme.colors.border,
+    backgroundColor: theme.colors.bgCard,
   },
   commentInput: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 20,
+    backgroundColor: theme.colors.bgInput,
+    borderRadius: theme.radius.full,
     paddingHorizontal: 16,
     paddingVertical: 10,
     fontSize: 14,
-    color: '#333',
+    color: theme.colors.textPrimary,
     maxHeight: 100,
     marginRight: 8,
   },
@@ -482,7 +477,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: theme.colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -491,15 +486,15 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 16,
-    color: '#e0245e',
+    color: theme.colors.danger,
     textAlign: 'center',
     marginBottom: 16,
   },
   retryButton: {
-    backgroundColor: '#1a1a2e',
+    backgroundColor: theme.colors.accent,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: theme.radius.sm,
   },
   retryText: {
     color: '#fff',

@@ -18,8 +18,8 @@ import {
   Bell,
 } from 'lucide-react-native';
 import { notificationsAPI } from '../api/client';
+import theme from '../theme';
 
-// Mock notifications data since the API endpoint may not exist
 const generateMockNotifications = () => [
   {
     id: '1',
@@ -105,16 +105,16 @@ const Notifications = ({ navigation }) => {
   const getNotificationIcon = (type) => {
     switch (type) {
       case 'like':
-        return <Heart size={20} color="#e0245e" fill="#e0245e" />;
+        return <Heart size={18} color={theme.colors.like} fill={theme.colors.like} />;
       case 'comment':
-        return <MessageCircle size={20} color="#1DA1F2" fill="#1DA1F2" />;
+        return <MessageCircle size={18} color={theme.colors.bookmark} fill={theme.colors.bookmark} />;
       case 'repost':
-        return <Repeat size={20} color="#17BF63" fill="#17BF63" />;
+        return <Repeat size={18} color="#17BF63" fill="#17BF63" />;
       case 'new_follower':
       case 'follow':
-        return <UserPlus size={20} color="#1DA1F2" fill="#1DA1F2" />;
+        return <UserPlus size={18} color={theme.colors.accent} fill={theme.colors.accent} />;
       default:
-        return <Bell size={20} color="#666" />;
+        return <Bell size={18} color={theme.colors.textMuted} />;
     }
   };
 
@@ -147,7 +147,7 @@ const Notifications = ({ navigation }) => {
       style={[styles.notificationItem, !item.read && styles.unreadItem]}
       onPress={() => handleNotificationPress(item)}
     >
-      <View style={styles.iconContainer}>
+      <View style={[styles.iconContainer, !item.read && styles.iconContainerUnread]}>
         {getNotificationIcon(item.type)}
       </View>
       <View style={styles.content}>
@@ -156,7 +156,7 @@ const Notifications = ({ navigation }) => {
             <Image source={{ uri: item.actor.avatar }} style={styles.actorAvatar} />
           ) : (
             <View style={styles.avatarPlaceholder}>
-              <User size={16} color="#666" />
+              <User size={14} color={theme.colors.textMuted} />
             </View>
           )}
           <Text style={styles.actorName}>{item.actor.username}</Text>
@@ -177,7 +177,7 @@ const Notifications = ({ navigation }) => {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#1a1a2e" />
+        <ActivityIndicator size="large" color={theme.colors.accent} />
       </View>
     );
   }
@@ -191,17 +191,17 @@ const Notifications = ({ navigation }) => {
       <FlatList
         data={notifications}
         renderItem={renderNotification}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => String(item.id || item._id || Math.random())}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#1a1a2e"
+            tintColor={theme.colors.accent}
           />
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Bell size={48} color="#ccc" />
+            <Bell size={48} color={theme.colors.textMuted} />
             <Text style={styles.emptyText}>No notifications yet</Text>
           </View>
         }
@@ -214,37 +214,40 @@ const Notifications = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.bgPrimary,
   },
   header: {
     paddingVertical: 16,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.bgGlass,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1a1a2e',
+    ...theme.typography.h3,
+    color: theme.colors.textPrimary,
   },
   notificationItem: {
     flexDirection: 'row',
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: theme.colors.borderLight,
   },
   unreadItem: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: theme.colors.bgGlassLight,
   },
   iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f0f0f0',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.bgInput,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+  },
+  iconContainerUnread: {
+    backgroundColor: 'rgba(124, 58, 237, 0.14)',
   },
   content: {
     flex: 1,
@@ -263,7 +266,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#e0e0e0',
+    backgroundColor: theme.colors.bgInput,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 6,
@@ -271,22 +274,22 @@ const styles = StyleSheet.create({
   actorName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1a1a2e',
+    color: theme.colors.textPrimary,
   },
   notificationText: {
     fontSize: 14,
-    color: '#666',
+    color: theme.colors.textSecondary,
     marginBottom: 4,
   },
   commentText: {
     fontSize: 13,
-    color: '#999',
+    color: theme.colors.textMuted,
     fontStyle: 'italic',
     marginBottom: 4,
   },
   timestamp: {
     fontSize: 12,
-    color: '#ccc',
+    color: theme.colors.textMuted,
   },
   centerContainer: {
     flex: 1,
@@ -301,7 +304,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#999',
+    color: theme.colors.textMuted,
     marginTop: 16,
   },
 });

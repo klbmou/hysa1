@@ -7,12 +7,34 @@ import {
   RefreshControl,
   ActivityIndicator,
   TouchableOpacity,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { feedAPI, postAPI } from '../api/client';
 import PostCard from '../components/PostCard';
-import { TrendingUp } from 'lucide-react-native';
+import { TrendingUp, X, Send } from 'lucide-react-native';
+import theme from '../theme';
+
+const THROTTLE_MS = 800;
+
+function getPostId(post) {
+  return String(post.id || post._id || post.key || post.createdAt || Math.random());
+}
+
+function dedupePosts(posts) {
+  const seen = new Set();
+  return posts.filter((post) => {
+    const id = getPostId(post);
+    if (!id || id.startsWith('0.')) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
 
 const Feed = ({ navigation }) => {
   const { logout } = useAuth();
@@ -25,19 +47,34 @@ const Feed = ({ navigation }) => {
   const [errorStatus, setErrorStatus] = useState(null);
   const feedRequestInFlight = useRef(false);
 
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeText, setComposeText] = useState('');
+  const [composeSubmitting, setComposeSubmitting] = useState(false);
+
+  const actionTimers = useRef({});
+
+  const throttledAction = useCallback((key, fn) => {
+    const now = Date.now();
+    const last = actionTimers.current[key] || 0;
+    if (now - last < THROTTLE_MS) return;
+    actionTimers.current[key] = now;
+    fn();
+  }, []);
+
   const fetchFeed = async (isRefresh = false) => {
     if (feedRequestInFlight.current) return;
     feedRequestInFlight.current = true;
     try {
       setError(null);
-      const response = await feedAPI.getFeed(10, isRefresh ? 0 : (nextCursor || 0));
-      
+      const cursor = isRefresh ? 0 : (nextCursor ?? 0);
+      const response = await feedAPI.getFeed(10, cursor);
+
       if (response.data.ok) {
         const newPosts = response.data.posts || [];
         if (isRefresh) {
-          setPosts(newPosts);
+          setPosts(dedupePosts(newPosts));
         } else {
-          setPosts((prev) => [...prev, ...newPosts]);
+          setPosts((prev) => dedupePosts([...prev, ...newPosts]));
         }
         setNextCursor(response.data.nextCursor);
       }
@@ -67,10 +104,9 @@ const Feed = ({ navigation }) => {
   };
 
   const loadMore = () => {
-    if (!loadingMore && nextCursor) {
-      setLoadingMore(true);
-      fetchFeed(false);
-    }
+    if (loadingMore || feedRequestInFlight.current || !nextCursor) return;
+    setLoadingMore(true);
+    fetchFeed(false);
   };
 
   useFocusEffect(
@@ -81,36 +117,41 @@ const Feed = ({ navigation }) => {
     }, [])
   );
 
-  const handleLike = async (postId) => {
-    try {
-      await postAPI.likePost(postId);
-    } catch (err) {
-      console.error('Like error:', err);
-    }
-  };
+  const handleLike = (postId) => throttledAction(`like-${postId}`, async () => {
+    try { await postAPI.likePost(postId); } catch (err) { console.error('Like error:', err); }
+  });
 
-  const handleBookmark = async (postId) => {
-    try {
-      await postAPI.bookmarkPost(postId);
-    } catch (err) {
-      console.error('Bookmark error:', err);
-    }
-  };
+  const handleBookmark = (postId) => throttledAction(`bm-${postId}`, async () => {
+    try { await postAPI.bookmarkPost(postId); } catch (err) { console.error('Bookmark error:', err); }
+  });
 
   const handleComment = (postId) => {
     navigation.navigate('PostDetail', { postId });
   };
 
-  const handleRepost = async (postId) => {
-    try {
-      await postAPI.repostPost(postId);
-    } catch (err) {
-      console.error('Repost error:', err);
-    }
-  };
+  const handleRepost = (postId) => throttledAction(`rp-${postId}`, async () => {
+    try { await postAPI.repostPost(postId); } catch (err) { console.error('Repost error:', err); }
+  });
 
   const handleViewProfile = (userKey) => {
     navigation.navigate('Profile', { userKey });
+  };
+
+  const handleComposeSubmit = async () => {
+    if (!composeText.trim()) return;
+    setComposeSubmitting(true);
+    try {
+      const response = await postAPI.createPost(composeText.trim());
+      if (response.data.ok) {
+        setComposeText('');
+        setComposeOpen(false);
+        fetchFeed(true);
+      }
+    } catch (err) {
+      console.error('Create post error:', err);
+    } finally {
+      setComposeSubmitting(false);
+    }
   };
 
   const renderPost = ({ item }) => (
@@ -127,6 +168,9 @@ const Feed = ({ navigation }) => {
   const renderHeader = () => (
     <View style={styles.header}>
       <Text style={styles.headerTitle}>HYSA1</Text>
+      <TouchableOpacity style={styles.composeButton} onPress={() => setComposeOpen(true)}>
+        <TrendingUp size={20} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 
@@ -134,7 +178,7 @@ const Feed = ({ navigation }) => {
     if (!loadingMore) return null;
     return (
       <View style={styles.footer}>
-        <ActivityIndicator size="small" color="#1a1a2e" />
+        <ActivityIndicator size="small" color={theme.colors.accent} />
       </View>
     );
   };
@@ -143,7 +187,7 @@ const Feed = ({ navigation }) => {
     if (loading) {
       return (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#1a1a2e" />
+          <ActivityIndicator size="large" color={theme.colors.accent} />
           <Text style={styles.emptyText}>Loading feed...</Text>
         </View>
       );
@@ -172,7 +216,7 @@ const Feed = ({ navigation }) => {
 
     return (
       <View style={styles.centerContainer}>
-        <Text style={{ fontSize: 48 }}>📝</Text>
+        <Text style={styles.emptyEmoji}>📝</Text>
         <Text style={styles.emptyText}>No posts yet</Text>
         <Text style={styles.emptySubtext}>Be the first to post!</Text>
       </View>
@@ -185,20 +229,60 @@ const Feed = ({ navigation }) => {
       <FlatList
         data={posts}
         renderItem={renderPost}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => getPostId(item)}
         ListEmptyComponent={renderEmpty}
         ListFooterComponent={renderFooter}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#1a1a2e"
+            tintColor={theme.colors.accent}
           />
         }
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
         showsVerticalScrollIndicator={false}
       />
+
+      <Modal visible={composeOpen} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.composeOverlay}
+        >
+          <View style={styles.composeCard}>
+            <View style={styles.composeHeader}>
+              <Text style={styles.composeTitle}>New Post</Text>
+              <TouchableOpacity onPress={() => { setComposeOpen(false); setComposeText(''); }}>
+                <X size={22} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              style={styles.composeInput}
+              placeholder="What's happening?"
+              placeholderTextColor={theme.colors.textMuted}
+              value={composeText}
+              onChangeText={setComposeText}
+              multiline
+              maxLength={1000}
+              autoFocus
+            />
+            <TouchableOpacity
+              style={[styles.composeSubmit, (!composeText.trim() || composeSubmitting) && styles.composeSubmitDisabled]}
+              onPress={handleComposeSubmit}
+              disabled={!composeText.trim() || composeSubmitting}
+            >
+              {composeSubmitting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Send size={16} color="#fff" />
+                  <Text style={styles.composeSubmitText}>Post</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 };
@@ -206,18 +290,29 @@ const Feed = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.bgPrimary,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 16,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.bgGlass,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1a1a2e',
+    ...theme.typography.h3,
+    color: theme.colors.textPrimary,
+  },
+  composeButton: {
+    backgroundColor: theme.colors.accent,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   centerContainer: {
     flex: 1,
@@ -226,37 +321,89 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   emptyText: {
-    fontSize: 16,
-    color: '#666',
+    ...theme.typography.body,
+    color: theme.colors.textSecondary,
     marginTop: 16,
     textAlign: 'center',
   },
   emptySubtext: {
-    fontSize: 14,
-    color: '#999',
+    ...theme.typography.bodySm,
+    color: theme.colors.textMuted,
     marginTop: 8,
     textAlign: 'center',
   },
+  emptyEmoji: {
+    fontSize: 48,
+  },
   errorText: {
-    fontSize: 16,
-    color: '#e0245e',
+    ...theme.typography.body,
+    color: theme.colors.danger,
     textAlign: 'center',
     marginBottom: 16,
   },
   retryButton: {
-    backgroundColor: '#1a1a2e',
+    backgroundColor: theme.colors.accent,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: theme.radius.sm,
   },
   retryText: {
+    ...theme.typography.button,
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   footer: {
     paddingVertical: 16,
     alignItems: 'center',
+  },
+  composeOverlay: {
+    flex: 1,
+    backgroundColor: theme.colors.bgOverlay,
+    justifyContent: 'flex-end',
+  },
+  composeCard: {
+    backgroundColor: theme.colors.bgCard,
+    borderTopLeftRadius: theme.radius.xl,
+    borderTopRightRadius: theme.radius.xl,
+    padding: 20,
+    minHeight: 280,
+  },
+  composeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  composeTitle: {
+    ...theme.typography.h3,
+    color: theme.colors.textPrimary,
+  },
+  composeInput: {
+    backgroundColor: theme.colors.bgInput,
+    borderRadius: theme.radius.md,
+    padding: 14,
+    fontSize: 16,
+    color: theme.colors.textPrimary,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: theme.colors.borderLight,
+  },
+  composeSubmit: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.md,
+    paddingVertical: 14,
+    gap: 8,
+  },
+  composeSubmitDisabled: {
+    opacity: 0.5,
+  },
+  composeSubmitText: {
+    ...theme.typography.button,
+    color: '#fff',
   },
 });
 

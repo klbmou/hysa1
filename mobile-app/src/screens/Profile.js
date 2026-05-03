@@ -9,6 +9,10 @@ import {
   ActivityIndicator,
   FlatList,
   Alert,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {
   User,
@@ -20,10 +24,13 @@ import {
   LogOut,
   Edit3,
   ChevronRight,
+  X,
+  Save,
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { userAPI } from '../api/client';
 import PostCard from '../components/PostCard';
+import theme from '../theme';
 
 const Profile = ({ navigation, route }) => {
   const { user: currentUser, logout, isAuthenticated } = useAuth();
@@ -33,6 +40,11 @@ const Profile = ({ navigation, route }) => {
   const [isViewingOwnProfile, setIsViewingOwnProfile] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
 
+  const [editOpen, setEditOpen] = useState(false);
+  const [editBio, setEditBio] = useState('');
+  const [editSkills, setEditSkills] = useState('');
+  const [editSubmitting, setEditSubmitting] = useState(false);
+
   const targetUserKey = route.params?.userKey;
 
   useEffect(() => {
@@ -41,9 +53,8 @@ const Profile = ({ navigation, route }) => {
 
   const fetchProfile = async () => {
     setLoading(true);
-    
+
     if (!targetUserKey && currentUser) {
-      // Viewing own profile
       setProfileUser(currentUser);
       setIsViewingOwnProfile(true);
       setLoading(false);
@@ -71,7 +82,7 @@ const Profile = ({ navigation, route }) => {
 
   const handleFollow = async () => {
     if (!targetUserKey) return;
-    
+
     try {
       const response = await userAPI.followUser(targetUserKey);
       if (response.data.ok) {
@@ -94,11 +105,42 @@ const Profile = ({ navigation, route }) => {
       {
         text: 'Logout',
         style: 'destructive',
-        onPress: async () => {
-          await logout();
-        },
+        onPress: async () => { await logout(); },
       },
     ]);
+  };
+
+  const handleOpenEdit = () => {
+    if (profileUser) {
+      setEditBio(profileUser.bio || '');
+      setEditSkills(Array.isArray(profileUser.skills) ? profileUser.skills.join(', ') : '');
+      setEditOpen(true);
+    }
+  };
+
+  const handleEditSubmit = async () => {
+    setEditSubmitting(true);
+    try {
+      const skills = editSkills
+        ? editSkills.split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+      const updates = { bio: editBio };
+      if (skills.length > 0) updates.skills = skills;
+      const response = await userAPI.updateProfile(updates);
+      if (response.data.ok) {
+        setProfileUser((prev) => ({
+          ...prev,
+          bio: editBio,
+          skills,
+        }));
+        setEditOpen(false);
+      }
+    } catch (err) {
+      console.error('Update profile error:', err);
+      Alert.alert('Error', 'Failed to update profile.');
+    } finally {
+      setEditSubmitting(false);
+    }
   };
 
   const handlePostPress = (postId) => {
@@ -108,7 +150,7 @@ const Profile = ({ navigation, route }) => {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#1a1a2e" />
+        <ActivityIndicator size="large" color={theme.colors.accent} />
       </View>
     );
   }
@@ -138,35 +180,28 @@ const Profile = ({ navigation, route }) => {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.avatarContainer}
-          onPress={() => {}}
-        >
+        <TouchableOpacity style={styles.avatarContainer}>
           {profileUser.avatarUrl ? (
-            <Image
-              source={{ uri: profileUser.avatarUrl }}
-              style={styles.avatar}
-            />
+            <Image source={{ uri: profileUser.avatarUrl }} style={styles.avatar} />
           ) : (
             <View style={styles.avatarPlaceholder}>
-              <User size={40} color="#666" />
+              <User size={40} color={theme.colors.textMuted} />
             </View>
           )}
         </TouchableOpacity>
-        
+
         <View style={styles.headerInfo}>
           <View style={styles.nameRow}>
             <Text style={styles.username}>{profileUser.username}</Text>
             {profileUser.verified && (
-              <Verified size={20} color="#1DA1F2" fill="#1DA1F2" />
+              <Verified size={18} color={theme.colors.verified} fill={theme.colors.verified} />
             )}
           </View>
           <Text style={styles.displayName}>
             @{profileUser.key}
           </Text>
-          
+
           <View style={styles.statsRow}>
             <View style={styles.stat}>
               <Text style={styles.statValue}>
@@ -185,19 +220,18 @@ const Profile = ({ navigation, route }) => {
         </View>
       </View>
 
-      {/* Actions */}
       <View style={styles.actionsRow}>
         {isViewingOwnProfile ? (
           <>
-            <TouchableOpacity style={styles.profileButton}>
-              <Edit3 size={18} color="#1a1a2e" />
+            <TouchableOpacity style={styles.profileButton} onPress={handleOpenEdit}>
+              <Edit3 size={16} color={theme.colors.textPrimary} />
               <Text style={styles.profileButtonText}>Edit Profile</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconButton} onPress={() => {}}>
-              <Settings size={22} color="#1a1a2e" />
+              <Settings size={20} color={theme.colors.textSecondary} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconButton} onPress={handleLogout}>
-              <LogOut size={22} color="#e0245e" />
+              <LogOut size={20} color={theme.colors.danger} />
             </TouchableOpacity>
           </>
         ) : (
@@ -220,43 +254,93 @@ const Profile = ({ navigation, route }) => {
         )}
       </View>
 
-      {/* Bio */}
-      {profileUser.bio ? (
-        <View style={styles.section}>
-          <Text style={styles.bio}>{profileUser.bio}</Text>
-        </View>
-      ) : null}
-
-      {/* Skills */}
-      {profileUser.skills && profileUser.skills.length > 0 ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Skills</Text>
-          <View style={styles.skillsContainer}>
-            {profileUser.skills.map((skill, index) => (
-              <View key={index} style={styles.skillTag}>
-                <Text style={styles.skillText}>{skill}</Text>
-              </View>
-            ))}
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {profileUser.bio ? (
+          <View style={styles.section}>
+            <Text style={styles.bio}>{profileUser.bio}</Text>
           </View>
-        </View>
-      ) : null}
+        ) : null}
 
-      {/* Posts */}
-      <View style={styles.postsSection}>
-        <Text style={styles.sectionLabel}>Posts</Text>
-        {userPosts.length > 0 ? (
-          <FlatList
-            data={userPosts}
-            renderItem={renderPost}
-            keyExtractor={(item) => item.id}
-            scrollEnabled={false}
-          />
-        ) : (
-          <View style={styles.emptyPosts}>
-            <Text style={styles.emptyText}>No posts yet</Text>
+        {profileUser.skills && profileUser.skills.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Skills</Text>
+            <View style={styles.skillsContainer}>
+              {profileUser.skills.map((skill, index) => (
+                <View key={index} style={styles.skillTag}>
+                  <Text style={styles.skillText}>{skill}</Text>
+                </View>
+              ))}
+            </View>
           </View>
-        )}
-      </View>
+        ) : null}
+
+        <View style={styles.postsSection}>
+          <Text style={styles.sectionLabel}>Posts</Text>
+          {userPosts.length > 0 ? (
+            <FlatList
+              data={userPosts}
+              renderItem={renderPost}
+              keyExtractor={(item) => item.id}
+              scrollEnabled={false}
+            />
+          ) : (
+            <View style={styles.emptyPosts}>
+              <Text style={styles.emptyText}>No posts yet</Text>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      <Modal visible={editOpen} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.editOverlay}
+        >
+          <View style={styles.editCard}>
+            <View style={styles.editHeader}>
+              <Text style={styles.editTitle}>Edit Profile</Text>
+              <TouchableOpacity onPress={() => setEditOpen(false)}>
+                <X size={22} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.editLabel}>Bio</Text>
+            <TextInput
+              style={styles.editInput}
+              placeholder="Tell us about yourself..."
+              placeholderTextColor={theme.colors.textMuted}
+              value={editBio}
+              onChangeText={setEditBio}
+              multiline
+              maxLength={280}
+            />
+
+            <Text style={styles.editLabel}>Skills (comma separated)</Text>
+            <TextInput
+              style={styles.editInput}
+              placeholder="e.g. React, Node.js, Design"
+              placeholderTextColor={theme.colors.textMuted}
+              value={editSkills}
+              onChangeText={setEditSkills}
+            />
+
+            <TouchableOpacity
+              style={[styles.editSubmit, editSubmitting && styles.editSubmitDisabled]}
+              onPress={handleEditSubmit}
+              disabled={editSubmitting}
+            >
+              {editSubmitting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Save size={16} color="#fff" />
+                  <Text style={styles.editSubmitText}>Save Changes</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 };
@@ -264,7 +348,7 @@ const Profile = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.bgPrimary,
   },
   centerContainer: {
     flex: 1,
@@ -273,13 +357,13 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 16,
-    color: '#e0245e',
+    color: theme.colors.danger,
   },
   header: {
     flexDirection: 'row',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: theme.colors.border,
   },
   avatarContainer: {
     marginRight: 16,
@@ -293,7 +377,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: theme.colors.bgInput,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -307,13 +391,12 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   username: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a1a2e',
+    ...theme.typography.h3,
+    color: theme.colors.textPrimary,
   },
   displayName: {
     fontSize: 14,
-    color: '#666',
+    color: theme.colors.textMuted,
     marginBottom: 8,
   },
   statsRow: {
@@ -326,59 +409,59 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a2e',
+    fontWeight: '700',
+    color: theme.colors.textPrimary,
   },
   statLabel: {
     fontSize: 14,
-    color: '#666',
+    color: theme.colors.textSecondary,
     marginLeft: 4,
   },
   statDivider: {
     width: 1,
     height: 16,
-    backgroundColor: '#e0e0e0',
+    backgroundColor: theme.colors.border,
     marginHorizontal: 12,
   },
   actionsRow: {
     flexDirection: 'row',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: theme.colors.border,
   },
   profileButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: theme.colors.bgInput,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: theme.radius.sm,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: theme.colors.borderLight,
   },
   profileButtonText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1a1a2e',
+    color: theme.colors.textPrimary,
     marginLeft: 6,
   },
   iconButton: {
-    width: 44,
-    height: 44,
+    width: 42,
+    height: 42,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 12,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
+    backgroundColor: theme.colors.bgInput,
+    borderRadius: theme.radius.sm,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: theme.colors.borderLight,
   },
   followButton: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: theme.colors.accent,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: theme.radius.sm,
     alignItems: 'center',
   },
   followButtonText: {
@@ -387,49 +470,50 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   followingButton: {
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.bgPrimary,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: theme.colors.border,
   },
   followingButtonText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1a1a2e',
+    color: theme.colors.textPrimary,
   },
   section: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: theme.colors.borderLight,
   },
   sectionLabel: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a1a2e',
+    ...theme.typography.h3,
+    color: theme.colors.textPrimary,
     marginBottom: 12,
   },
   bio: {
     fontSize: 15,
-    lineHeight: 20,
-    color: '#333',
+    lineHeight: 22,
+    color: theme.colors.textSecondary,
   },
   skillsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
   skillTag: {
-    backgroundColor: '#f0f4f8',
+    backgroundColor: 'rgba(124, 58, 237, 0.14)',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: theme.radius.full,
     marginRight: 8,
     marginBottom: 8,
   },
   skillText: {
     fontSize: 13,
-    color: '#1a1a2e',
+    color: theme.colors.accent,
+    fontWeight: '600',
   },
   postsSection: {
     flex: 1,
+    paddingBottom: 20,
   },
   emptyPosts: {
     padding: 40,
@@ -437,7 +521,64 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#999',
+    color: theme.colors.textMuted,
+  },
+  editOverlay: {
+    flex: 1,
+    backgroundColor: theme.colors.bgOverlay,
+    justifyContent: 'flex-end',
+  },
+  editCard: {
+    backgroundColor: theme.colors.bgCard,
+    borderTopLeftRadius: theme.radius.xl,
+    borderTopRightRadius: theme.radius.xl,
+    padding: 20,
+    minHeight: 300,
+  },
+  editHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  editTitle: {
+    ...theme.typography.h3,
+    color: theme.colors.textPrimary,
+  },
+  editLabel: {
+    ...theme.typography.bodySm,
+    fontWeight: '600',
+    color: theme.colors.textSecondary,
+    marginBottom: 8,
+  },
+  editInput: {
+    backgroundColor: theme.colors.bgInput,
+    borderRadius: theme.radius.md,
+    padding: 14,
+    fontSize: 15,
+    color: theme.colors.textPrimary,
+    minHeight: 80,
+    textAlignVertical: 'top',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: theme.colors.borderLight,
+  },
+  editSubmit: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.md,
+    paddingVertical: 14,
+    marginTop: 8,
+    gap: 8,
+  },
+  editSubmitDisabled: {
+    opacity: 0.5,
+  },
+  editSubmitText: {
+    ...theme.typography.button,
+    color: '#fff',
   },
 });
 

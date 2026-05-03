@@ -17,6 +17,7 @@ import {
   User,
   Verified,
 } from 'lucide-react-native';
+import theme from '../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -24,7 +25,6 @@ const PostCard = memo(({ post, onLike, onBookmark, onComment, onRepost, onViewPr
   const [liked, setLiked] = useState(post.likedByMe || false);
   const [bookmarked, setBookmarked] = useState(post.bookmarkedByMe || false);
   const [likeCount, setLikeCount] = useState(post.likeCount || 0);
-  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
 
   const handleLike = () => {
     setLiked(!liked);
@@ -68,11 +68,6 @@ const PostCard = memo(({ post, onLike, onBookmark, onComment, onRepost, onViewPr
               useNativeControls
               resizeMode={ResizeMode.COVER}
               isLooping
-              onPlaybackStatusUpdate={(status) => {
-                if (status.isPlaying !== undefined) {
-                  setIsVideoPlaying(status.isPlaying);
-                }
-              }}
             />
           </View>
         );
@@ -122,7 +117,6 @@ const PostCard = memo(({ post, onLike, onBookmark, onComment, onRepost, onViewPr
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.avatarContainer}
@@ -132,36 +126,33 @@ const PostCard = memo(({ post, onLike, onBookmark, onComment, onRepost, onViewPr
             <Image source={{ uri: post.authorAvatar }} style={styles.avatar} />
           ) : (
             <View style={styles.avatarPlaceholder}>
-              <User size={20} color="#666" />
+              <User size={20} color={theme.colors.textMuted} />
             </View>
           )}
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <View style={styles.authorRow}>
             <Text style={styles.authorName}>{post.author}</Text>
-            {post.verified && <Verified size={14} color="#1DA1F2" fill="#1DA1F2" />}
+            {post.verified && <Verified size={14} color={theme.colors.verified} fill={theme.colors.verified} />}
           </View>
           <Text style={styles.timestamp}>{formatDate(post.createdAt)}</Text>
         </View>
         <TouchableOpacity style={styles.moreButton}>
-          <MoreHorizontal size={20} color="#666" />
+          <MoreHorizontal size={20} color={theme.colors.textMuted} />
         </TouchableOpacity>
       </View>
 
-      {/* Content */}
       {post.text ? (
         <Text style={styles.content}>{post.text}</Text>
       ) : null}
 
-      {/* Media */}
       {renderMedia()}
 
-      {/* Quoted Post */}
       {post.quotedPost && (
         <TouchableOpacity style={styles.quotedPost}>
           <View style={styles.quotedHeader}>
             <Text style={styles.quotedAuthor}>{post.quotedPost.author}</Text>
-            {post.quotedPost.verified && <Verified size={12} color="#1DA1F2" fill="#1DA1F2" />}
+            {post.quotedPost.verified && <Verified size={12} color={theme.colors.verified} fill={theme.colors.verified} />}
           </View>
           <Text style={styles.quotedText} numberOfLines={2}>
             {post.quotedPost.text}
@@ -169,13 +160,12 @@ const PostCard = memo(({ post, onLike, onBookmark, onComment, onRepost, onViewPr
         </TouchableOpacity>
       )}
 
-      {/* Actions */}
       <View style={styles.actions}>
         <TouchableOpacity style={styles.actionButton} onPress={handleLike}>
           <Heart
             size={20}
-            color={liked ? '#e0245e' : '#666'}
-            fill={liked ? '#e0245e' : 'transparent'}
+            color={liked ? theme.colors.like : theme.colors.textSecondary}
+            fill={liked ? theme.colors.like : 'transparent'}
           />
           <Text style={[styles.actionText, liked && styles.actionTextActive]}>
             {likeCount}
@@ -183,12 +173,12 @@ const PostCard = memo(({ post, onLike, onBookmark, onComment, onRepost, onViewPr
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionButton} onPress={() => onComment && onComment(post.id)}>
-          <MessageCircle size={20} color="#666" />
+          <MessageCircle size={20} color={theme.colors.textSecondary} />
           <Text style={styles.actionText}>{post.commentCount || 0}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionButton} onPress={() => onRepost && onRepost(post.id)}>
-          <Repeat size={20} color="#666" />
+          <Repeat size={20} color={theme.colors.textSecondary} />
           <Text style={styles.actionText}>{post.repostCount || 0}</Text>
         </TouchableOpacity>
 
@@ -196,8 +186,8 @@ const PostCard = memo(({ post, onLike, onBookmark, onComment, onRepost, onViewPr
           <TouchableOpacity style={styles.actionButton} onPress={handleBookmark}>
             <Bookmark
               size={20}
-              color={bookmarked ? '#1DA1F2' : '#666'}
-              fill={bookmarked ? '#1DA1F2' : 'transparent'}
+              color={bookmarked ? theme.colors.bookmark : theme.colors.textSecondary}
+              fill={bookmarked ? theme.colors.bookmark : 'transparent'}
             />
           </TouchableOpacity>
         </View>
@@ -208,9 +198,9 @@ const PostCard = memo(({ post, onLike, onBookmark, onComment, onRepost, onViewPr
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.bgCard,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: theme.colors.borderLight,
     paddingVertical: 12,
   },
   header: {
@@ -231,7 +221,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: theme.colors.bgInput,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -245,11 +235,11 @@ const styles = StyleSheet.create({
   authorName: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1a1a2e',
+    color: theme.colors.textPrimary,
   },
   timestamp: {
     fontSize: 13,
-    color: '#999',
+    color: theme.colors.textMuted,
   },
   moreButton: {
     padding: 8,
@@ -257,7 +247,7 @@ const styles = StyleSheet.create({
   content: {
     fontSize: 15,
     lineHeight: 20,
-    color: '#1a1a2e',
+    color: theme.colors.textPrimary,
     paddingHorizontal: 12,
     marginBottom: 12,
   },
@@ -280,7 +270,7 @@ const styles = StyleSheet.create({
     width: '48%',
     aspectRatio: 1,
     margin: '1%',
-    borderRadius: 8,
+    borderRadius: theme.radius.sm,
     overflow: 'hidden',
   },
   gridItemFull: {
@@ -299,10 +289,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     marginBottom: 12,
     padding: 12,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
+    backgroundColor: theme.colors.bgInput,
+    borderRadius: theme.radius.md,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: theme.colors.borderLight,
   },
   quotedHeader: {
     flexDirection: 'row',
@@ -312,11 +302,11 @@ const styles = StyleSheet.create({
   quotedAuthor: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#1a1a2e',
+    color: theme.colors.textPrimary,
   },
   quotedText: {
     fontSize: 14,
-    color: '#666',
+    color: theme.colors.textSecondary,
   },
   actions: {
     flexDirection: 'row',
@@ -335,11 +325,11 @@ const styles = StyleSheet.create({
   },
   actionText: {
     fontSize: 13,
-    color: '#666',
+    color: theme.colors.textSecondary,
     marginLeft: 4,
   },
   actionTextActive: {
-    color: '#e0245e',
+    color: theme.colors.like,
   },
 });
 
