@@ -3540,14 +3540,6 @@ function renderProfileHeader(profile) {
     });
     right.appendChild(followBtn);
 
-    const callBtn = document.createElement("button");
-    callBtn.type = "button";
-    callBtn.className = "btn ghost";
-    callBtn.innerHTML = `${icon("phone")}<span>Call</span>`;
-    callBtn.title = "Calls coming soon";
-    on(callBtn, "click", () => showToast("Calls coming soon.", true));
-    right.appendChild(callBtn);
-
     const blockBtn = document.createElement("button");
     blockBtn.type = "button";
     blockBtn.className = "btn ghost danger blockProfileBtn";
@@ -4073,9 +4065,24 @@ function commentNode(comment, onReply, onDelete, post, depth = 0) {
   body.appendChild(actionRow);
   wrap.appendChild(body);
   if (Array.isArray(comment.replies) && comment.replies.length) {
+    const replyCount = comment.replies.length;
     const replies = document.createElement("div");
     replies.className = "comment-replies";
+    if (depth === 0) replies.hidden = true;
     for (const r of comment.replies) replies.appendChild(commentNode(r, onReply, onDelete, post, depth + 1));
+    if (depth === 0) {
+      const viewReplies = document.createElement("button");
+      viewReplies.type = "button";
+      viewReplies.className = "comment-view-replies";
+      viewReplies.textContent = `View ${replyCount} ${replyCount === 1 ? "reply" : "replies"}`;
+      on(viewReplies, "click", () => {
+        replies.hidden = !replies.hidden;
+        viewReplies.textContent = replies.hidden
+          ? `View ${replyCount} ${replyCount === 1 ? "reply" : "replies"}`
+          : "Hide replies";
+      });
+      wrap.appendChild(viewReplies);
+    }
     wrap.appendChild(replies);
   }
   return wrap;
@@ -5050,6 +5057,7 @@ async function loadReels() {
     // Caption (2-line clamp + ...more)
     const captionText = richTextNode(reel.text || "");
     captionText.className = "reelCaptionText";
+    applyTextDirection(captionText, reel.text || "");
     const moreTextBtn = document.createElement("button");
     moreTextBtn.type = "button";
     moreTextBtn.className = "reelMoreText";
@@ -5943,6 +5951,17 @@ function route() {
     closeExplorePage();
     closeDmView();
     clearProfileHeader();
+    activeProfileKey = null;
+    activePostId = null;
+    if (el.feed) {
+      el.feed.hidden = true;
+      el.feed.textContent = "";
+    }
+    if (el.storiesBar) el.storiesBar.hidden = true;
+    if (el.trendsBar) el.trendsBar.hidden = true;
+    if (el.exploreView) el.exploreView.hidden = true;
+    if (el.reelsView) el.reelsView.hidden = false;
+    updateFeedSentinel();
     setViewTitle("Reels");
     loadReels().catch(() => {});
     return;
@@ -7890,6 +7909,7 @@ function openLightbox(src, kind = "image", onLike = null, poster = "") {
   const lb = document.getElementById("lightbox");
   if (!lb) return;
   lightboxLikeHandler = typeof onLike === "function" ? onLike : null;
+  document.body.classList.add("lightbox-open");
   lb.hidden = false;
   lb.classList.remove("closing", "is-video");
   lb.classList.toggle("is-video", kind === "video");
@@ -7971,6 +7991,7 @@ function openLightbox(src, kind = "image", onLike = null, poster = "") {
 function closeLightbox() {
   const lb = document.getElementById("lightbox");
   if (!lb) return;
+  document.body.classList.remove("lightbox-open");
   lb.classList.add("closing");
   lb.classList.remove("show");
   if (lb._lbClick) { lb.removeEventListener("click", lb._lbClick); lb._lbClick = null; }

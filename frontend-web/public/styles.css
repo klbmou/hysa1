@@ -6103,6 +6103,522 @@ body.settings-open {
   .reelBottomLeft { left: 10px !important; right: 54px !important; }
 }
 
+/* Final deployed-device visual fixes: viewer, comments, profile CTAs, reels, and safe-area polish. */
+:root {
+  --content-max: 720px;
+  --mobile-gutter: 12px;
+  --card-radius: 22px;
+  --media-radius: 20px;
+}
+
+html,
+body,
+#appView {
+  max-width: 100%;
+  overflow-x: hidden !important;
+}
+
+body.lightbox-open {
+  overflow: hidden !important;
+  touch-action: none;
+}
+
+.main-content,
+#feed,
+#profileHeader,
+#exploreView {
+  width: min(var(--content-max), calc(100vw - (2 * var(--mobile-gutter)))) !important;
+  max-width: min(var(--content-max), calc(100vw - (2 * var(--mobile-gutter)))) !important;
+  margin-inline: auto !important;
+}
+
+.main-content {
+  padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom) + 34px) !important;
+}
+
+.post,
+.glass-card,
+.composer,
+.stories-bar,
+.trends-bar,
+#profileHeader,
+.modal,
+.settings-panel,
+.bottom-sheet-panel {
+  border-radius: var(--card-radius) !important;
+}
+
+.stories-bar,
+.trends-bar,
+.post,
+.mediaCarousel,
+.postMedia,
+.postMedia .mediaItem,
+.postMedia .proVideo,
+.postMedia img,
+.postMedia video {
+  overflow: hidden !important;
+}
+
+.postMedia,
+.postMedia.mediaGrid,
+.post .mediaGrid.postMedia {
+  width: 100% !important;
+  max-width: 100% !important;
+  border-radius: var(--media-radius) !important;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(138, 43, 226, 0.12), transparent 48%),
+    #050508 !important;
+}
+
+.postMedia .mediaItem,
+.postMedia .mediaItem:only-child,
+.postMedia .carousel,
+.postMedia .carouselTrack,
+.postMedia .carouselSlide,
+.postMedia .proVideo {
+  width: 100% !important;
+  max-width: 100% !important;
+  max-height: min(70vh, 620px) !important;
+  aspect-ratio: auto !important;
+  border-radius: var(--media-radius) !important;
+}
+
+.postMedia .mediaItem img,
+.postMedia .carousel img {
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  max-width: 100% !important;
+  max-height: min(70vh, 620px) !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  background: #050508 !important;
+}
+
+.postMedia .mediaItem video,
+.postMedia .proVideo,
+.postMedia .proVideo video,
+.postMedia .carousel video {
+  width: 100% !important;
+  max-width: 100% !important;
+  max-height: min(70vh, 620px) !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  background: #050508 !important;
+}
+
+#lightbox {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 3000 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  padding:
+    max(12px, env(safe-area-inset-top))
+    max(10px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(10px, env(safe-area-inset-left)) !important;
+  display: grid !important;
+  place-items: center !important;
+  background: rgba(0, 0, 0, 0.96) !important;
+  backdrop-filter: blur(18px) !important;
+  overflow: hidden !important;
+}
+
+#lightbox[hidden] {
+  display: none !important;
+}
+
+#lightbox .lightbox-img {
+  width: auto !important;
+  height: auto !important;
+  max-width: calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right)) !important;
+  max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  aspect-ratio: auto !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+#lightbox .lightbox-video.proVideo {
+  width: min(100vw, 1100px) !important;
+  height: min(100dvh, 760px) !important;
+  max-width: calc(100vw - 20px) !important;
+  max-height: calc(100dvh - 20px) !important;
+  border-radius: 18px !important;
+}
+
+#lightboxClose {
+  position: fixed !important;
+  top: calc(12px + env(safe-area-inset-top)) !important;
+  right: calc(12px + env(safe-area-inset-right)) !important;
+  z-index: 4 !important;
+  width: 42px !important;
+  height: 42px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  background: rgba(12, 12, 18, 0.68) !important;
+  backdrop-filter: blur(14px) !important;
+}
+
+.comments:not([hidden]) {
+  bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom) + 10px) !important;
+  max-height: min(82dvh, 720px) !important;
+  padding-bottom: max(14px, env(safe-area-inset-bottom)) !important;
+}
+
+.comments .commentForm,
+.comments .commentComposer,
+.reelCommentsSheet {
+  padding-bottom: max(10px, env(safe-area-inset-bottom)) !important;
+}
+
+.comment {
+  grid-template-columns: 38px minmax(0, 1fr) !important;
+  column-gap: 10px !important;
+  align-items: flex-start !important;
+  overflow: visible !important;
+}
+
+.comment::before,
+.comment:not(:has(.comment-replies))::before {
+  display: none !important;
+}
+
+.comment-body,
+.comment-text,
+.commentText,
+.comment-meta,
+.comment-actions,
+.commentActions {
+  min-width: 0 !important;
+}
+
+.comment-actions,
+.commentActions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  flex-wrap: wrap !important;
+}
+
+.comment-view-replies {
+  grid-column: 2 !important;
+  width: fit-content;
+  margin: 6px 0 4px !important;
+  padding: 6px 10px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  color: rgba(255, 255, 255, 0.72) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.comment-replies {
+  grid-column: 2 !important;
+  margin: 8px 0 0 0 !important;
+  padding-inline-start: 14px !important;
+  border-inline-start: 1px solid rgba(138, 43, 226, 0.34) !important;
+  display: grid !important;
+  gap: 0 !important;
+}
+
+.comment-replies[hidden] {
+  display: none !important;
+}
+
+.comment.reply {
+  margin: 0 !important;
+  padding-block: 10px !important;
+}
+
+.profileActions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+}
+
+.profileActions .btn {
+  min-width: 0 !important;
+  min-height: 40px !important;
+  height: 40px !important;
+  padding: 0 14px !important;
+  border-radius: 14px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  white-space: nowrap !important;
+}
+
+.profileActions .btn:empty,
+.profileActions button:empty {
+  display: none !important;
+}
+
+.profileActions [data-action="call"],
+.profileActions .profileCallBtn,
+.profileActions .callBtn {
+  display: none !important;
+}
+
+.verifiedBadge,
+.verified-badge {
+  width: 15px !important;
+  height: 15px !important;
+  min-width: 15px !important;
+  min-height: 15px !important;
+  margin-inline-start: 4px !important;
+  vertical-align: -2px !important;
+  border-radius: 999px !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  background: linear-gradient(135deg, #19c7ff, #8a2be2) !important;
+  box-shadow: 0 0 10px rgba(25, 199, 255, 0.32) !important;
+}
+
+.verified-badge.small,
+.comment-username .verified-badge,
+.comment-username .verifiedBadge {
+  width: 14px !important;
+  height: 14px !important;
+  min-width: 14px !important;
+  min-height: 14px !important;
+}
+
+.verified-badge.profile,
+.verified-badge.avatar-badge,
+.ownerBadge {
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  min-height: 20px !important;
+}
+
+.verifiedCheck {
+  font-size: 10px !important;
+  line-height: 1 !important;
+  color: #fff !important;
+}
+
+.auto-dir { unicode-bidi: plaintext; }
+.rtl-text { direction: rtl; text-align: right; unicode-bidi: plaintext; }
+.ltr-text { direction: ltr; text-align: left; unicode-bidi: plaintext; }
+.handle,
+.username,
+.comment-username,
+.mentionLink,
+.hashTag,
+.url,
+.dmThreadName,
+.groupMemberRow span,
+.groupUserResult span {
+  direction: ltr !important;
+  unicode-bidi: isolate !important;
+}
+
+#reelsView {
+  background:
+    radial-gradient(780px 520px at 50% 2%, rgba(138, 43, 226, 0.18), transparent 64%),
+    #000 !important;
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+#reelsView:not([hidden]) {
+  display: flex !important;
+}
+
+#reelsView .reelCard {
+  background: #030305 !important;
+  overflow: hidden !important;
+}
+
+#reelsView .reelRightRail,
+#reelsView .reelRail {
+  width: 56px !important;
+  right: max(10px, env(safe-area-inset-right)) !important;
+  gap: 10px !important;
+}
+
+#reelsView .reelRailBtn {
+  width: 48px !important;
+  min-width: 48px !important;
+  height: 48px !important;
+  min-height: 48px !important;
+  border-radius: 16px !important;
+}
+
+#reelsView .reelRailBtn svg {
+  width: 25px !important;
+  height: 25px !important;
+}
+
+#reelsView .reelRailBtn strong {
+  font-size: 11px !important;
+  line-height: 1 !important;
+}
+
+#reelsView .reelBottomLeft {
+  right: 76px !important;
+  bottom: calc(18px + env(safe-area-inset-bottom)) !important;
+  max-width: calc(100% - 94px) !important;
+}
+
+.videoCenterPlay {
+  width: 54px !important;
+  height: 54px !important;
+  min-width: 54px !important;
+  border-radius: 999px !important;
+  font-size: 0 !important;
+  background: rgba(10, 10, 16, 0.5) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+.videoCenterPlay::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-top: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+  border-left: 15px solid #fff;
+  margin-left: 4px;
+}
+
+.bottom-nav .nav-item,
+.bottom-nav button {
+  min-width: 0 !important;
+}
+
+.groupMemberRow,
+.groupUserResult {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+.groupMemberRow span,
+.groupUserResult span {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.groupMemberRow button,
+.groupUserResult button {
+  justify-self: end !important;
+  white-space: nowrap !important;
+}
+
+@media (min-width: 1024px) {
+  .main-content,
+  #feed,
+  #profileHeader,
+  #exploreView {
+    --content-max: 760px;
+  }
+
+  #reelsView .reelCard,
+  #reelsView .reelTopBar {
+    width: min(460px, calc(100dvh * 9 / 16)) !important;
+    max-width: 460px !important;
+    border-radius: 28px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  :root {
+    --mobile-gutter: 10px;
+  }
+
+  #lightbox {
+    padding: 0 !important;
+  }
+
+  #lightbox .lightbox-img {
+    max-width: 100vw !important;
+    max-height: 100dvh !important;
+  }
+
+  .profileActions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    width: 100% !important;
+  }
+
+  .profileActions .btn {
+    width: 100% !important;
+  }
+
+  #reelsView .reelCard,
+  #reelsView .reelTopBar {
+    width: min(100vw - 20px, 430px) !important;
+    max-width: min(100vw - 20px, 430px) !important;
+  }
+
+  #reelsView .reelCard {
+    height: min(78dvh, 760px) !important;
+    max-height: calc(100dvh - var(--top-nav-h) - var(--bottom-nav-h) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 18px) !important;
+  }
+}
+
+@media (max-width: 430px) {
+  .postMedia .mediaItem,
+  .postMedia .mediaItem:only-child,
+  .postMedia .proVideo,
+  .postMedia .mediaItem img,
+  .postMedia .mediaItem video,
+  .postMedia .proVideo video {
+    max-height: min(68vh, 560px) !important;
+  }
+
+  .comment {
+    grid-template-columns: 34px minmax(0, 1fr) !important;
+    column-gap: 9px !important;
+  }
+
+  .comment-replies {
+    padding-inline-start: 10px !important;
+  }
+
+  #reelsView .reelRightRail,
+  #reelsView .reelRail {
+    width: 50px !important;
+    right: 8px !important;
+    gap: 8px !important;
+  }
+
+  #reelsView .reelRailBtn {
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+  }
+
+  #reelsView .reelBottomLeft {
+    right: 64px !important;
+    max-width: calc(100% - 76px) !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .profileActions {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .comment-actions,
+  .commentActions {
+    gap: 9px !important;
+  }
+}
+
 /* Final premium override: must stay last to beat older duplicated rules. */
 :root {
   --content-max: 680px;
