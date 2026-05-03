@@ -5354,7 +5354,7 @@ async function loadReels() {
     video.preload = "metadata";
   });
   observeMediaPlayback(el.reelsView);
-  on(el.reelsView, "scroll", () => {
+  const syncVisibleReelVideo = () => {
     if (reelScrollTicking) return;
     reelScrollTicking = true;
     window.requestAnimationFrame(() => {
@@ -5375,7 +5375,9 @@ async function loadReels() {
         if (video !== best) video.pause();
       }
     });
-  }, { passive: true });
+  };
+  on(el.reelsView, "scroll", syncVisibleReelVideo, { passive: true });
+  on(window, "scroll", syncVisibleReelVideo, { passive: true });
 }
 
 async function openReelComments(reel, commentAction) {
@@ -5912,6 +5914,7 @@ function route() {
   if (!getToken()) return;
   rememberHomeScroll();
   const h = location.hash || "#home";
+  document.body.classList.toggle("reels-active", h === "#reels");
   const mProfile = /^#u\/(.+)$/.exec(h);
   const mPost = /^#p\/(.+)$/.exec(h);
   const mDm = /^#dm\/(.+)$/.exec(h);
