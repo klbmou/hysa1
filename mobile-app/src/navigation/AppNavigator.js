@@ -15,6 +15,7 @@ import FeedScreen from '../screens/Feed';
 import SearchScreen from '../screens/Search';
 import NotificationsScreen from '../screens/Notifications';
 import ProfileScreen from '../screens/Profile';
+import PostDetailScreen from '../screens/PostDetail';
 import LoginScreen from '../screens/Login';
 import SignupScreen from '../screens/Signup';
 
@@ -86,6 +87,16 @@ const AuthStack = () => {
   );
 };
 
+// App Stack (wraps tabs so PostDetail can be pushed from any tab)
+const AppStack = () => {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="MainTabs" component={MainTabs} />
+      <Stack.Screen name="PostDetail" component={PostDetailScreen} />
+    </Stack.Navigator>
+  );
+};
+
 // Main App Navigator
 const AppNavigator = () => {
   const { isAuthenticated, loading } = useAuth();
@@ -100,7 +111,7 @@ const AppNavigator = () => {
 
   return (
     <NavigationContainer>
-      {isAuthenticated ? <MainTabs /> : <AuthStack />}
+      {isAuthenticated ? <AppStack /> : <AuthStack />}
     </NavigationContainer>
   );
 };

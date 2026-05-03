@@ -10,7 +10,7 @@ import {
   Image,
 } from 'react-native';
 import { Search as SearchIcon, User, TrendingUp } from 'lucide-react-native';
-import { feedAPI } from '../api/client';
+import { searchAPI, feedAPI } from '../api/client';
 
 const Search = ({ navigation }) => {
   const [query, setQuery] = useState('');
@@ -41,20 +41,15 @@ const Search = ({ navigation }) => {
     setSearched(true);
     
     try {
-      // For now, we'll fetch the feed and filter locally
-      // In a real app, you'd have a dedicated search endpoint
-      const response = await feedAPI.getFeed(50, 0);
+      const response = await searchAPI.search(query);
       if (response.data.ok) {
         const posts = response.data.posts || [];
-        const filtered = posts.filter(
-          (post) =>
-            post.text.toLowerCase().includes(query.toLowerCase()) ||
-            post.author.toLowerCase().includes(query.toLowerCase())
-        );
-        setResults(filtered);
+        const users = response.data.users || [];
+        setResults([...users.map(u => ({ ...u, isUser: true })), ...posts]);
       }
     } catch (err) {
       console.error('Search error:', err);
+      setResults([]);
     } finally {
       setLoading(false);
     }
@@ -86,33 +81,57 @@ const Search = ({ navigation }) => {
     </TouchableOpacity>
   );
 
-  const renderResultItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.resultItem}
-      onPress={() => handlePostPress(item.id)}
-    >
-      <TouchableOpacity onPress={() => handleUserPress(item.authorKey)}>
-        {item.authorAvatar ? (
-          <Image source={{ uri: item.authorAvatar }} style={styles.resultAvatar} />
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <User size={18} color="#666" />
+  const renderResultItem = ({ item }) => {
+    if (item.isUser) {
+      const userKey = item.userKey || item.key || item.username;
+      return (
+        <TouchableOpacity
+          style={styles.resultItem}
+          onPress={() => handleUserPress(userKey)}
+        >
+          {item.avatarUrl ? (
+            <Image source={{ uri: item.avatarUrl }} style={styles.resultAvatar} />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <User size={18} color="#666" />
+            </View>
+          )}
+          <View style={styles.resultContent}>
+            <Text style={styles.resultAuthor}>{item.username || item.key || 'User'}</Text>
+            {item.bio ? <Text style={styles.resultText} numberOfLines={1}>{item.bio}</Text> : null}
           </View>
-        )}
-      </TouchableOpacity>
-      <View style={styles.resultContent}>
-        <View style={styles.resultHeader}>
-          <Text style={styles.resultAuthor}>{item.author}</Text>
-          <Text style={styles.resultTime}>
-            {new Date(item.createdAt).toLocaleDateString()}
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <TouchableOpacity
+        style={styles.resultItem}
+        onPress={() => handlePostPress(item.id)}
+      >
+        <TouchableOpacity onPress={() => handleUserPress(item.authorKey)}>
+          {item.authorAvatar ? (
+            <Image source={{ uri: item.authorAvatar }} style={styles.resultAvatar} />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <User size={18} color="#666" />
+            </View>
+          )}
+        </TouchableOpacity>
+        <View style={styles.resultContent}>
+          <View style={styles.resultHeader}>
+            <Text style={styles.resultAuthor}>{item.author}</Text>
+            <Text style={styles.resultTime}>
+              {new Date(item.createdAt).toLocaleDateString()}
+            </Text>
+          </View>
+          <Text style={styles.resultText} numberOfLines={2}>
+            {item.text}
           </Text>
         </View>
-        <Text style={styles.resultText} numberOfLines={2}>
-          {item.text}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>

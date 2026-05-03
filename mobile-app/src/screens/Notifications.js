@@ -17,6 +17,7 @@ import {
   User,
   Bell,
 } from 'lucide-react-native';
+import { notificationsAPI } from '../api/client';
 
 // Mock notifications data since the API endpoint may not exist
 const generateMockNotifications = () => [
@@ -66,15 +67,12 @@ const Notifications = ({ navigation }) => {
   const fetchNotifications = async () => {
     setLoading(true);
     try {
-      // Try to fetch from API first
-      // If endpoint doesn't exist, use mock data
-      // const response = await notificationsAPI.getNotifications();
-      // if (response.data.ok) {
-      //   setNotifications(response.data.notifications || []);
-      // }
-      
-      // Using mock data for now
-      setNotifications(generateMockNotifications());
+      const response = await notificationsAPI.getNotifications();
+      if (response.data.ok) {
+        setNotifications(response.data.notifications || []);
+      } else {
+        setNotifications(generateMockNotifications());
+      }
     } catch (err) {
       console.error('Notifications error:', err);
       setNotifications(generateMockNotifications());
