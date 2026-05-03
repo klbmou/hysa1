@@ -85,6 +85,8 @@ let lastDmThreadSignature = "";
 let lastDmInboxSignature = "";
 let aiMode = "chat";
 let reelMutePreference = localStorage.getItem("hysa_reels_muted") !== "false";
+let reelFitPreference = localStorage.getItem("hysa_reels_fit_mode") || "fit";
+let videoSpeedPreference = Number(localStorage.getItem("hysa_video_speed") || "1") || 1;
 const reelViewedIds = new Set();
 const REELS_CACHE_TTL = 60000;
 let reelsCache = { timestamp: 0, payload: null };
@@ -1093,9 +1095,11 @@ function customVideoPlayer(url, {
   previewUrl = "",
   onDoubleTap = null,
   singleTapBehavior = "toggle",
+  compact = false,
+  allowSave = false,
 } = {}) {
   const player = document.createElement("div");
-  player.className = "proVideo";
+  player.className = "proVideo" + (compact ? " compact" : "");
 
   const video = document.createElement("video");
   const fullUrl = String(url || "");
@@ -1116,6 +1120,7 @@ function customVideoPlayer(url, {
   video.muted = !!muted;
   video.loop = allowAutoplay;
   video.autoplay = allowAutoplay;
+  video.playbackRate = videoSpeedPreference;
 
   const center = document.createElement("button");
   center.type = "button";
@@ -1152,6 +1157,19 @@ function customVideoPlayer(url, {
   mute.className = "videoControlBtn";
   mute.setAttribute("aria-label", "Mute video");
   mute.textContent = video.muted ? "Muted" : "Sound";
+
+  const speed = document.createElement("button");
+  speed.type = "button";
+  speed.className = "videoControlBtn";
+  speed.setAttribute("aria-label", "Playback speed");
+  const speeds = [0.5,0.75,1,1.25,1.5,2];
+  function syncSpeedLabel(){ speed.textContent = `${(video.playbackRate || 1)}x`; }
+  syncSpeedLabel();
+  const more = document.createElement("button");
+  more.type = "button";
+  more.className = "videoControlBtn";
+  more.textContent = "⋯";
+  more.setAttribute("aria-label", "More options");
   const fullscreen = document.createElement("button");
   fullscreen.type = "button";
   fullscreen.className = "videoControlBtn";
@@ -1276,6 +1294,23 @@ function customVideoPlayer(url, {
     const pct = rect.width ? (event.clientX - rect.left) / rect.width : 0;
     if (Number.isFinite(video.duration)) video.currentTime = Math.max(0, Math.min(1, pct)) * video.duration;
   });
+  on(speed, "click", () => {
+    const idx = speeds.findIndex((v) => Math.abs(v - video.playbackRate) < 0.01);
+    const next = speeds[(idx + 1 + speeds.length) % speeds.length];
+    video.playbackRate = next;
+    videoSpeedPreference = next;
+    localStorage.setItem("hysa_video_speed", String(next));
+    syncSpeedLabel();
+  });
+  on(more, "click", async () => {
+    const opts = [{label: allowSave ? "Save post" : "Copy link", value: allowSave ? "save" : "copy"},{label:"Copy link",value:"copy"},{label:"Report",value:"report"}];
+    const choice = window.prompt("Options: save / copy / report", allowSave ? "save" : "copy");
+    if (!choice) return;
+    const c = choice.toLowerCase();
+    if (c === "copy") { try { await navigator.clipboard.writeText(video.currentSrc || fullUrl || ""); showToast(t("linkCopied")); } catch {} }
+    if (c === "save" && allowSave) showToast("Saved to HYSA");
+    if (c === "report") showToast(t("reportSent"));
+  });
   on(fullscreen, "click", () => {
     const target = player.closest("#lightbox") ? player : video;
     if (document.fullscreenElement) document.exitFullscreen?.();
@@ -1286,7 +1321,9 @@ function customVideoPlayer(url, {
   controls.appendChild(bar);
   controls.appendChild(time);
   controls.appendChild(mute);
+  controls.appendChild(speed);
   controls.appendChild(fullscreen);
+  controls.appendChild(more);
   player.appendChild(video);
   player.appendChild(placeholder);
   player.appendChild(spinner);
@@ -5212,6 +5249,12 @@ async function loadReels() {
       player.appendChild(progress);
       const video = player.querySelector("video");
       if (video) {
+        card.classList.add(reelFitPreference === "fill" ? "fill-mode" : "fit-mode");
+        const fitBtn = document.createElement("button"); fitBtn.type="button"; fitBtn.className="reelFitToggle"; fitBtn.textContent = reelFitPreference === "fill" ? "Fill" : "Fit";
+        const rotateBtn = document.createElement("button"); rotateBtn.type="button"; rotateBtn.className="reelRotateBtn"; rotateBtn.textContent = "⤾";
+        on(fitBtn,"click",()=>{ card.classList.toggle("fill-mode"); card.classList.toggle("fit-mode", !card.classList.contains("fill-mode")); reelFitPreference = card.classList.contains("fill-mode")?"fill":"fit"; localStorage.setItem("hysa_reels_fit_mode", reelFitPreference); fitBtn.textContent = reelFitPreference === "fill" ? "Fill" : "Fit";});
+        on(rotateBtn,"click",()=>{ if (video.requestFullscreen) video.requestFullscreen().then(()=>{ if (screen.orientation?.lock) screen.orientation.lock("landscape").catch(()=>{});}).catch(()=>{});});
+        card.appendChild(fitBtn); card.appendChild(rotateBtn);
         video.loop = true;
         video.preload = "metadata";
         let pressTimer = null;
@@ -5938,7 +5981,12 @@ function route() {
   if (!getToken()) return;
   rememberHomeScroll();
   const h = location.hash || "#home";
-  document.body.classList.toggle("reels-active", h === "#reels");
+  const isReelsRoute = h === "#reels";
+  document.body.classList.toggle("reels-active", isReelsRoute);
+  if (!isReelsRoute && el.reelsView) {
+    el.reelsView.hidden = true;
+    for (const rv of el.reelsView.querySelectorAll("video")) rv.pause();
+  }
   if (h === "#reels") document.body.classList.remove("comments-open");
   const mProfile = /^#u\/(.+)$/.exec(h);
   const mPost = /^#p\/(.+)$/.exec(h);
@@ -7946,6 +7994,7 @@ function openLightbox(src, kind = "image", onLike = null, poster = "") {
   document.body.classList.add("lightbox-open");
   lb.hidden = false;
   lb.classList.remove("closing", "is-video");
+  lb.style.setProperty("--media-viewer-bg", `url("${String((poster||src||"")).replace(/"/g, "%22")}")`);
   lb.classList.toggle("is-video", kind === "video");
   lb.querySelectorAll(".lightbox-video, .lightbox-heart").forEach((node) => node.remove());
   const img = lb.querySelector(".lightbox-img");
@@ -8044,6 +8093,7 @@ function closeLightbox() {
   window.setTimeout(() => {
     lb.hidden = true;
     lb.classList.remove("closing", "is-video");
+  lb.style.setProperty("--media-viewer-bg", `url("${String((poster||src||"")).replace(/"/g, "%22")}")`);
     lb.querySelectorAll(".lightbox-video, .lightbox-heart").forEach((node) => node.remove());
     const img = lb.querySelector(".lightbox-img");
     if (img) { img.hidden = false; img.src = ""; }
