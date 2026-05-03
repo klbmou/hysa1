@@ -1200,6 +1200,11 @@ function customVideoPlayer(url, {
   on(video, "stalled", () => setLoadingState(true));
   on(video, "canplay", setReadyState);
   on(video, "playing", setReadyState);
+  on(video, "ended", () => {
+    setPausedState();
+    setLoadingState(false);
+    if (activeVideoElement === video) activeVideoElement = null;
+  });
   on(video, "error", () => {
     setLoadingState(false);
     player.classList.add("hasError");

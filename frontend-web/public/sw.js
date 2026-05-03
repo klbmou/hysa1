@@ -9,6 +9,23 @@ const SHELL = [
   "/favicon.svg"
 ];
 
+function offlineResponse(type) {
+  if (type === "json") {
+    return new Response(JSON.stringify({ ok: false, message: "OFFLINE" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+  return new Response("Offline", {
+    status: 503,
+    headers: { "Content-Type": "text/plain; charset=utf-8" }
+  });
+}
+
+function failedAssetResponse() {
+  return new Response("", { status: 504, statusText: "Gateway Timeout" });
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE)
@@ -31,12 +48,7 @@ self.addEventListener("fetch", (event) => {
 
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(
-      fetch(event.request).catch(() =>
-        new Response(JSON.stringify({ ok: false, message: "OFFLINE" }), {
-          status: 503,
-          headers: { "Content-Type": "application/json" }
-        })
-      )
+      fetch(event.request).catch(() => offlineResponse("json"))
     );
     return;
   }
@@ -48,7 +60,7 @@ self.addEventListener("fetch", (event) => {
           const fetched = fetch(event.request, { cache: "force-cache" }).then((response) => {
             if (response && response.ok) cache.put(event.request, response.clone()).catch(() => {});
             return response;
-          }).catch(() => cached);
+          }).catch(() => cached || failedAssetResponse());
           return cached || fetched;
         })
       )
@@ -57,7 +69,10 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (url.pathname.startsWith("/uploads/")) {
-    event.respondWith(fetch(event.request, { cache: "force-cache" }).catch(() => caches.match(event.request)));
+    event.respondWith(
+      fetch(event.request, { cache: "force-cache" })
+        .catch(() => caches.match(event.request).then((cached) => cached || failedAssetResponse()))
+    );
     return;
   }
 
@@ -71,7 +86,7 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => cached);
+        .catch(() => cached || offlineResponse());
       return cached || fetched;
     })
   );
