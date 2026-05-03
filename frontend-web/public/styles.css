@@ -6935,6 +6935,32 @@ body {
   filter: drop-shadow(0 0 9px rgba(255, 45, 149, 0.35));
 }
 
+.dataSaverBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 45, 149, 0.22);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.78);
+  background:
+    linear-gradient(135deg, rgba(124, 58, 237, 0.18), rgba(255, 45, 149, 0.12)),
+    rgba(10, 10, 15, 0.46);
+  box-shadow: 0 0 18px rgba(255, 45, 149, 0.1);
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .dataSaverBadge {
+    max-width: 86px;
+    padding-inline: 7px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
 .bottom-nav .fab {
   background:
     radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0) 28%),

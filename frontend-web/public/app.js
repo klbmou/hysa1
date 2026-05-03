@@ -125,6 +125,8 @@ function setLowDataMode(nextValue) {
   lowDataMode = !!nextValue;
   localStorage.setItem(lowDataKey, String(lowDataMode));
   document.documentElement.toggleAttribute("data-low-data", lowDataMode);
+  const badge = document.getElementById("lowDataBadge");
+  if (badge) badge.hidden = !lowDataMode;
   feedCache = { key: "", timestamp: 0, payload: null };
 }
 
@@ -658,11 +660,11 @@ function mediaDisplayUrl(item) {
 }
 
 function mediaFullUrl(item) {
-  return String((item && (item.fullUrl || item.url || item.previewUrl || item.thumbnailUrl || "")) || "");
+  return String((item && (item.url || item.previewUrl || item.fullUrl || item.thumbnailUrl || "")) || "");
 }
 
 function mediaVisibleUrl(item) {
-  return String((item && (item.url || item.previewUrl || item.thumbnailUrl || item.fullUrl)) || "");
+  return String((item && (item.previewUrl || item.url || item.thumbnailUrl || item.fullUrl)) || "");
 }
 
 function mediaThumbUrl(item) {
@@ -674,7 +676,7 @@ function videoPosterUrl(item) {
 }
 
 function videoSourceUrl(item) {
-  return String((item && (item.fullUrl || item.url || item.previewUrl || "")) || "");
+  return String((item && (item.url || item.previewUrl || item.fullUrl || "")) || "");
 }
 
 let fullImageObserver = null;
@@ -1049,20 +1051,20 @@ function customVideoPlayer(url, {
   const fullUrl = String(url || "");
   const lightUrl = String(previewUrl || "");
   const posterUrl = String(poster || lightUrl || fullUrl || "");
+  const allowAutoplay = !!(autoplay && !lowDataMode);
   if (!posterUrl) player.classList.add("noPoster");
   if (posterUrl) player.style.setProperty("--video-poster", `url("${posterUrl.replace(/"/g, "%22")}")`);
   video.dataset.src = fullUrl || lightUrl;
   video.dataset.previewSrc = lightUrl;
-  if (autoplay) {
-    video.src = lightUrl || fullUrl;
+  if (allowAutoplay) {
     video.dataset.autoplay = "1";
   }
   video.poster = posterUrl || "";
   video.playsInline = true;
-  video.preload = autoplay ? "metadata" : "none";
+  video.preload = "metadata";
   video.muted = !!muted;
-  video.loop = !!autoplay;
-  video.autoplay = !!autoplay;
+  video.loop = allowAutoplay;
+  video.autoplay = allowAutoplay;
 
   const center = document.createElement("button");
   center.type = "button";
@@ -1229,8 +1231,8 @@ function customVideoPlayer(url, {
   player.appendChild(center);
   player.appendChild(controls);
   setPausedState();
-  setLoadingState(autoplay);
-  if (autoplay) {
+  setLoadingState(allowAutoplay);
+  if (allowAutoplay) {
     window.setTimeout(() => video.play().catch(() => {}), 0);
   }
   return player;
@@ -2155,6 +2157,7 @@ function showApp() {
   if (el.composeFab) el.composeFab.hidden = false;
   if (el.mobileNav) el.mobileNav.hidden = false;
   if (el.aiFab) el.aiFab.hidden = false;
+  if (el.lowDataBadge) el.lowDataBadge.hidden = !lowDataMode;
   updateNavAvatar();
   if (me) ensurePeerClient().catch(() => {});
 }
@@ -2821,14 +2824,13 @@ function renderStoryViewer() {
   if (story.media.kind === "video") {
     const video = document.createElement("video");
     video.poster = videoPosterUrl(story.media);
-    if (!lowDataMode) video.src = String(story.media.previewUrl || story.media.url || "");
     video.dataset.src = videoSourceUrl(story.media) || String(story.media.previewUrl || "");
     video.className = mediaClass;
-    video.autoplay = !lowDataMode;
+    video.autoplay = false;
     video.controls = false;
     video.muted = reelMutePreference;
     video.playsInline = true;
-    video.preload = lowDataMode ? "none" : "metadata";
+    video.preload = "metadata";
     activeStoryVideo = video;
     on(video, "click", () => {
       if (!video.currentSrc && video.dataset.src) {
@@ -5013,7 +5015,7 @@ function ensureInfiniteFeed() {
       if (feedLoading) return;
       loadFeed().catch(() => {});
     },
-    { root: null, rootMargin: "600px 0px", threshold: 0 },
+    { root: null, rootMargin: "260px 0px", threshold: 0 },
   );
   feedObserver.observe(el.feedSentinel);
 }
@@ -6476,6 +6478,7 @@ async function boot() {
     langSelect: document.getElementById("langSelect"),
     langToggle: document.getElementById("langToggle"),
     langMenu: document.getElementById("langMenu"),
+    lowDataBadge: document.getElementById("lowDataBadge"),
 
     refreshBtn: document.getElementById("refreshBtn"),
     viewTitle: document.getElementById("viewTitle"),
@@ -7318,16 +7321,8 @@ function refreshAllTimestamps() {
 
 // #27: Preload adjacent posts
 function preloadAdjacentPosts(currentNode) {
-  if (!el.feed || !currentNode) return;
-  const posts = Array.from(el.feed.querySelectorAll(".post"));
-  const idx = posts.indexOf(currentNode);
-  for (let i = 1; i <= 2; i++) {
-    const next = posts[idx + i];
-    if (!next) break;
-    for (const img of next.querySelectorAll('img[loading="lazy"]')) {
-      img.loading = "eager";
-    }
-  }
+  // Strict data saver: keep adjacent media lazy and thumbnail-first.
+  void currentNode;
 }
 
 // #22: Service Worker
@@ -7336,9 +7331,9 @@ function registerServiceWorker() {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 
-// #26: API response cache (60 s TTL)
+// #26: API response cache (short TTL; API responses are not cached long-term)
 const _apiCache = new Map();
-const _API_CACHE_TTL = 60000;
+const _API_CACHE_TTL = 15000;
 async function cachedApi(path, opts) {
   const isGet = !opts || !opts.method || opts.method === "GET";
   if (isGet) {

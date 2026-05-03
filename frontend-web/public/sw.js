@@ -54,6 +54,12 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (url.hostname.includes("cloudinary.com")) {
+    const isVideoRequest = (event.request.destination === "video" || /\/video\/upload\//i.test(url.pathname)) && !/f_jpg/i.test(url.pathname);
+    const isImageRequest = !isVideoRequest && (event.request.destination === "image" || /\/image\/upload\//i.test(url.pathname) || /f_jpg/i.test(url.pathname));
+    if (!isImageRequest) {
+      event.respondWith(fetch(event.request, { cache: "no-store" }).catch(() => failedAssetResponse()));
+      return;
+    }
     event.respondWith(
       caches.open(CACHE).then((cache) =>
         caches.match(event.request).then((cached) => {
