@@ -4878,13 +4878,16 @@ body.nav-hidden .bottom-nav {
 .feed-loader::before,
 .pull-spinner {
   content: "";
-  width: 22px;
-  height: 22px;
-  border: 2px solid rgba(255, 255, 255, 0.15);
-  border-top-color: var(--primary);
-  border-radius: 50%;
+  width: 7px;
+  height: 7px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #7c3aed, #ff2d95);
+  box-shadow: 0 0 14px rgba(255, 45, 149, 0.42);
   display: inline-block;
-  animation: spin 820ms linear infinite;
+  margin-inline-end: 8px;
+  vertical-align: 1px;
+  animation: hysaDotPulse 1.15s ease-in-out infinite;
 }
 
 @keyframes navSlideUp {
@@ -4915,8 +4918,9 @@ body.nav-hidden .bottom-nav {
   to { filter: hue-rotate(360deg); }
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+@keyframes hysaDotPulse {
+  0%, 100% { opacity: 0.45; transform: scale(0.82); }
+  50% { opacity: 1; transform: scale(1); }
 }
 
 .videoCenterPlay::before,
@@ -5250,13 +5254,10 @@ body[dir="rtl"] .comment.reply {
 }
 
 #pullIndicator.ready {
-  border-color: rgba(67, 233, 123, 0.45);
-  background: linear-gradient(135deg, rgba(108, 99, 255, 0.9), rgba(255, 101, 132, 0.86));
-  box-shadow: 0 12px 30px rgba(108, 99, 255, 0.32);
-}
-
-#pullIndicator.ready .pull-spin {
-  border-top-color: var(--accent);
+  background:
+    linear-gradient(135deg, rgba(124, 58, 237, 0.38), rgba(255, 45, 149, 0.24)),
+    rgba(20, 20, 30, 0.9);
+  box-shadow: 0 12px 34px rgba(124, 58, 237, 0.32), 0 0 30px rgba(255, 45, 149, 0.28);
 }
 
 @keyframes homeTapPop {
@@ -5498,28 +5499,38 @@ body[dir="rtl"] .comment.reply {
   left: 50%;
   transform: translateX(-50%) translateY(-70px);
   z-index: 990;
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(124, 58, 237, 0.28), rgba(255, 45, 149, 0.18)),
+    rgba(20, 20, 30, 0.86);
+  border: 0;
+  color: rgba(255, 255, 255, 0.86);
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 180ms ease, box-shadow 180ms ease;
+  box-shadow: 0 10px 28px rgba(124, 58, 237, 0.22), 0 0 22px rgba(255, 45, 149, 0.16);
+  opacity: 0;
 }
 #pullIndicator.show {
   transform: translateX(-50%) translateY(0);
+  opacity: 1;
 }
-.pull-spin {
-  width: 20px;
-  height: 20px;
-  border: 2.5px solid rgba(255, 255, 255, 0.14);
-  border-top-color: var(--primary);
-  border-radius: 50%;
-  animation: spin 700ms linear infinite;
+.pull-icon {
+  width: 18px;
+  height: 18px;
+  filter: drop-shadow(0 0 8px rgba(255, 45, 149, 0.5));
+  transition: transform 180ms ease, color 180ms ease;
+}
+#pullIndicator.ready {
+  box-shadow: 0 12px 34px rgba(124, 58, 237, 0.32), 0 0 30px rgba(255, 45, 149, 0.28);
+}
+#pullIndicator.ready .pull-icon {
+  color: #ff2d95;
+  transform: rotate(18deg) scale(1.04);
 }
 
 /* #14: Online status ring */
