@@ -529,6 +529,21 @@ function formatCount(n) {
   return String(value);
 }
 
+function textDirectionClass(value) {
+  const raw = String(value || "");
+  const arabic = (raw.match(/[\u0600-\u06FF]/g) || []).length;
+  const latin = (raw.match(/[A-Za-z]/g) || []).length;
+  return arabic > latin ? "rtl-text" : "ltr-text";
+}
+
+function applyTextDirection(node, value) {
+  if (!node) return node;
+  const cls = textDirectionClass(value);
+  node.classList.add("auto-dir", cls);
+  node.setAttribute("dir", cls === "rtl-text" ? "rtl" : "ltr");
+  return node;
+}
+
 function setIconCountState(button, iconName, count, active = false) {
   if (!button) return;
   button.classList.toggle("active", !!active);
@@ -1494,6 +1509,7 @@ function renderDmMessage(message) {
   if (message.text) {
     const text = document.createElement("div");
     text.className = "dmBubbleText";
+    applyTextDirection(text, message.text);
     text.textContent = message.text;
     b.appendChild(text);
   }
@@ -3949,6 +3965,7 @@ function commentNode(comment, onReply, onDelete, post, depth = 0) {
 
   const text = document.createElement("div");
   text.className = "comment-text commentText";
+  applyTextDirection(text, comment.text);
   text.textContent = comment.text;
 
   body.appendChild(meta);
@@ -4069,12 +4086,13 @@ function richTextNode(textValue, { truncate = false } = {}) {
   const raw = String(textValue || "");
   const text = document.createElement("div");
   text.className = "postText";
+  applyTextDirection(text, raw);
   const parts = raw.split(/(#[a-z0-9_]{2,30}|@[a-z0-9_]{1,30})/gi);
   for (const part of parts) {
     if (/^#[a-z0-9_]{2,30}$/i.test(part)) {
       const tag = document.createElement("button");
       tag.type = "button";
-      tag.className = "hashTag";
+      tag.className = "hashTag handle";
       tag.textContent = part;
       on(tag, "click", () => {
         if (el.searchInput) {
@@ -4086,7 +4104,7 @@ function richTextNode(textValue, { truncate = false } = {}) {
       text.appendChild(tag);
     } else if (/^@[a-z0-9_]{1,30}$/i.test(part)) {
       const mention = document.createElement("a");
-      mention.className = "mentionLink";
+      mention.className = "mentionLink handle";
       mention.textContent = part;
       mention.href = `#u/${encodeURIComponent(part.slice(1).toLowerCase())}`;
       text.appendChild(mention);
