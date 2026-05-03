@@ -6457,11 +6457,14 @@ async function boot() {
       on(btn, "click", () => {
         pulseTap(btn);
         const nav = btn.getAttribute("data-nav");
+        if (nav === "create") {
+          openCompose();
+          return;
+        }
         for (const n of el.mobileNav.querySelectorAll(".nav-item")) n.classList.remove("active");
         btn.classList.add("active");
         if (nav === "home") location.hash = "#home";
         else if (nav === "search" && el.searchInput) el.searchInput.focus();
-        else if (nav === "create") openCompose();
         else if (nav === "reels") location.hash = "#reels";
         else if (nav === "explore") location.hash = "#explore";
         else if (nav === "notifications") openNotificationsPanel();

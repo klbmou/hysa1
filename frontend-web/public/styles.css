@@ -63,6 +63,7 @@ html {
   background: var(--bg);
   color-scheme: dark;
   -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -5559,7 +5560,53 @@ body[dir="rtl"] .comment.reply {
     box-shadow 220ms ease;
 }
 .bottom-nav.nav-hidden {
-  transform: translateY(calc(100% + 4px));
+  transform: translate(-50%, calc(100% + 28px));
+  opacity: 0;
+}
+
+@media (max-width: 420px) {
+  .bottom-nav {
+    width: calc(100% - 12px);
+    height: 70px;
+    padding-inline: 6px;
+    gap: 2px;
+  }
+
+  .bottom-nav .nav-item {
+    min-width: 0;
+    max-width: none;
+    height: 52px;
+    padding-inline: 4px;
+  }
+
+  .bottom-nav .nav-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 9px;
+  }
+
+  .bottom-nav .fab {
+    width: 56px;
+    height: 56px;
+    flex-basis: 56px;
+  }
+
+  .compose-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .compose-toolbar-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .compose-tool-btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 /* #23: Add-to-Home-Screen banner */

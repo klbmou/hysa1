@@ -113,7 +113,7 @@ function contentSecurityPolicy(req, nonce) {
   return directives.join("; ");
 }
 
-const USE_POSTGRES = !!process.env.DATABASE_URL;
+let USE_POSTGRES = !!process.env.DATABASE_URL;
 const USE_CLOUDINARY = !!(
   process.env.CLOUDINARY_CLOUD_NAME &&
   process.env.CLOUDINARY_API_KEY &&
@@ -4800,7 +4800,6 @@ app.use((err, req, res, next) => {
 });
 
 async function start() {
-  const dataMode = USE_POSTGRES ? "postgres" : "data.json";
   const storageMode = USE_CLOUDINARY ? "cloudinary" : "local";
 
   console.log("========================================");
@@ -4808,14 +4807,22 @@ async function start() {
   console.log("========================================");
   console.log(`Environment: ${NODE_ENV}`);
   console.log(`DATABASE_URL present: ${!!DATABASE_URL}`);
-  console.log(`Data mode: ${dataMode}`);
+  console.log(`Data mode: ${USE_POSTGRES ? "postgres" : "data.json"}`);
   console.log(`Storage mode: ${storageMode}`);
   console.log(`Data file path: ${DATA_FILE}`);
   console.log(`Uploads path: ${UPLOADS_DIR}`);
   console.log("----------------------------------------");
 
   if (USE_POSTGRES) {
-    await initPostgresSchema();
+    try {
+      await initPostgresSchema();
+    } catch (err) {
+      if (NODE_ENV === "production") throw err;
+      console.warn(`[postgres] Unavailable in development; falling back to data.json (${err && err.code ? err.code : err.message})`);
+      USE_POSTGRES = false;
+      pgPool = null;
+      await connectDataFile();
+    }
   } else {
     await connectDataFile();
   }
