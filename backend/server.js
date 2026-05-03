@@ -29,8 +29,8 @@ try {
 }
 
 // Render/Production Config
-const PORT = Number(process.env.PORT || 3000);
-const HOST = String(process.env.HOST || "0.0.0.0");
+const PORT = Number(process.env.PORT || 10000);
+const HOST = "0.0.0.0";
 const NODE_ENV = process.env.NODE_ENV || "development";
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB
@@ -73,6 +73,7 @@ const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY;
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
 const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || "").trim();
 const GOOGLE_CLIENT_SECRET = String(process.env.GOOGLE_CLIENT_SECRET || "").trim();
+const GOOGLE_AUTH_CONFIGURED = !!GOOGLE_CLIENT_ID;
 const AUTH_COOKIE_NAME = "hysa_auth";
 const AUTH_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const CSRF_HEADER_NAME = "x-csrf-token";
@@ -116,9 +117,10 @@ function contentSecurityPolicy(req, nonce) {
 
 let USE_POSTGRES = !!process.env.DATABASE_URL;
 const USE_CLOUDINARY = !!(
-  process.env.CLOUDINARY_CLOUD_NAME &&
-  process.env.CLOUDINARY_API_KEY &&
-  process.env.CLOUDINARY_API_SECRET
+  CLOUDINARY_CLOUD_NAME &&
+  CLOUDINARY_API_KEY &&
+  CLOUDINARY_API_SECRET &&
+  cloudinary
 );
 const OWNER_USER_KEY = "france";
 const googleOAuthClient = new OAuth2Client(GOOGLE_CLIENT_ID || undefined);
@@ -133,6 +135,8 @@ let pgPool = null;
 if (USE_POSTGRES && Pool) {
   pgPool = new Pool({
     connectionString: DATABASE_URL,
+    connectionTimeoutMillis: 5000,
+    idleTimeoutMillis: 10000,
     ssl: {
       rejectUnauthorized: false,
     },
@@ -2489,8 +2493,8 @@ app.post("/api/login", rateLimit("auth"), async (req, res) => {
 });
 
 app.post("/api/auth/google", rateLimit("auth"), async (req, res) => {
-  if (!GOOGLE_CLIENT_ID) {
-    return res.status(503).json({ ok: false, error: "GOOGLE_AUTH_NOT_CONFIGURED" });
+  if (!GOOGLE_AUTH_CONFIGURED) {
+    return res.status(400).json({ ok: false, error: "GOOGLE_AUTH_NOT_CONFIGURED" });
   }
   const credential = String((req.body && req.body.credential) || "").trim();
   if (!credential) return res.status(400).json({ ok: false, error: "INVALID_GOOGLE_CREDENTIAL" });
@@ -2572,7 +2576,7 @@ app.post("/api/auth/google", rateLimit("auth"), async (req, res) => {
 app.get("/api/config", (_req, res) => {
   return res.status(200).json({
     ok: true,
-    googleClientId: GOOGLE_CLIENT_ID,
+    googleClientId: GOOGLE_AUTH_CONFIGURED ? GOOGLE_CLIENT_ID : "",
   });
 });
 
@@ -4028,7 +4032,7 @@ app.post("/api/upload", rateLimit("uploads"), async (req, res) => {
   }
 
   if (!mediaUrl && NODE_ENV === "production") {
-    return res.status(503).json({ ok: false, error: "CLOUDINARY_REQUIRED" });
+    return res.status(400).json({ ok: false, error: "CLOUDINARY_REQUIRED" });
   }
 
   if (!mediaUrl) {
@@ -4912,20 +4916,7 @@ app.use((err, req, res, next) => {
   return res.status(500).send("Server error");
 });
 
-async function start() {
-  const storageMode = USE_CLOUDINARY ? "cloudinary" : "local";
-
-  console.log("========================================");
-  console.log("HYSA1 Backend Starting");
-  console.log("========================================");
-  console.log(`Environment: ${NODE_ENV}`);
-  console.log(`DATABASE_URL present: ${!!DATABASE_URL}`);
-  console.log(`Data mode: ${USE_POSTGRES ? "postgres" : "data.json"}`);
-  console.log(`Storage mode: ${storageMode}`);
-  console.log(`Data file path: ${DATA_FILE}`);
-  console.log(`Uploads path: ${UPLOADS_DIR}`);
-  console.log("----------------------------------------");
-
+async function initializeRuntimeAfterListen() {
   if (USE_POSTGRES) {
     try {
       await initPostgresSchema();
@@ -4938,6 +4929,25 @@ async function start() {
   } else {
     await connectDataFile();
   }
+}
+
+function start() {
+  const storageMode = USE_CLOUDINARY ? "cloudinary" : "local";
+
+  console.log("========================================");
+  console.log("HYSA1 Backend Starting");
+  console.log("========================================");
+  console.log(`NODE_ENV: ${NODE_ENV}`);
+  console.log(`PORT: ${PORT}`);
+  console.log(`HOST: ${HOST}`);
+  console.log(`DATABASE_URL present: ${!!DATABASE_URL}`);
+  console.log(`Cloudinary configured: ${USE_CLOUDINARY}`);
+  console.log(`Google OAuth configured: ${GOOGLE_AUTH_CONFIGURED}`);
+  console.log(`Data mode: ${USE_POSTGRES ? "postgres" : "data.json"}`);
+  console.log(`Storage mode: ${storageMode}`);
+  console.log(`Data file path: ${DATA_FILE}`);
+  console.log(`Uploads path: ${UPLOADS_DIR}`);
+  console.log("----------------------------------------");
 
   try {
     const pubOk = fs.existsSync(PUBLIC_DIR);
@@ -4949,11 +4959,15 @@ async function start() {
   }
 
   httpServer.listen(PORT, HOST, () => {
+    console.log(`HYSA1 server listening on port ${PORT}`);
     console.log(`[server] listening on http://${HOST}:${PORT}`);
     console.log("[peerjs] signaling mounted at /peerjs");
     console.log("========================================");
     console.log("Server is ready!");
     console.log("========================================");
+    initializeRuntimeAfterListen().catch((err) => {
+      console.error("[startup] background initialization failed:", err && err.message ? err.message : err);
+    });
   });
   httpServer.on("error", (err) => {
     console.error("[server] failed to start:", err);

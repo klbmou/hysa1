@@ -1,0 +1,21 @@
+{
+  "name": "hysa1",
+  "private": true,
+  "version": "1.0.0",
+  "description": "HYSA1 full-stack app",
+  "main": "backend/server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node backend/server.js"
+  },
+  "dependencies": {
+    "cloudinary": "^2.0.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.18.2",
+    "google-auth-library": "^10.6.2",
+    "peer": "^1.0.2",
+    "pg": "^8.11.0"
+  }
+}

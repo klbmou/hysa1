@@ -1,0 +1,27 @@
+
+> hysa1@1.0.0 start
+> node backend/server.js
+
+[PeerJS] Server initialized successfully
+========================================
+HYSA1 Backend Starting
+========================================
+NODE_ENV: production
+PORT: 3120
+HOST: 0.0.0.0
+DATABASE_URL present: true
+Cloudinary configured: true
+Google OAuth configured: false
+Data mode: postgres
+Storage mode: cloudinary
+Data file path: C:\Users\psx\Pictures\HYSA1\backend\data.json
+Uploads path: C:\Users\psx\Pictures\HYSA1\backend\uploads
+----------------------------------------
+HYSA1 server listening on port 3120
+[server] listening on http://0.0.0.0:3120
+[peerjs] signaling mounted at /peerjs
+========================================
+Server is ready!
+========================================
+[bandwidth] GET /sw.js 200 2334b 24ms
+[bandwidth] GET /api/config 200 31b 7ms
