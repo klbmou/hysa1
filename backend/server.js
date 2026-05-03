@@ -1963,6 +1963,37 @@ function publicStoredUrl(url) {
   return s && uploadUrlExists(s) ? s : "";
 }
 
+function cloudinaryTransformUrl(url, transform) {
+  const s = String(url || "");
+  const t = String(transform || "").replace(/^\/+|\/+$/g, "");
+  if (!t || !/^https?:\/\/(res\.cloudinary\.com|.*\.cloudinary\.com)\//i.test(s)) return "";
+  return s.replace(/\/(image|video|raw)\/upload\//i, (_match, type) => `/${type}/upload/${t}/`);
+}
+
+function publicMediaVariants(url, kind) {
+  const publicUrl = publicStoredUrl(url);
+  const mediaKind = String(kind || "");
+  if (!publicUrl) return { url: "", previewUrl: "", thumbnailUrl: "" };
+  if (!/^https?:\/\/(res\.cloudinary\.com|.*\.cloudinary\.com)\//i.test(publicUrl)) {
+    return { url: publicUrl, previewUrl: "", thumbnailUrl: "" };
+  }
+  if (mediaKind === "image") {
+    return {
+      url: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:eco,c_limit,w_1600"),
+      previewUrl: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:low,c_fill,w_720,h_720"),
+      thumbnailUrl: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:low,c_fill,w_240,h_240"),
+    };
+  }
+  if (mediaKind === "video") {
+    return {
+      url: publicUrl,
+      previewUrl: cloudinaryTransformUrl(publicUrl, "f_auto,q_auto:eco,c_limit,w_960"),
+      thumbnailUrl: cloudinaryTransformUrl(publicUrl, "so_0,f_jpg,q_auto:low,c_fill,w_640,h_900"),
+    };
+  }
+  return { url: publicUrl, previewUrl: "", thumbnailUrl: "" };
+}
+
 function toPublicMediaList(media) {
   return asArray(media)
     .map((m) => ({
@@ -1975,7 +2006,10 @@ function toPublicMediaList(media) {
       duration: Number.isFinite(Number(m && m.duration)) ? Number(m.duration) : undefined,
     }))
     .filter((m) => m.kind && m.mime)
-    .map((m) => (m.url && uploadUrlExists(m.url) ? m : { ...m, url: "", missing: true }));
+    .map((m) => {
+      if (!m.url || !uploadUrlExists(m.url)) return { ...m, url: "", previewUrl: "", thumbnailUrl: "", missing: true };
+      return { ...m, ...publicMediaVariants(m.url, m.kind) };
+    });
 }
 
 function validateDmMediaList(media) {
@@ -3931,7 +3965,7 @@ app.post("/api/upload", rateLimit("uploads"), async (req, res) => {
     mediaUrl = `/uploads/${filename}`;
   }
 
-  const media = { url: mediaUrl, kind, mime: normalizedMime };
+  const media = { ...publicMediaVariants(mediaUrl, kind), url: mediaUrl, kind, mime: normalizedMime };
   return res.status(200).json({ ok: true, media });
 });
 
@@ -4621,7 +4655,7 @@ function formatPostRow(row, viewer) {
     authorKey: row.author_key,
     author: row.author,
     text: row.text,
-    media: Array.isArray(row.media) ? row.media : (row.media ? JSON.parse(row.media) : []),
+    media: toPublicMediaList(Array.isArray(row.media) ? row.media : (row.media ? JSON.parse(row.media) : [])),
     likes: Array.isArray(row.likes) ? row.likes : (row.likes || []),
     bookmarks: Array.isArray(row.bookmarks) ? row.bookmarks : (row.bookmarks || []),
     likeCount: (Array.isArray(row.likes) ? row.likes : []).length,
@@ -4662,7 +4696,7 @@ app.get("/api/explore", async (req, res) => {
       const sB = (b.likeCount || 0) * 3 + (b.views || 0) + (Array.isArray(b.comments) ? b.comments.length : 0) * 2;
       return sB - sA;
     }).slice(0, 40);
-    return res.status(200).json({ ok: true, posts: sorted });
+    return res.status(200).json({ ok: true, posts: await Promise.all(sorted.map((p) => toPublicPost(p, viewer))) });
   } catch (err) {
     console.error("/api/explore error", err);
     return res.status(500).json({ ok: false, error: "SERVER_ERROR" });

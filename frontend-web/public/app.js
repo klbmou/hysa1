@@ -628,6 +628,18 @@ function isFullMediaUrl(url) {
   return /^(\/uploads\/|https?:\/\/|data:(image|video|audio)\/[a-z0-9.+-]+;base64,)/i.test(String(url || ""));
 }
 
+function mediaDisplayUrl(item) {
+  return String((item && (item.previewUrl || item.thumbnailUrl || item.url)) || "");
+}
+
+function mediaFullUrl(item) {
+  return String((item && (item.url || item.previewUrl || item.thumbnailUrl)) || "");
+}
+
+function mediaThumbUrl(item) {
+  return String((item && (item.thumbnailUrl || item.previewUrl || item.url)) || "");
+}
+
 function currentUserKey() {
   return String((me && (me.userKey || me.key || me.username)) || "").toLowerCase();
 }
@@ -958,6 +970,8 @@ function customAudioPlayer(url, { compact = false, effect = "", speed = 1 } = {}
 function customVideoPlayer(url, {
   muted = false,
   autoplay = false,
+  poster = "",
+  previewUrl = "",
   onDoubleTap = null,
   singleTapBehavior = "toggle",
 } = {}) {
@@ -965,9 +979,16 @@ function customVideoPlayer(url, {
   player.className = "proVideo";
 
   const video = document.createElement("video");
-  video.src = url;
+  const fullUrl = String(url || "");
+  const lightUrl = String(previewUrl || "");
+  video.dataset.src = fullUrl;
+  if (autoplay) {
+    video.src = lightUrl || fullUrl;
+    video.dataset.autoplay = "1";
+  }
+  if (poster) video.poster = poster;
   video.playsInline = true;
-  video.preload = "metadata";
+  video.preload = autoplay ? "metadata" : "none";
   video.muted = !!muted;
   video.loop = !!autoplay;
   video.autoplay = !!autoplay;
@@ -1023,6 +1044,10 @@ function customVideoPlayer(url, {
     player.classList.toggle("isLoading", !!isLoading);
   }
   function togglePlay() {
+    if (!video.currentSrc && video.dataset.src) {
+      video.src = video.dataset.src;
+      video.load();
+    }
     if (video.paused) video.play().catch(() => {});
     else video.pause();
   }
@@ -1099,6 +1124,7 @@ function observeMediaPlayback(root) {
           const v = entry.target;
           if (!(v instanceof HTMLVideoElement)) continue;
           if (entry.isIntersecting) {
+            if (v.dataset.autoplay !== "1") continue;
             if (v.closest("#reelsView")) {
               for (const other of document.querySelectorAll("#reelsView .reelCard video")) {
                 if (other !== v) other.pause();
@@ -1278,11 +1304,16 @@ function renderDmMessage(message) {
       const img = document.createElement("img");
       img.alt = "";
       img.loading = "lazy";
+      img.decoding = "async";
       img.referrerPolicy = "no-referrer";
-      img.src = item.url;
+      img.src = mediaDisplayUrl(item);
+      img.dataset.fullSrc = mediaFullUrl(item);
       wrap.appendChild(img);
     } else if (item.kind === "video") {
-      wrap.appendChild(customVideoPlayer(item.url));
+      wrap.appendChild(customVideoPlayer(mediaFullUrl(item), {
+        poster: mediaThumbUrl(item),
+        previewUrl: String(item.previewUrl || ""),
+      }));
     } else if (item.kind === "audio") {
       wrap.appendChild(customAudioPlayer(item.url, { compact: true, effect: item.effect || "", speed: item.speed || 1 }));
     }
@@ -2598,12 +2629,15 @@ function renderStoryViewer() {
   const mediaClass = `storyFullMedia story-filter-${story.filter || "normal"}`;
   if (story.media.kind === "video") {
     const video = document.createElement("video");
-    video.src = story.media.url;
+    video.poster = mediaThumbUrl(story.media);
+    video.src = String(story.media.previewUrl || story.media.url || "");
+    video.dataset.src = mediaFullUrl(story.media);
     video.className = mediaClass;
     video.autoplay = true;
     video.controls = false;
     video.muted = reelMutePreference;
     video.playsInline = true;
+    video.preload = "metadata";
     activeStoryVideo = video;
     if (el.storyMute) el.storyMute.textContent = video.muted ? "Muted" : "Sound";
     on(video, "loadedmetadata", () => {
@@ -2619,7 +2653,8 @@ function renderStoryViewer() {
     const img = document.createElement("img");
     img.alt = "";
     img.loading = "lazy";
-    img.src = story.media.url;
+    img.decoding = "async";
+    img.src = mediaDisplayUrl(story.media);
     img.className = mediaClass;
     el.storyViewerMedia.appendChild(img);
     startStoryProgress(5500);
@@ -2948,13 +2983,20 @@ function carouselNode(media, { withControls = false, onVideoDoubleTap = null } =
       return slide;
     }
     if (item.kind === "video") {
-      slide.appendChild(customVideoPlayer(item.url, { muted: true, onDoubleTap: onVideoDoubleTap }));
+      slide.appendChild(customVideoPlayer(mediaFullUrl(item), {
+        muted: true,
+        poster: mediaThumbUrl(item),
+        previewUrl: String(item && item.previewUrl || ""),
+        onDoubleTap: onVideoDoubleTap,
+      }));
     } else {
       const img = document.createElement("img");
-      img.src = item.url;
+      img.src = mediaDisplayUrl(item);
       img.alt = "";
       img.loading = "lazy";
+      img.decoding = "async";
       img.referrerPolicy = "no-referrer";
+      img.dataset.fullSrc = mediaFullUrl(item);
       slide.appendChild(img);
     }
     return slide;
@@ -3039,17 +3081,22 @@ function mediaGridNode(media, {
     }
 
     if (item.kind === "video") {
+      const videoUrl = mediaFullUrl(item);
+      const posterUrl = mediaThumbUrl(item);
+      const previewUrl = String(item && item.previewUrl || "");
       if (withControls) {
-        tile.appendChild(customVideoPlayer(item.url, { muted: true, onDoubleTap: onVideoDoubleTap }));
+        tile.appendChild(customVideoPlayer(videoUrl, { muted: true, poster: posterUrl, previewUrl, onDoubleTap: onVideoDoubleTap }));
       } else {
-        tile.appendChild(customVideoPlayer(item.url, { muted: true, autoplay: true, onDoubleTap: onVideoDoubleTap }));
+        tile.appendChild(customVideoPlayer(videoUrl, { muted: true, poster: posterUrl, previewUrl, onDoubleTap: onVideoDoubleTap }));
       }
     } else {
       const img = document.createElement("img");
       img.alt = "";
       img.loading = "lazy";
+      img.decoding = "async";
       img.referrerPolicy = "no-referrer";
-      img.src = item.url;
+      img.src = mediaDisplayUrl(item);
+      img.dataset.fullSrc = mediaFullUrl(item);
       tile.appendChild(img);
     }
 
@@ -4213,9 +4260,11 @@ async function loadReels() {
 
     // ── VIDEO PLAYER ─────────────────────────────────────────
     if (reelMedia && reelMedia.kind === "video") {
-      const player = customVideoPlayer(reelMedia.url, {
+      const player = customVideoPlayer(mediaFullUrl(reelMedia), {
         muted: reelMutePreference,
         autoplay: true,
+        poster: mediaThumbUrl(reelMedia),
+        previewUrl: String(reelMedia.previewUrl || ""),
         onDoubleTap: (event) => {
           flashHeart();
           floatHearts(event);
@@ -4231,7 +4280,7 @@ async function loadReels() {
       const video = player.querySelector("video");
       if (video) {
         video.loop = true;
-        video.preload = "auto";
+        video.preload = "metadata";
         let pressTimer = null;
         let longPressPaused = false;
         on(video, "timeupdate", () => {
@@ -4241,7 +4290,7 @@ async function loadReels() {
           if (pct >= 0.8) {
             const nextVideo = card.nextElementSibling?.querySelector?.("video");
             if (nextVideo && nextVideo.preload !== "auto") {
-              nextVideo.preload = "auto";
+              nextVideo.preload = "metadata";
               nextVideo.load();
             }
           }
@@ -4321,7 +4370,8 @@ async function loadReels() {
       const img = document.createElement("img");
       img.alt = "";
       img.loading = "lazy";
-      img.src = reelMedia.url;
+      img.decoding = "async";
+      img.src = mediaDisplayUrl(reelMedia);
       media.appendChild(img);
     }
 
@@ -4901,16 +4951,19 @@ async function openExplorePage() {
       if (hasMedia) {
         const m = p.media[0];
         if (m.kind === "video") {
-          const vid = document.createElement("video");
-          vid.src = m.url;
-          vid.muted = true;
-          vid.preload = "metadata";
-          tile.appendChild(vid);
-        } else {
           const img = document.createElement("img");
-          img.src = m.url;
+          img.src = mediaThumbUrl(m);
           img.alt = "";
           img.loading = "lazy";
+          img.decoding = "async";
+          img.referrerPolicy = "no-referrer";
+          tile.appendChild(img);
+        } else {
+          const img = document.createElement("img");
+          img.src = mediaThumbUrl(m);
+          img.alt = "";
+          img.loading = "lazy";
+          img.decoding = "async";
           img.referrerPolicy = "no-referrer";
           tile.appendChild(img);
         }
@@ -5101,12 +5154,13 @@ function renderComposeMedia() {
   for (const item of composeMedia) {
     const tile = document.createElement("div");
     tile.className = `mediaItem ${item.uploading ? "uploading" : ""}`.trim();
-    if (item.kind === "video") tile.appendChild(customVideoPlayer(item.previewUrl || item.url, { muted: true }));
+    if (item.kind === "video") tile.appendChild(customVideoPlayer(item.previewUrl || item.url, { muted: true, poster: item.thumbnailUrl || "" }));
     else if (item.kind === "audio") tile.appendChild(customAudioPlayer(item.previewUrl || item.url, { compact: true }));
     else {
       const img = document.createElement("img");
       img.alt = "";
       img.loading = "lazy";
+      img.decoding = "async";
       img.src = item.previewUrl || item.url;
       tile.appendChild(img);
     }
@@ -5218,13 +5272,42 @@ function readFileAsDataUrl(file) {
   });
 }
 
+async function compressedImageDataUrl(file) {
+  if (!file || !/^image\//.test(file.type) || /gif$/i.test(file.type)) {
+    return readFileAsDataUrl(file);
+  }
+  if (!("createImageBitmap" in window)) return readFileAsDataUrl(file);
+  let bitmap = null;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const maxSide = 1600;
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) return readFileAsDataUrl(file);
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    const mime = file.type === "image/png" ? "image/png" : "image/jpeg";
+    const quality = mime === "image/png" ? undefined : 0.82;
+    const dataUrl = canvas.toDataURL(mime, quality);
+    return dataUrl.length < file.size * 1.45 ? dataUrl : readFileAsDataUrl(file);
+  } catch {
+    return readFileAsDataUrl(file);
+  } finally {
+    if (bitmap && typeof bitmap.close === "function") bitmap.close();
+  }
+}
+
 async function uploadFile(file) {
   if (!file) throw new Error("UPLOAD_INVALID");
   const maxBytes = 25 * 1024 * 1024;
   if (file.size > maxBytes) throw new Error("FILE_TOO_LARGE");
   if (!/^image\//.test(file.type) && !/^video\//.test(file.type) && !/^audio\//.test(file.type)) throw new Error("INVALID_FILE");
 
-  const dataUrl = await readFileAsDataUrl(file);
+  const dataUrl = /^image\//.test(file.type) ? await compressedImageDataUrl(file) : await readFileAsDataUrl(file);
   let r;
   const controller = "AbortController" in window ? new AbortController() : null;
   const timeout = window.setTimeout(() => controller?.abort(), 45000);
@@ -6980,12 +7063,12 @@ function wireLightboxToFeed(likeHandler = null) {
   for (const img of el.feed.querySelectorAll(".postMedia img:not([data-lb])")) {
     img.dataset.lb = "1";
     img.style.cursor = "zoom-in";
-    on(img, "click", (e) => { e.stopPropagation(); openLightbox(img.src, "image", likeHandler); });
+    on(img, "click", (e) => { e.stopPropagation(); openLightbox(img.dataset.fullSrc || img.currentSrc || img.src, "image", likeHandler); });
   }
   for (const video of el.feed.querySelectorAll(".postMedia video:not([data-lb])")) {
     video.dataset.lb = "1";
     video.style.cursor = "zoom-in";
-    on(video, "dblclick", (e) => { e.preventDefault(); e.stopPropagation(); openLightbox(video.currentSrc || video.src, "video", likeHandler); });
+    on(video, "dblclick", (e) => { e.preventDefault(); e.stopPropagation(); openLightbox(video.dataset.src || video.currentSrc || video.src, "video", likeHandler); });
   }
 }
 
