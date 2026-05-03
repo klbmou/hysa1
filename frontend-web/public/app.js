@@ -712,6 +712,26 @@ let authFailureCount = 0;
 const inflightGets = new Map();
 let activeVideoElement = null;
 
+function disableNativeVideoControls(video) {
+  if (!(video instanceof HTMLVideoElement)) return;
+  video.controls = false;
+  video.removeAttribute("controls");
+  video.controlsList = "nodownload noplaybackrate noremoteplayback";
+  video.setAttribute("controlsList", "nodownload noplaybackrate noremoteplayback");
+  video.disablePictureInPicture = true;
+  try {
+    video.disableRemotePlayback = true;
+  } catch {
+    // Browser support varies.
+  }
+}
+
+function disableFeedNativeVideoControls(root = document) {
+  const scope = root && typeof root.querySelectorAll === "function" ? root : document;
+  const selector = scope === document ? "#feed video" : "video";
+  scope.querySelectorAll(selector).forEach(disableNativeVideoControls);
+}
+
 async function fetchJson(path, opts = {}) {
   const p = String(path || "");
   if (!p.startsWith("/api/")) throw new Error("INVALID_API_PATH");
@@ -1061,9 +1081,7 @@ function customVideoPlayer(url, {
   }
   video.poster = posterUrl || "";
   video.playsInline = true;
-  video.controls = false;
-  video.setAttribute("controlsList", "nodownload noplaybackrate");
-  video.disablePictureInPicture = true;
+  disableNativeVideoControls(video);
   video.preload = "metadata";
   video.muted = !!muted;
   video.loop = allowAutoplay;
@@ -1497,7 +1515,7 @@ function renderDmMessage(message) {
   if (message.mine) {
     const seen = document.createElement("span");
     seen.className = "dmSeenState";
-    seen.textContent = message.seen ? "Seen" : "Sent";
+    seen.textContent = message.seen ? "Seen" : "Delivered";
     meta.appendChild(seen);
   }
   const react = document.createElement("button");
@@ -1527,8 +1545,8 @@ function renderDmThreadList(threads) {
   el.dmThreads.textContent = "";
   if (!threads.length) {
     const empty = document.createElement("div");
-    empty.className = "muted";
-    empty.textContent = "No conversations yet.";
+    empty.className = "dmEmpty dmEmptyThreads";
+    empty.textContent = "Start a conversation";
     el.dmThreads.appendChild(empty);
     return;
   }
@@ -1547,14 +1565,18 @@ function renderDmThreadList(threads) {
     const threadBadge = renderUserBadge({ verified: t.peerVerified, role: t.peerRole, createdAt: t.peerCreatedAt });
     if (threadBadge) name.appendChild(threadBadge);
     const preview = document.createElement("small");
-    preview.textContent = t.lastMessage || "Tap to chat";
+    preview.textContent = t.lastMessage || "Start a conversation";
     copy.appendChild(name);
     copy.appendChild(preview);
+    const presence = document.createElement("small");
+    presence.className = "dmPresence";
+    presence.textContent = "last seen recently";
+    copy.appendChild(presence);
     btn.appendChild(copy);
     if (unread > 0) {
       const badge = document.createElement("span");
       badge.className = "dmUnread";
-      badge.textContent = String(unread);
+      badge.textContent = unread > 9 ? "9+" : String(unread);
       btn.appendChild(badge);
     }
     on(btn, "click", () => {
@@ -1796,11 +1818,16 @@ function applyDmThreadPayload(payload, { preserveScroll = false } = {}) {
   if (!messages.length) {
     const empty = document.createElement("div");
     empty.className = "dmEmpty";
-    empty.textContent = "Say hello to start the conversation.";
+    empty.textContent = "Start a conversation";
     el.dmMessages.appendChild(empty);
     return;
   }
   for (const message of messages) el.dmMessages.appendChild(renderDmMessage(message));
+  const typing = document.createElement("div");
+  typing.className = "dmTyping";
+  typing.textContent = "typing...";
+  typing.hidden = true;
+  el.dmMessages.appendChild(typing);
   if (!preserveScroll || nearBottom) scrollDmToLatest({ smooth: preserveScroll });
 }
 
@@ -1855,7 +1882,7 @@ async function openDmInbox() {
     el.dmMessages.textContent = "";
     const empty = document.createElement("div");
     empty.className = "dmEmpty";
-    empty.textContent = "Choose a conversation to start chatting.";
+    empty.textContent = "Start a conversation";
     el.dmMessages.appendChild(empty);
   }
   await refreshDmInbox();
@@ -2172,6 +2199,7 @@ function showApp() {
   if (el.mobileNav) el.mobileNav.hidden = false;
   if (el.aiFab) el.aiFab.hidden = false;
   if (el.lowDataBadge) el.lowDataBadge.hidden = !lowDataMode;
+  if (el.lowDataBadge) el.lowDataBadge.title = "Videos load only when you tap play to save bandwidth.";
   updateNavAvatar();
   if (me) ensurePeerClient().catch(() => {});
 }
@@ -3137,9 +3165,13 @@ function renderProfileHeader(profile) {
   tabs.appendChild(postsTab);
   tabs.appendChild(repostsTab);
   const mediaTab = document.createElement("button");
-  mediaTab.textContent = "Media";
+  mediaTab.textContent = "Reels";
   mediaTab.disabled = true;
   tabs.appendChild(mediaTab);
+  const savedTab = document.createElement("button");
+  savedTab.textContent = "Saved";
+  savedTab.disabled = !isMe;
+  tabs.appendChild(savedTab);
   el.profileHeader.appendChild(tabs);
 
   on(postsTab, "click", () => {
@@ -3168,8 +3200,10 @@ function renderProfileHeader(profile) {
           for (const p of reposts) {
             const node = postNode(p);
             el.feed.appendChild(node);
+            disableFeedNativeVideoControls(node);
             observeMediaPlayback(node);
           }
+          disableFeedNativeVideoControls();
         }
       }
     } catch {
@@ -3896,6 +3930,21 @@ function postNode(post) {
   const commentsWrap = document.createElement("div");
   commentsWrap.className = "comments";
   commentsWrap.hidden = true;
+  commentsWrap.setAttribute("role", "dialog");
+  commentsWrap.setAttribute("aria-modal", "true");
+  commentsWrap.setAttribute("aria-label", t("comments"));
+
+  const commentsHeader = document.createElement("div");
+  commentsHeader.className = "commentsSheetHeader";
+  const commentsTitle = document.createElement("strong");
+  commentsTitle.textContent = t("comments");
+  const commentsClose = document.createElement("button");
+  commentsClose.type = "button";
+  commentsClose.className = "iconBtn commentsClose";
+  commentsClose.setAttribute("aria-label", "Close comments");
+  commentsClose.textContent = "×";
+  commentsHeader.appendChild(commentsTitle);
+  commentsHeader.appendChild(commentsClose);
 
   const commentComposer = document.createElement("div");
   commentComposer.className = "commentComposer";
@@ -3925,6 +3974,7 @@ function postNode(post) {
   const commentsList = document.createElement("div");
   commentsList.className = "commentsList";
 
+  commentsWrap.appendChild(commentsHeader);
   commentsWrap.appendChild(commentComposer);
   commentsWrap.appendChild(commentsList);
   root.appendChild(commentsWrap);
@@ -3985,6 +4035,10 @@ function postNode(post) {
       commentInput.focus();
       if (!commentsLoaded) await loadComments();
     }
+  });
+  if (isMe) on(savedTab, "click", () => openSavedPosts().catch((err) => showToast(humanizeError(err?.message), true)));
+  on(commentsClose, "click", () => {
+    commentsWrap.hidden = true;
   });
 
   on(commentSend, "click", async () => {
@@ -4127,9 +4181,11 @@ async function loadFeed({ reset = false } = {}) {
       for (const p of posts) {
         const node = postNode(p);
         el.feed.appendChild(node);
+        disableFeedNativeVideoControls(node);
         observeFeedReveal(node);
         observeMediaPlayback(node);
       }
+      disableFeedNativeVideoControls();
       window.setTimeout(wireLightboxToFeed, 80);
     }
     updateFeedSentinel();
@@ -4178,9 +4234,11 @@ async function loadFeed({ reset = false } = {}) {
     for (const p of posts) {
       const node = postNode(p);
       el.feed.appendChild(node);
+      disableFeedNativeVideoControls(node);
       observeFeedReveal(node);
       observeMediaPlayback(node);
     }
+    disableFeedNativeVideoControls();
     window.setTimeout(wireLightboxToFeed, 80);
     if (reset) restoreHomeScroll();
   } catch (err) {
@@ -4984,8 +5042,10 @@ async function openProfile(userKeyOrName) {
     for (const p of posts) {
       const node = postNode(p);
       el.feed.appendChild(node);
+      disableFeedNativeVideoControls(node);
       observeMediaPlayback(node);
     }
+    disableFeedNativeVideoControls();
   }
   updateFeedSentinel();
   resetMainScroll();
@@ -5004,6 +5064,8 @@ async function openPost(postId) {
   if (r.post) {
     const node = postNode(r.post);
     el.feed.appendChild(node);
+    disableFeedNativeVideoControls(node);
+    disableFeedNativeVideoControls();
     observeMediaPlayback(node);
   }
   updateFeedSentinel();
@@ -7221,9 +7283,7 @@ function openLightbox(src, kind = "image", onLike = null, poster = "") {
     if (video) {
       video.loop = true;
       video.preload = "metadata";
-      video.controls = false;
-      video.setAttribute("controlsList", "nodownload noplaybackrate");
-      video.disablePictureInPicture = true;
+      disableNativeVideoControls(video);
     }
     lb.appendChild(player);
     mediaEl = player;
