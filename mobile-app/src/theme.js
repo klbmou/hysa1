@@ -21,6 +21,7 @@ const colors = {
   like: '#ff4f76',
   bookmark: '#1DA1F2',
   verified: '#1DA1F2',
+  success: '#17BF63',
 };
 
 const spacing = {

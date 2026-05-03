@@ -13,10 +13,11 @@ import {
   Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { feedAPI, postAPI } from '../api/client';
 import PostCard from '../components/PostCard';
-import { TrendingUp, X, Send } from 'lucide-react-native';
+import { PlusCircle, X, Send } from 'lucide-react-native';
 import theme from '../theme';
 
 const THROTTLE_MS = 800;
@@ -36,8 +37,9 @@ function dedupePosts(posts) {
   });
 }
 
-const Feed = ({ navigation }) => {
+const Feed = ({ navigation, route }) => {
   const { logout } = useAuth();
+  const insets = useSafeAreaInsets();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -52,6 +54,13 @@ const Feed = ({ navigation }) => {
   const [composeSubmitting, setComposeSubmitting] = useState(false);
 
   const actionTimers = useRef({});
+
+  useEffect(() => {
+    if (route.params?.openCompose) {
+      setComposeOpen(true);
+      navigation.setParams({ openCompose: undefined });
+    }
+  }, [route.params?.openCompose]);
 
   const throttledAction = useCallback((key, fn) => {
     const now = Date.now();
@@ -168,9 +177,6 @@ const Feed = ({ navigation }) => {
   const renderHeader = () => (
     <View style={styles.header}>
       <Text style={styles.headerTitle}>HYSA1</Text>
-      <TouchableOpacity style={styles.composeButton} onPress={() => setComposeOpen(true)}>
-        <TrendingUp size={20} color="#fff" />
-      </TouchableOpacity>
     </View>
   );
 
@@ -224,7 +230,7 @@ const Feed = ({ navigation }) => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       {renderHeader()}
       <FlatList
         data={posts}
@@ -242,6 +248,7 @@ const Feed = ({ navigation }) => {
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 80 }}
       />
 
       <Modal visible={composeOpen} animationType="slide" transparent>
@@ -295,8 +302,8 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
+    justifyContent: 'center',
+    paddingVertical: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
@@ -305,14 +312,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     ...theme.typography.h3,
     color: theme.colors.textPrimary,
-  },
-  composeButton: {
-    backgroundColor: theme.colors.accent,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   centerContainer: {
     flex: 1,

@@ -1,13 +1,16 @@
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, StyleSheet, Text } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Home,
   Bell,
   User,
   Search as SearchIcon,
+  Film,
+  Plus,
 } from 'lucide-react-native';
 
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +19,7 @@ import SearchScreen from '../screens/Search';
 import NotificationsScreen from '../screens/Notifications';
 import ProfileScreen from '../screens/Profile';
 import PostDetailScreen from '../screens/PostDetail';
+import ReelsScreen from '../screens/Reels';
 import LoginScreen from '../screens/Login';
 import SignupScreen from '../screens/Signup';
 import theme from '../theme';
@@ -23,46 +27,76 @@ import theme from '../theme';
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
+const CenterComposeButton = () => {
+  const navigation = useNavigation();
+  return (
+    <TouchableOpacity
+      style={styles.centerButton}
+      onPress={() => navigation.navigate('Home', { openCompose: Date.now() })}
+      activeOpacity={0.8}
+    >
+      <Plus size={26} color="#FFFFFF" />
+    </TouchableOpacity>
+  );
+};
+
 const MainTabs = () => {
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [styles.tabBar, { paddingBottom: Math.max(insets.bottom, 4) }],
         tabBarActiveTintColor: theme.colors.accent,
         tabBarInactiveTintColor: theme.colors.textMuted,
         tabBarLabelStyle: styles.tabBarLabel,
         tabBarItemStyle: styles.tabBarItem,
         tabBarIcon: ({ focused, color, size }) => {
           switch (route.name) {
-            case 'Feed':
-              return <Home size={24} color={color} />;
-            case 'Search':
-              return <SearchIcon size={24} color={color} />;
+            case 'Home':
+              return <Home size={22} color={color} />;
+            case 'Explore':
+              return <SearchIcon size={22} color={color} />;
+            case 'Reels':
+              return <Film size={22} color={color} />;
             case 'Notifications':
-              return <Bell size={24} color={color} />;
+              return <Bell size={22} color={color} />;
             case 'Profile':
-              return <User size={24} color={color} />;
+              return <User size={22} color={color} />;
             default:
-              return <Home size={24} color={color} />;
+              return <Home size={22} color={color} />;
           }
         },
       })}
     >
       <Tab.Screen
-        name="Feed"
+        name="Home"
         component={FeedScreen}
-        options={{ tabBarLabel: 'Feed' }}
+        options={{ tabBarLabel: 'Home' }}
       />
       <Tab.Screen
-        name="Search"
+        name="Explore"
         component={SearchScreen}
-        options={{ tabBarLabel: 'Search' }}
+        options={{ tabBarLabel: 'Explore' }}
+      />
+      <Tab.Screen
+        name="Compose"
+        component={FeedScreen}
+        options={{
+          tabBarLabel: '',
+          tabBarIcon: () => null,
+          tabBarButton: () => <CenterComposeButton />,
+        }}
       />
       <Tab.Screen
         name="Notifications"
         component={NotificationsScreen}
         options={{ tabBarLabel: 'Alerts' }}
+      />
+      <Tab.Screen
+        name="Reels"
+        component={ReelsScreen}
+        options={{ tabBarLabel: 'Reels' }}
       />
       <Tab.Screen
         name="Profile"
@@ -75,11 +109,7 @@ const MainTabs = () => {
 
 const AuthStack = () => {
   return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-      }}
-    >
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Signup" component={SignupScreen} />
     </Stack.Navigator>
@@ -123,16 +153,31 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.bgCard,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
-    paddingTop: 6,
-    height: 60,
-    paddingBottom: 6,
+    paddingTop: 4,
+    height: 64,
+    paddingBottom: 4,
   },
   tabBarLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '500',
+    marginTop: 2,
   },
   tabBarItem: {
-    paddingTop: 4,
+    paddingTop: 2,
+  },
+  centerButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: theme.colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    top: -8,
+    shadowColor: theme.colors.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
   },
 });
 

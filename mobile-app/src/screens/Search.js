@@ -9,11 +9,13 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search as SearchIcon, User, TrendingUp } from 'lucide-react-native';
 import { searchAPI, feedAPI } from '../api/client';
 import theme from '../theme';
 
 const Search = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [trends, setTrends] = useState([]);
   const [results, setResults] = useState([]);
@@ -35,8 +37,38 @@ const Search = ({ navigation }) => {
     }
   };
 
-  const handleSearch = async () => {
-    const trimmed = query.trim();
+  const normalizeQuery = (q) => {
+    let trimmed = q.trim();
+    if (trimmed.startsWith('@')) {
+      trimmed = trimmed.slice(1);
+    }
+    return trimmed;
+  };
+
+  const extractResults = (data) => {
+    if (!data || !data.ok) return [];
+
+    if (data.results && Array.isArray(data.results) && data.results.length > 0) {
+      return data.results;
+    }
+
+    const merged = [];
+
+    if (data.users && Array.isArray(data.users)) {
+      data.users.forEach((u) => merged.push({ ...u, type: 'user' }));
+    }
+    if (data.posts && Array.isArray(data.posts)) {
+      data.posts.forEach((p) => merged.push({ ...p, type: 'post' }));
+    }
+    if (data.hashtags && Array.isArray(data.hashtags)) {
+      data.hashtags.forEach((h) => merged.push({ ...h, type: 'hashtag' }));
+    }
+
+    return merged;
+  };
+
+  const performSearch = async (searchQuery) => {
+    const trimmed = normalizeQuery(searchQuery);
     if (!trimmed) return;
 
     setLoading(true);
@@ -44,18 +76,18 @@ const Search = ({ navigation }) => {
 
     try {
       const response = await searchAPI.search(trimmed);
-      if (response.data.ok) {
-        const rawResults = response.data.results || [];
-        setResults(rawResults);
-      } else {
-        setResults([]);
-      }
+      const extracted = extractResults(response.data);
+      setResults(extracted);
     } catch (err) {
       console.error('Search error:', err);
       setResults([]);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSearch = () => {
+    performSearch(query);
   };
 
   const clearSearch = () => {
@@ -67,21 +99,7 @@ const Search = ({ navigation }) => {
   const handleTrendPress = (tag) => {
     setQuery(tag);
     setTimeout(() => {
-      const trimmed = tag.trim();
-      if (trimmed) {
-        setLoading(true);
-        setSearched(true);
-        searchAPI.search(trimmed)
-          .then((response) => {
-            if (response.data.ok) {
-              setResults(response.data.results || []);
-            } else {
-              setResults([]);
-            }
-          })
-          .catch(() => setResults([]))
-          .finally(() => setLoading(false));
-      }
+      performSearch(tag);
     }, 0);
   };
 
@@ -138,6 +156,23 @@ const Search = ({ navigation }) => {
       );
     }
 
+    if (item.type === 'hashtag') {
+      return (
+        <TouchableOpacity
+          style={styles.trendItem}
+          onPress={() => handleTrendPress(item.tag || item.name || item._id)}
+        >
+          <View style={styles.trendIcon}>
+            <TrendingUp size={18} color={theme.colors.accentSecondary} />
+          </View>
+          <View style={styles.trendInfo}>
+            <Text style={styles.trendTag}>{item.tag || item.name || '#'}</Text>
+            <Text style={styles.trendCount}>{item.count || item.postCount || 0} posts</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
     return (
       <TouchableOpacity
         style={styles.resultItem}
@@ -174,6 +209,8 @@ const Search = ({ navigation }) => {
     );
   };
 
+  const hasAnyResults = results.length > 0;
+
   const renderEmpty = () => {
     if (loading) {
       return (
@@ -182,7 +219,7 @@ const Search = ({ navigation }) => {
         </View>
       );
     }
-    if (searched) {
+    if (searched && !hasAnyResults) {
       return (
         <View style={styles.centerContainer}>
           <Text style={styles.emptyText}>No results found</Text>
@@ -215,8 +252,10 @@ const Search = ({ navigation }) => {
     );
   };
 
+  const listData = !searched && trends.length > 0 && results.length === 0 ? trends : results;
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.searchBar}>
         <SearchIcon size={20} color={theme.colors.textMuted} />
         <TextInput
@@ -237,11 +276,12 @@ const Search = ({ navigation }) => {
       </View>
 
       <FlatList
-        data={!searched && trends.length > 0 && results.length === 0 ? trends : results}
+        data={listData}
         renderItem={!searched ? renderTrendItem : renderResultItem}
         keyExtractor={(item, index) => {
           if (item.type === 'user') return `user-${item.key || item.username || index}`;
           if (item.type === 'post') return `post-${item.id || index}`;
+          if (item.type === 'hashtag') return `hashtag-${item.tag || item.name || index}`;
           return `trend-${item.tag || index}`;
         }}
         ListEmptyComponent={renderEmpty}

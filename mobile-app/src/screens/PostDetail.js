@@ -12,6 +12,7 @@ import {
   Platform,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Video, ResizeMode } from 'expo-av';
 import {
   ArrowLeft,
@@ -22,6 +23,8 @@ import {
   User,
   Verified,
   Send,
+  Share2,
+  MoreHorizontal,
 } from 'lucide-react-native';
 import { postAPI } from '../api/client';
 import theme from '../theme';
@@ -29,6 +32,7 @@ import theme from '../theme';
 const PostDetail = ({ navigation, route }) => {
   const postId = route.params?.postId;
   const passedPost = route.params?.post;
+  const insets = useSafeAreaInsets();
 
   const [post, setPost] = useState(passedPost || null);
   const [loading, setLoading] = useState(!passedPost);
@@ -138,15 +142,17 @@ const PostDetail = ({ navigation, route }) => {
 
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={theme.colors.accent} />
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color={theme.colors.accent} />
+        </View>
       </View>
     );
   }
 
   if (error || !post) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
             <ArrowLeft size={24} color={theme.colors.textPrimary} />
@@ -165,7 +171,7 @@ const PostDetail = ({ navigation, route }) => {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { paddingTop: insets.top }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
@@ -218,21 +224,27 @@ const PostDetail = ({ navigation, route }) => {
         )}
 
         <View style={styles.actions}>
-          <View style={styles.action}>
+          <TouchableOpacity style={styles.action}>
             <Heart size={20} color={theme.colors.textSecondary} />
             <Text style={styles.actionText}>{post.likeCount || 0}</Text>
-          </View>
-          <View style={styles.action}>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.action}
+            onPress={() => navigation.navigate('PostDetail', { postId: post.id })}
+          >
             <MessageCircle size={20} color={theme.colors.textSecondary} />
             <Text style={styles.actionText}>{post.commentCount || comments.length || 0}</Text>
-          </View>
-          <View style={styles.action}>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.action}>
             <Repeat size={20} color={theme.colors.textSecondary} />
             <Text style={styles.actionText}>{post.repostCount || 0}</Text>
-          </View>
-          <View style={[styles.action, { marginLeft: 'auto' }]}>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.action, { marginLeft: 'auto' }]}>
             <Bookmark size={20} color={theme.colors.textSecondary} />
-          </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.action}>
+            <Share2 size={18} color={theme.colors.textSecondary} />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.commentsSection}>
@@ -406,6 +418,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginRight: 24,
+    paddingVertical: 6,
   },
   actionText: {
     fontSize: 13,
