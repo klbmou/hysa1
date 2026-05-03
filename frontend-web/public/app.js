@@ -3173,6 +3173,9 @@ function renderProfileHeader(profile) {
   savedTab.disabled = !isMe;
   tabs.appendChild(savedTab);
   el.profileHeader.appendChild(tabs);
+  if (isMe) {
+    on(savedTab, "click", () => openSavedPosts().catch((err) => showToast(humanizeError(err?.message), true)));
+  }
 
   on(postsTab, "click", () => {
     activeProfileTab = "posts";
@@ -4036,7 +4039,6 @@ function postNode(post) {
       if (!commentsLoaded) await loadComments();
     }
   });
-  if (isMe) on(savedTab, "click", () => openSavedPosts().catch((err) => showToast(humanizeError(err?.message), true)));
   on(commentsClose, "click", () => {
     commentsWrap.hidden = true;
   });

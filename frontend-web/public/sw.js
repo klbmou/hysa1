@@ -1,5 +1,5 @@
 /* HYSA Service Worker - bandwidth-aware app shell cache */
-const CACHE = "hysa-v5";
+const CACHE = "hysa-v6";
 const SHELL = [
   "/",
   "/index.html",
@@ -23,7 +23,11 @@ function offlineResponse(type) {
 }
 
 function failedAssetResponse() {
-  return new Response("", { status: 504, statusText: "Gateway Timeout" });
+  return new Response(null, { status: 204, statusText: "No Content" });
+}
+
+function fetchOnceWithRetry(request, options) {
+  return fetch(request, options).catch(() => fetch(request, options));
 }
 
 self.addEventListener("install", (event) => {
@@ -48,7 +52,7 @@ self.addEventListener("fetch", (event) => {
 
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(
-      fetch(event.request, { cache: "no-store" }).catch(() => offlineResponse("json"))
+      fetchOnceWithRetry(event.request, { cache: "no-store" }).catch(() => offlineResponse("json"))
     );
     return;
   }
@@ -61,22 +65,23 @@ self.addEventListener("fetch", (event) => {
     event.request.destination === "video" ||
     event.request.destination === "audio"
   ) {
-    event.respondWith(fetch(event.request, { cache: "no-store" }).catch(() => failedAssetResponse()));
+    event.respondWith(fetchOnceWithRetry(event.request, { cache: "no-store" }).catch(() => failedAssetResponse()));
     return;
   }
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
-      const fetched = fetch(event.request)
+      const isShell = url.origin === location.origin && SHELL.includes(url.pathname || "/");
+      const fetched = fetchOnceWithRetry(event.request, { cache: isShell ? "reload" : "default" })
         .then((response) => {
-          if (response && response.ok && url.origin === location.origin && SHELL.includes(url.pathname || "/")) {
+          if (response && response.ok && isShell) {
             const copy = response.clone();
             caches.open(CACHE).then((cache) => cache.put(event.request, copy)).catch(() => {});
           }
           return response;
         })
         .catch(() => cached || offlineResponse());
-      return cached || fetched;
+      return isShell ? fetched : (cached || fetched);
     })
   );
 });
