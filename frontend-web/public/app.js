@@ -1011,6 +1011,7 @@ function customVideoPlayer(url, {
 } = {}) {
   const player = document.createElement("div");
   player.className = "proVideo";
+  if (!poster) player.classList.add("noPoster");
 
   const video = document.createElement("video");
   const fullUrl = String(url || "");
@@ -1036,6 +1037,10 @@ function customVideoPlayer(url, {
   const spinner = document.createElement("div");
   spinner.className = "videoSpinner";
   spinner.setAttribute("aria-hidden", "true");
+
+  const placeholder = document.createElement("div");
+  placeholder.className = "videoPosterPlaceholder";
+  placeholder.setAttribute("aria-hidden", "true");
 
   const controls = document.createElement("div");
   controls.className = "videoControls glass";
@@ -1077,8 +1082,25 @@ function customVideoPlayer(url, {
   function setLoadingState(isLoading) {
     player.classList.toggle("isLoading", !!isLoading);
   }
+  function setReadyState() {
+    setLoadingState(false);
+    player.classList.add("isReady");
+  }
+  function syncAspect() {
+    const width = Number(video.videoWidth || 0);
+    const height = Number(video.videoHeight || 0);
+    if (!width || !height) return;
+    const tile = player.closest(".mediaItem");
+    player.classList.toggle("isLandscape", width >= height);
+    player.classList.toggle("isVertical", height > width);
+    if (tile) {
+      tile.classList.toggle("media-landscape", width >= height);
+      tile.classList.toggle("media-vertical", height > width);
+    }
+  }
   function togglePlay() {
     if (!video.currentSrc && video.dataset.src) {
+      setLoadingState(true);
       video.src = video.dataset.src;
       video.load();
     }
@@ -1109,18 +1131,31 @@ function customVideoPlayer(url, {
 
   on(play, "click", togglePlay);
   on(center, "click", togglePlay);
+  on(placeholder, "click", handleSurfaceTap);
   on(video, "click", handleSurfaceTap);
   on(center, "dblclick", (event) => event.preventDefault());
   on(video, "dblclick", (event) => event.preventDefault());
   on(video, "play", setPausedState);
-  on(video, "pause", setPausedState);
-  on(video, "loadedmetadata", sync);
+  on(video, "pause", () => {
+    setPausedState();
+    setLoadingState(false);
+  });
+  on(video, "loadedmetadata", () => {
+    sync();
+    syncAspect();
+    setReadyState();
+  });
+  on(video, "loadeddata", setReadyState);
   on(video, "timeupdate", sync);
   on(video, "loadstart", () => setLoadingState(true));
   on(video, "waiting", () => setLoadingState(true));
   on(video, "stalled", () => setLoadingState(true));
-  on(video, "canplay", () => setLoadingState(false));
-  on(video, "playing", () => setLoadingState(false));
+  on(video, "canplay", setReadyState);
+  on(video, "playing", setReadyState);
+  on(video, "error", () => {
+    setLoadingState(false);
+    player.classList.add("hasError");
+  });
   on(mute, "click", () => {
     video.muted = !video.muted;
     mute.textContent = video.muted ? "Muted" : "Sound";
@@ -1136,6 +1171,7 @@ function customVideoPlayer(url, {
   controls.appendChild(time);
   controls.appendChild(mute);
   player.appendChild(video);
+  player.appendChild(placeholder);
   player.appendChild(spinner);
   player.appendChild(center);
   player.appendChild(controls);
@@ -3158,6 +3194,7 @@ function mediaGridNode(media, {
   for (const item of media || []) {
     const tile = document.createElement("div");
     tile.className = "mediaItem";
+    if (item && item.kind) tile.classList.add(`media-${item.kind}`);
     if (!isFullMediaUrl(item && item.url)) {
       const archived = document.createElement("div");
       archived.className = "mediaArchived";
@@ -3184,6 +3221,14 @@ function mediaGridNode(media, {
       img.referrerPolicy = "no-referrer";
       img.src = mediaDisplayUrl(item);
       img.dataset.fullSrc = mediaFullUrl(item);
+      on(img, "load", () => {
+        const width = Number(img.naturalWidth || 0);
+        const height = Number(img.naturalHeight || 0);
+        if (!width || !height) return;
+        tile.style.setProperty("--media-ratio", `${width} / ${height}`);
+        tile.classList.toggle("media-landscape", width >= height);
+        tile.classList.toggle("media-vertical", height > width);
+      }, { once: true });
       tile.appendChild(img);
     }
 

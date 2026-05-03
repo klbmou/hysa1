@@ -5627,6 +5627,134 @@ body[dir="rtl"] .comment.reply {
   }
 }
 
+/* Feed media sizing and clean thumbnail-first video state */
+.postMedia {
+  display: grid;
+  justify-items: center;
+  gap: 0;
+}
+
+.postMedia .mediaItem,
+.postMedia .mediaItem:only-child {
+  width: 100%;
+  max-width: min(600px, 100%);
+  max-height: min(70vh, 760px);
+  aspect-ratio: var(--media-ratio, 1 / 1);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.02)),
+    #090a0f;
+}
+
+.postMedia .mediaItem.media-video,
+.postMedia .mediaItem.media-video:only-child {
+  width: min(100%, calc(min(70vh, 760px) * 9 / 16));
+  aspect-ratio: 9 / 16;
+}
+
+.postMedia .mediaItem.media-video.media-landscape,
+.postMedia .mediaItem.media-video.media-landscape:only-child {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+.postMedia .mediaItem.media-image,
+.postMedia .mediaItem.media-image:only-child {
+  aspect-ratio: var(--media-ratio, auto);
+}
+
+.postMedia .mediaItem.media-image img {
+  width: 100%;
+  height: auto;
+  max-height: min(70vh, 760px);
+  object-fit: contain;
+  background: #090a0f;
+}
+
+.postMedia .mediaItem.media-video .proVideo,
+.postMedia .mediaItem.media-video video {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-height: min(70vh, 760px);
+  object-fit: cover;
+}
+
+.postMedia .mediaItem.media-video.media-landscape .proVideo video {
+  object-fit: contain;
+}
+
+.postMedia .mediaItem.media-video {
+  margin-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom) + 14px);
+}
+
+.postMedia .proVideo {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(255,255,255,0.08), transparent 30%),
+    linear-gradient(135deg, #11131a, #07080d);
+}
+
+.videoPosterPlaceholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(255,255,255,0.68);
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.025)),
+    #0b0d13;
+}
+
+.videoPosterPlaceholder::before {
+  content: "";
+  width: 58px;
+  height: 58px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.12);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15);
+}
+
+.proVideo:not(.noPoster) .videoPosterPlaceholder,
+.proVideo.isReady .videoPosterPlaceholder {
+  display: none;
+}
+
+.proVideo.isPaused .videoCenterPlay {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.proVideo.isLoading .videoCenterPlay {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.proVideo:not(.isLoading) .videoSpinner {
+  opacity: 0;
+}
+
+.videoCenterPlay {
+  z-index: 4;
+  width: auto;
+  min-width: 72px;
+  height: 42px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.videoControls {
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 4;
+}
+
+@media (min-width: 760px) {
+  .postMedia .mediaItem.media-video {
+    margin-bottom: 18px;
+  }
+}
+
 /* #23: Add-to-Home-Screen banner */
 #a2hsBanner {
   position: fixed;
