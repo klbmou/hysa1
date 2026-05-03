@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
   role VARCHAR(30) DEFAULT '',
   google_id TEXT DEFAULT '',
   auth_provider VARCHAR(30) DEFAULT 'password',
+  avatar_meta JSONB DEFAULT '{}'::jsonb,
   skills TEXT[] DEFAULT '{}',
   following TEXT[] DEFAULT '{}',
   token TEXT
@@ -31,6 +32,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(30) DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(30) DEFAULT 'password';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_meta JSONB DEFAULT '{}'::jsonb;
 
 UPDATE users
 SET verified = TRUE, role = 'owner'

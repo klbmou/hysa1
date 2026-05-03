@@ -72,6 +72,7 @@ let storyDraftPreviewUrl = "";
 let storyDraftFilter = "normal";
 let activeDmPeer = null;
 let activeDmPeerProfile = null;
+let activeDmGroup = null;
 let storyProgressStartedAt = 0;
 let storyProgressDuration = 0;
 let storyProgressRemaining = 0;
@@ -417,6 +418,8 @@ function on(node, eventName, handler, options) {
 }
 
 let toastTimer = null;
+let actionSheetLastFocus = null;
+let actionSheetTouchStartY = 0;
 function showToast(text, isError = false) {
   if (!el.toast) return;
   if (toastTimer) window.clearTimeout(toastTimer);
@@ -434,11 +437,20 @@ function showToast(text, isError = false) {
 
 function showActionSheet(title, build) {
   if (!el.actionSheet || !el.sheetBody) return;
+  actionSheetLastFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   if (el.sheetTitle) el.sheetTitle.textContent = title || "";
   el.sheetBody.textContent = "";
   build(el.sheetBody);
+  el.actionSheet.setAttribute("role", "dialog");
+  el.actionSheet.setAttribute("aria-modal", "true");
+  el.actionSheet.setAttribute("aria-label", title || "Menu");
   el.actionSheet.hidden = false;
+  document.body.classList.add("sheet-open");
   window.requestAnimationFrame(() => el.actionSheet.classList.add("show"));
+  window.setTimeout(() => {
+    const focusable = el.actionSheet.querySelector("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
+    if (focusable && typeof focusable.focus === "function") focusable.focus();
+  }, 40);
 }
 
 function hideActionSheet() {
@@ -446,6 +458,11 @@ function hideActionSheet() {
   el.actionSheet.classList.remove("show");
   window.setTimeout(() => {
     if (el.actionSheet) el.actionSheet.hidden = true;
+    document.body.classList.remove("sheet-open");
+    if (actionSheetLastFocus && typeof actionSheetLastFocus.focus === "function") {
+      try { actionSheetLastFocus.focus(); } catch {}
+    }
+    actionSheetLastFocus = null;
   }, 180);
 }
 
@@ -1465,7 +1482,13 @@ function renderDmMessage(message) {
   b.className = `dmBubble ${message.mine ? "mine" : "theirs"}`.trim();
   b.dataset.messageId = String(message.id || "");
   if (!message.mine && activeDmPeerProfile) {
-    row.appendChild(avatarNode(activeDmPeerProfile.avatarUrl, activeDmPeerProfile.username, "xs"));
+    row.appendChild(avatarNode(message.senderAvatar || activeDmPeerProfile.avatarUrl, message.senderUsername || activeDmPeerProfile.username, "xs"));
+  }
+  if (activeDmGroup && !message.mine && message.senderUsername) {
+    const sender = document.createElement("small");
+    sender.className = "dmSenderName";
+    sender.textContent = `@${message.senderUsername}`;
+    b.appendChild(sender);
   }
   const media = Array.isArray(message.media) ? message.media : [];
   if (message.text) {
@@ -1543,6 +1566,12 @@ function stopDmPolling() {
 function renderDmThreadList(threads) {
   if (!el.dmThreads) return;
   el.dmThreads.textContent = "";
+  const groupBtn = document.createElement("button");
+  groupBtn.type = "button";
+  groupBtn.className = "dmThreadItem dmGroupCreate";
+  groupBtn.innerHTML = '<span class="avatar avatar-sm">+</span><span class="dmThreadCopy"><strong>New Group</strong><small>Create a group chat</small></span>';
+  on(groupBtn, "click", () => openGroupCreateSheet());
+  el.dmThreads.appendChild(groupBtn);
   if (!threads.length) {
     const empty = document.createElement("div");
     empty.className = "dmEmpty dmEmptyThreads";
@@ -1554,14 +1583,16 @@ function renderDmThreadList(threads) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "dmThreadItem";
+    const isGroup = t.type === "group";
     btn.dataset.peerKey = t.peerKey;
-    if (activeDmPeer && t.peerKey === activeDmPeer) btn.classList.add("active");
+    btn.dataset.conversationId = t.conversationId || "";
+    if ((activeDmPeer && t.peerKey === activeDmPeer) || (activeDmGroup && t.conversationId === activeDmGroup.id)) btn.classList.add("active");
     const unread = Number(t.unreadCount || 0);
-    btn.appendChild(avatarNode(t.peerAvatar, t.peerUsername, "sm"));
+    btn.appendChild(isGroup ? groupAvatarNode(t.peerAvatar, t.peerUsername) : avatarNode(t.peerAvatar, t.peerUsername, "sm"));
     const copy = document.createElement("span");
     copy.className = "dmThreadCopy";
     const name = document.createElement("strong");
-    name.textContent = `@${t.peerUsername}`;
+    name.textContent = isGroup ? String(t.peerUsername || "Group") : `@${t.peerUsername}`;
     const threadBadge = renderUserBadge({ verified: t.peerVerified, role: t.peerRole, createdAt: t.peerCreatedAt });
     if (threadBadge) name.appendChild(threadBadge);
     const preview = document.createElement("small");
@@ -1570,7 +1601,7 @@ function renderDmThreadList(threads) {
     copy.appendChild(preview);
     const presence = document.createElement("small");
     presence.className = "dmPresence";
-    presence.textContent = "last seen recently";
+    presence.textContent = isGroup ? `${Number(t.memberCount || 0)} members · ${fmtTime(t.createdAt)}` : "last seen recently";
     copy.appendChild(presence);
     btn.appendChild(copy);
     if (unread > 0) {
@@ -1580,10 +1611,148 @@ function renderDmThreadList(threads) {
       btn.appendChild(badge);
     }
     on(btn, "click", () => {
-      location.hash = `#dm/${encodeURIComponent(t.peerKey)}`;
+      location.hash = isGroup ? `#dm/group/${encodeURIComponent(t.conversationId)}` : `#dm/${encodeURIComponent(t.peerKey)}`;
     });
     el.dmThreads.appendChild(btn);
   }
+}
+
+function groupAvatarNode(url, name) {
+  const avatar = avatarNode(url, name || "G", "sm");
+  avatar.classList.add("groupAvatar");
+  if (!url) avatar.textContent = "👥";
+  return avatar;
+}
+
+function openGroupCreateSheet() {
+  const selected = new Map();
+  let groupAvatarMedia = null;
+  showActionSheet("New Group", (body) => {
+    body.classList.add("groupSheet");
+    const nameInput = document.createElement("input");
+    nameInput.className = "settings-input";
+    nameInput.placeholder = "Group name";
+    nameInput.maxLength = 60;
+    const avatarRow = document.createElement("div");
+    avatarRow.className = "groupAvatarPicker";
+    const avatarPreview = groupAvatarNode("", "Group");
+    const avatarBtn = sheetButton("Group avatar");
+    const avatarInput = document.createElement("input");
+    avatarInput.type = "file";
+    avatarInput.accept = "image/*";
+    avatarInput.hidden = true;
+    avatarRow.appendChild(avatarPreview);
+    avatarRow.appendChild(avatarBtn);
+    const searchInput = document.createElement("input");
+    searchInput.className = "settings-input";
+    searchInput.placeholder = "Search users";
+    const selectedList = document.createElement("div");
+    selectedList.className = "groupSelected";
+    const results = document.createElement("div");
+    results.className = "groupResults";
+    const createBtn = sheetButton("Create group", "primary");
+    body.appendChild(avatarRow);
+    body.appendChild(avatarInput);
+    body.appendChild(nameInput);
+    body.appendChild(selectedList);
+    body.appendChild(searchInput);
+    body.appendChild(results);
+    body.appendChild(createBtn);
+
+    function renderSelected() {
+      selectedList.textContent = "";
+      for (const user of selected.values()) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "groupChip";
+        chip.textContent = `@${user.username} ×`;
+        on(chip, "click", () => {
+          selected.delete(user.userKey || user.key);
+          renderSelected();
+        });
+        selectedList.appendChild(chip);
+      }
+    }
+
+    let timer = null;
+    on(searchInput, "input", () => {
+      window.clearTimeout(timer);
+      const q = String(searchInput.value || "").trim();
+      timer = window.setTimeout(async () => {
+        results.textContent = "";
+        if (q.length < 2) return;
+        try {
+          const r = await api(`/api/search?q=${encodeURIComponent(q)}&limit=8`, { method: "GET" });
+          const users = Array.isArray(r.users) ? r.users : Array.isArray(r.results) ? r.results.filter((x) => x.type === "user" || x.username) : [];
+          for (const user of users) {
+            const key = String(user.userKey || user.key || user.username || "");
+            if (!key || isMineKey(key)) continue;
+            const row = document.createElement("button");
+            row.type = "button";
+            row.className = "groupUserResult";
+            row.appendChild(avatarNode(user.avatarUrl, user.username, "xs"));
+            const label = document.createElement("span");
+            label.textContent = `@${user.username}`;
+            row.appendChild(label);
+            on(row, "click", () => {
+              selected.set(key, { ...user, userKey: key });
+              renderSelected();
+              searchInput.value = "";
+              results.textContent = "";
+            });
+            results.appendChild(row);
+          }
+        } catch {
+          results.textContent = "Search failed.";
+        }
+      }, 260);
+    });
+
+    on(avatarBtn, "click", () => avatarInput.click());
+    on(avatarInput, "change", async () => {
+      const file = avatarInput.files && avatarInput.files[0];
+      avatarInput.value = "";
+      if (!file) return;
+      avatarBtn.disabled = true;
+      try {
+        const media = await uploadFile(file);
+        if (media && media.kind === "image") {
+          groupAvatarMedia = media;
+          avatarPreview.replaceChildren();
+          const img = document.createElement("img");
+          img.alt = "";
+          img.src = media.thumbnailUrl || media.previewUrl || media.url;
+          avatarPreview.appendChild(img);
+          showToast("Group avatar ready.");
+        } else {
+          showToast(t("invalidFile"), true);
+        }
+      } catch (err) {
+        showToast(humanizeError(err?.message, t("error_upload_invalid")), true);
+      } finally {
+        avatarBtn.disabled = false;
+      }
+    });
+
+    on(createBtn, "click", async () => {
+      const name = String(nameInput.value || "").trim();
+      if (!name || selected.size < 1) return showToast("Add a group name and at least one member.", true);
+      createBtn.disabled = true;
+      try {
+        const r = await api("/api/dm/groups", {
+          method: "POST",
+          body: JSON.stringify({ name, members: Array.from(selected.keys()), avatar: groupAvatarMedia }),
+        });
+        hideActionSheet();
+        showToast("Group created.");
+        location.hash = `#dm/group/${encodeURIComponent(r.conversation.id)}`;
+      } catch (err) {
+        showToast(humanizeError(err?.message), true);
+      } finally {
+        createBtn.disabled = false;
+      }
+    });
+  });
 }
 
 function ensureDmRecordStatus() {
@@ -1692,7 +1861,7 @@ function createDmVoiceDraft(blob, duration, mime) {
 }
 
 async function sendDmVoiceDraft() {
-  if (!dmVoiceDraft || !activeDmPeer) return;
+  if (!dmVoiceDraft || (!activeDmPeer && !activeDmGroup)) return;
   const status = ensureDmRecordStatus();
   const sendBtn = status?.querySelector("[data-voice-send]");
   if (sendBtn) sendBtn.disabled = true;
@@ -1723,7 +1892,7 @@ async function sendDmVoiceDraft() {
 }
 
 async function startDmRecording() {
-  if (!activeDmPeer) return;
+  if (!activeDmPeer && !activeDmGroup) return;
   if (!navigator.mediaDevices || !window.MediaRecorder) {
     showToast("Voice recording is not supported in this browser.", true);
     return;
@@ -1798,15 +1967,25 @@ function applyDmThreadPayload(payload, { preserveScroll = false } = {}) {
   const signature = dmMessageSignature(messages);
   if (preserveScroll && signature === lastDmThreadSignature) return;
   lastDmThreadSignature = signature;
-  activeDmPeerProfile = payload.peer || activeDmPeerProfile || { key: activeDmPeer, username: activeDmPeer, avatarUrl: "" };
-  if (el.dmPeer) el.dmPeer.textContent = `@${activeDmPeerProfile.username || activeDmPeer || "dm"}`;
-  if (el.dmPeer) {
+  if (payload.conversation && payload.conversation.type === "group") {
+    activeDmGroup = payload.conversation;
+    activeDmPeerProfile = { key: activeDmGroup.id, username: activeDmGroup.name, avatarUrl: activeDmGroup.avatar?.url || "" };
+    if (el.dmPeer) el.dmPeer.textContent = activeDmGroup.name || "Group";
+    if (el.dmStatus) el.dmStatus.textContent = `${Number(activeDmGroup.memberCount || 0)} members`;
+  } else {
+    activeDmGroup = null;
+    activeDmPeerProfile = payload.peer || activeDmPeerProfile || { key: activeDmPeer, username: activeDmPeer, avatarUrl: "" };
+    if (el.dmPeer) el.dmPeer.textContent = `@${activeDmPeerProfile.username || activeDmPeer || "dm"}`;
+    if (el.dmStatus) el.dmStatus.textContent = messages.length ? `Updated ${fmtTime(messages[messages.length - 1]?.createdAt)}` : "No messages yet";
+  }
+  if (el.dmPeer && !activeDmGroup) {
     const dmBadge = renderUserBadge(activeDmPeerProfile);
     if (dmBadge) el.dmPeer.appendChild(dmBadge);
   }
-  if (el.dmStatus) el.dmStatus.textContent = messages.length ? "Updated just now" : "No messages yet";
   if (el.dmHeaderAvatar) {
-    el.dmHeaderAvatar.replaceWith(avatarNode(activeDmPeerProfile.avatarUrl, activeDmPeerProfile.username, "sm"));
+    el.dmHeaderAvatar.replaceWith(activeDmGroup
+      ? groupAvatarNode(activeDmGroup.avatar?.url || activeDmGroup.avatar?.fullUrl || "", activeDmGroup.name)
+      : avatarNode(activeDmPeerProfile.avatarUrl, activeDmPeerProfile.username, "sm"));
     el.dmHeaderAvatar = document.getElementById("dmHeaderAvatar") || document.querySelector(".dm-view-header .avatar");
     if (el.dmHeaderAvatar) el.dmHeaderAvatar.id = "dmHeaderAvatar";
   }
@@ -1840,8 +2019,212 @@ function startDmThreadPolling(peerKey) {
   }, 30000);
 }
 
+async function openDmGroup(groupId, { silent = false, preserveScroll = false } = {}) {
+  activeDmPeer = "";
+  if (el.dmModal) el.dmModal.hidden = false;
+  const r = await api(`/api/dm/groups/${encodeURIComponent(groupId)}`, { method: "GET" });
+  applyDmThreadPayload(r, { preserveScroll });
+  const dmHeader = el.dmModal?.querySelector(".dm-view-header");
+  let infoBtn = document.getElementById("dmGroupInfoButton");
+  if (dmHeader && !infoBtn) {
+    infoBtn = document.createElement("button");
+    infoBtn.id = "dmGroupInfoButton";
+    infoBtn.type = "button";
+    infoBtn.className = "iconBtn";
+    infoBtn.setAttribute("aria-label", "Group settings");
+    infoBtn.innerHTML = icon("more");
+    on(infoBtn, "click", () => openGroupSettingsSheet());
+    dmHeader.appendChild(infoBtn);
+  }
+  if (infoBtn) infoBtn.hidden = false;
+  const dmCallButton = document.getElementById("dmCallButton");
+  if (dmCallButton) dmCallButton.hidden = true;
+  if (el.dmThreads) {
+    for (const n of el.dmThreads.querySelectorAll(".dmThreadItem")) {
+      n.classList.toggle("active", n.dataset.conversationId === groupId);
+    }
+  }
+  refreshDmInbox({ silent: true }).catch(() => {});
+  if (!silent) startDmGroupPolling(groupId);
+}
+
+function startDmGroupPolling(groupId) {
+  stopDmPolling();
+  const generation = ++dmPollGeneration;
+  dmThreadPollTimer = window.setInterval(() => {
+    if (generation !== dmPollGeneration || !activeDmGroup || activeDmGroup.id !== groupId) return;
+    openDmGroup(groupId, { silent: true, preserveScroll: true }).catch(() => {});
+  }, 30000);
+}
+
+function openGroupSettingsSheet() {
+  if (!activeDmGroup) return;
+  showActionSheet("Group settings", (body) => {
+    body.classList.add("groupSheet");
+    let nextAvatarMedia = null;
+    const avatarRow = document.createElement("div");
+    avatarRow.className = "groupAvatarPicker";
+    const avatarPreview = groupAvatarNode(activeDmGroup.avatar?.thumbnailUrl || activeDmGroup.avatar?.previewUrl || activeDmGroup.avatar?.url || "", activeDmGroup.name);
+    avatarRow.appendChild(avatarPreview);
+    body.appendChild(avatarRow);
+    const nameInput = document.createElement("input");
+    nameInput.className = "settings-input";
+    nameInput.value = activeDmGroup.name || "";
+    nameInput.maxLength = 60;
+    nameInput.disabled = !activeDmGroup.isAdmin;
+    body.appendChild(nameInput);
+
+    if (activeDmGroup.isAdmin) {
+      const avatarBtn = sheetButton("Change group avatar");
+      const avatarInput = document.createElement("input");
+      avatarInput.type = "file";
+      avatarInput.accept = "image/*";
+      avatarInput.hidden = true;
+      avatarRow.appendChild(avatarBtn);
+      body.appendChild(avatarInput);
+      on(avatarBtn, "click", () => avatarInput.click());
+      on(avatarInput, "change", async () => {
+        const file = avatarInput.files && avatarInput.files[0];
+        avatarInput.value = "";
+        if (!file) return;
+        avatarBtn.disabled = true;
+        try {
+          const media = await uploadFile(file);
+          if (!media || media.kind !== "image") return showToast(t("invalidFile"), true);
+          nextAvatarMedia = media;
+          const r = await api(`/api/dm/groups/${encodeURIComponent(activeDmGroup.id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({ name: nameInput.value || activeDmGroup.name, avatar: nextAvatarMedia }),
+          });
+          activeDmGroup = r.conversation;
+          hideActionSheet();
+          await openDmGroup(activeDmGroup.id, { silent: true });
+          showToast("Group avatar updated.");
+        } catch (err) {
+          showToast(humanizeError(err?.message), true);
+        } finally {
+          avatarBtn.disabled = false;
+        }
+      });
+
+      const renameBtn = sheetButton("Save name", "primary");
+      on(renameBtn, "click", async () => {
+        try {
+          const r = await api(`/api/dm/groups/${encodeURIComponent(activeDmGroup.id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({ name: nameInput.value }),
+          });
+          activeDmGroup = r.conversation;
+          hideActionSheet();
+          await openDmGroup(activeDmGroup.id, { silent: true });
+          showToast("Group updated.");
+        } catch (err) {
+          showToast(humanizeError(err?.message), true);
+        }
+      });
+      body.appendChild(renameBtn);
+
+      const addInput = document.createElement("input");
+      addInput.className = "settings-input";
+      addInput.placeholder = "Search to add member";
+      const addResults = document.createElement("div");
+      addResults.className = "groupResults";
+      let addTimer = null;
+      on(addInput, "input", () => {
+        window.clearTimeout(addTimer);
+        const q = String(addInput.value || "").trim();
+        addTimer = window.setTimeout(async () => {
+          addResults.textContent = "";
+          if (q.length < 2) return;
+          try {
+            const r = await api(`/api/search?q=${encodeURIComponent(q)}&limit=8`, { method: "GET" });
+            const users = Array.isArray(r.results) ? r.results.filter((x) => x.type === "user" || x.username) : [];
+            const existing = new Set((activeDmGroup.members || []).map((m) => String(m.key || m.userKey || "").toLowerCase()));
+            for (const user of users) {
+              const key = String(user.userKey || user.key || user.username || "").toLowerCase();
+              if (!key || existing.has(key) || isMineKey(key)) continue;
+              const row = document.createElement("button");
+              row.type = "button";
+              row.className = "groupUserResult";
+              row.appendChild(avatarNode(user.avatarUrl, user.username, "xs"));
+              const label = document.createElement("span");
+              label.textContent = `@${user.username}`;
+              row.appendChild(label);
+              on(row, "click", async () => {
+                row.disabled = true;
+                try {
+                  const rAdd = await api(`/api/dm/groups/${encodeURIComponent(activeDmGroup.id)}/members`, {
+                    method: "POST",
+                    body: JSON.stringify({ members: [key] }),
+                  });
+                  activeDmGroup = rAdd.conversation;
+                  hideActionSheet();
+                  await openDmGroup(activeDmGroup.id, { silent: true });
+                  showToast("Member added.");
+                } catch (err) {
+                  showToast(humanizeError(err?.message), true);
+                } finally {
+                  row.disabled = false;
+                }
+              });
+              addResults.appendChild(row);
+            }
+          } catch {
+            addResults.textContent = "Search failed.";
+          }
+        }, 260);
+      });
+      body.appendChild(addInput);
+      body.appendChild(addResults);
+    }
+
+    const list = document.createElement("div");
+    list.className = "groupMembersList";
+    for (const member of activeDmGroup.members || []) {
+      const row = document.createElement("div");
+      row.className = "groupMemberRow";
+      row.appendChild(avatarNode(member.avatarUrl, member.username, "xs"));
+      const label = document.createElement("span");
+      label.textContent = `@${member.username}${member.isAdmin ? " · admin" : ""}`;
+      row.appendChild(label);
+      if (activeDmGroup.isAdmin && member.key !== currentUserKey()) {
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "comment-menu-item danger";
+        remove.textContent = "Remove";
+        on(remove, "click", async () => {
+          try {
+            const r = await api(`/api/dm/groups/${encodeURIComponent(activeDmGroup.id)}/members/${encodeURIComponent(member.key)}`, { method: "DELETE" });
+            activeDmGroup = r.conversation;
+            hideActionSheet();
+            await openDmGroup(activeDmGroup.id, { silent: true });
+          } catch (err) {
+            showToast(humanizeError(err?.message), true);
+          }
+        });
+        row.appendChild(remove);
+      }
+      list.appendChild(row);
+    }
+    body.appendChild(list);
+
+    const leaveBtn = sheetButton("Leave group");
+    leaveBtn.classList.add("danger");
+    on(leaveBtn, "click", async () => {
+      showDeleteConfirm("Leave group", "You will stop receiving messages from this group.", async () => {
+        await api(`/api/dm/groups/${encodeURIComponent(activeDmGroup.id)}/leave`, { method: "POST", body: "{}" });
+        hideActionSheet();
+        location.hash = "#dm";
+        await openDmInbox();
+      });
+    });
+    body.appendChild(leaveBtn);
+  });
+}
+
 async function openDmThread(peerKey, { silent = false, preserveScroll = false } = {}) {
   activeDmPeer = peerKey;
+  activeDmGroup = null;
   if (el.dmModal) el.dmModal.hidden = false;
   const r = await api(`/api/dm/${encodeURIComponent(peerKey)}`, { method: "GET" });
   const dmHeader = el.dmModal?.querySelector(".dm-view-header");
@@ -1858,6 +2241,8 @@ async function openDmThread(peerKey, { silent = false, preserveScroll = false } 
   }
   const dmCallButton = document.getElementById("dmCallButton");
   if (dmCallButton) dmCallButton.hidden = false;
+  const infoBtn = document.getElementById("dmGroupInfoButton");
+  if (infoBtn) infoBtn.hidden = true;
   applyDmThreadPayload(r, { preserveScroll });
   if (el.dmThreads) {
     for (const n of el.dmThreads.querySelectorAll(".dmThreadItem")) {
@@ -1872,12 +2257,15 @@ async function openDmInbox() {
   if (!el.dmModal) return;
   activeDmPeer = null;
   activeDmPeerProfile = null;
+  activeDmGroup = null;
   lastDmThreadSignature = "";
   el.dmModal.hidden = false;
   if (el.dmPeer) el.dmPeer.textContent = "Direct Messages";
   if (el.dmStatus) el.dmStatus.textContent = "Inbox";
   const dmCallButton = document.getElementById("dmCallButton");
   if (dmCallButton) dmCallButton.hidden = true;
+  const infoBtn = document.getElementById("dmGroupInfoButton");
+  if (infoBtn) infoBtn.hidden = true;
   if (el.dmMessages) {
     el.dmMessages.textContent = "";
     const empty = document.createElement("div");
@@ -1894,17 +2282,23 @@ function closeDmView() {
   if (el.dmModal) el.dmModal.hidden = true;
   activeDmPeer = null;
   activeDmPeerProfile = null;
+  activeDmGroup = null;
 }
 
 async function sendDmMessage({ text = "", media = [] } = {}) {
-  if (!activeDmPeer) return;
+  if (!activeDmPeer && !activeDmGroup) return;
   const body = { text: String(text || "").trim(), media };
   if (!body.text && !body.media.length) return;
   if (el.dmSend) el.dmSend.disabled = true;
   try {
-    await api(`/api/dm/${encodeURIComponent(activeDmPeer)}`, { method: "POST", body: JSON.stringify(body) });
+    if (activeDmGroup) {
+      await api(`/api/dm/groups/${encodeURIComponent(activeDmGroup.id)}/messages`, { method: "POST", body: JSON.stringify(body) });
+    } else {
+      await api(`/api/dm/${encodeURIComponent(activeDmPeer)}`, { method: "POST", body: JSON.stringify(body) });
+    }
     if (el.dmText) el.dmText.value = "";
-    await openDmThread(activeDmPeer, { silent: true });
+    if (activeDmGroup) await openDmGroup(activeDmGroup.id, { silent: true });
+    else await openDmThread(activeDmPeer, { silent: true });
     scrollDmToLatest({ smooth: true });
   } catch (err) {
     showToast(humanizeError(err?.message), true);
@@ -2995,6 +3389,44 @@ function clearProfileHeader() {
   el.profileHeader.textContent = "";
 }
 
+function openProfileSettingsMenu() {
+  showActionSheet("Settings", (body) => {
+    const editProfile = sheetButton(t("editProfile"), "primary");
+    on(editProfile, "click", () => { hideActionSheet(); openProfileEdit(); });
+    body.appendChild(editProfile);
+
+    const items = [
+      ["Privacy", () => el.settingsBtn?.click()],
+      ["Account", () => el.settingsBtn?.click()],
+      ["Notifications", () => openNotificationsPanel()],
+      [lowDataMode ? "Turn off Low Data Mode" : "Turn on Low Data Mode", () => {
+        setLowDataMode(!lowDataMode);
+        showToast(lowDataMode ? "Low Data Mode on." : "Low Data Mode off.");
+      }],
+      [theme === "light" ? "Dark theme" : "Light theme", () => {
+        setTheme(theme === "light" ? "dark" : "light");
+        if (el.themeIconDark) el.themeIconDark.hidden = theme === "light";
+        if (el.themeIconLight) el.themeIconLight.hidden = theme === "dark";
+      }],
+      [t("logout"), async () => {
+        hideActionSheet();
+        try { await api("/api/logout", { method: "POST" }); } catch {}
+        clearSession();
+        showAuth();
+      }],
+    ];
+
+    for (const [label, action] of items) {
+      const btn = sheetButton(label, label === t("logout") ? "danger" : "");
+      on(btn, "click", async () => {
+        if (label !== t("logout")) hideActionSheet();
+        await action();
+      });
+      body.appendChild(btn);
+    }
+  });
+}
+
 function renderProfileHeader(profile) {
   if (!el.profileHeader) return;
   el.profileHeader.hidden = false;
@@ -3032,6 +3464,15 @@ function renderProfileHeader(profile) {
   const right = document.createElement("div");
   right.className = "profileActions";
   if (isMe) {
+    const settingsGear = document.createElement("button");
+    settingsGear.type = "button";
+    settingsGear.className = "btn ghost profileSettingsBtn";
+    settingsGear.setAttribute("aria-label", "Settings");
+    settingsGear.title = "Settings";
+    settingsGear.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.2a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.6a2 2 0 0 1-1 1.7l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.2a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.2a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.7v-.6a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.2a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2Z"/><circle cx="12" cy="12" r="3"/></svg>';
+    on(settingsGear, "click", () => openProfileSettingsMenu());
+    right.appendChild(settingsGear);
+
     const analyticsBtn = document.createElement("button");
     analyticsBtn.type = "button";
     analyticsBtn.className = "btn ghost";
@@ -3413,6 +3854,73 @@ function showDeleteConfirm(title, bodyText, onConfirm) {
   });
 }
 
+function openCommentEditSheet(comment, post, textNode) {
+  showActionSheet("Edit comment", (body) => {
+    const textarea = document.createElement("textarea");
+    textarea.className = "sheet-textarea";
+    textarea.maxLength = 200;
+    textarea.value = String(comment.text || "");
+    const save = sheetButton("Save", "primary");
+    on(save, "click", async () => {
+      const next = String(textarea.value || "").trim();
+      if (!next) return showToast(t("error_invalid_comment"), true);
+      save.disabled = true;
+      try {
+        const r = await api(`/api/posts/${encodeURIComponent(post.id)}/comments/${encodeURIComponent(comment.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ text: next }),
+        });
+        comment.text = r.comment?.text || next;
+        if (textNode) textNode.textContent = comment.text;
+        hideActionSheet();
+        showToast("Comment updated.");
+      } catch (err) {
+        showToast(humanizeError(err?.message), true);
+      } finally {
+        save.disabled = false;
+      }
+    });
+    body.appendChild(textarea);
+    body.appendChild(save);
+    window.setTimeout(() => textarea.focus(), 60);
+  });
+}
+
+function openCommentReportSheet(comment) {
+  showActionSheet("Report comment", (body) => {
+    const note = document.createElement("textarea");
+    note.className = "sheet-textarea";
+    note.maxLength = 240;
+    note.placeholder = t("notePlaceholder");
+    const reasons = [
+      ["spam", t("reasonSpam")],
+      ["abuse", t("reasonAbuse")],
+      ["fake", t("reasonFake")],
+      ["other", t("reasonOther")],
+    ];
+    for (const [reason, label] of reasons) {
+      const btn = sheetButton(label);
+      on(btn, "click", async () => {
+        btn.disabled = true;
+        try {
+          await api("/api/report", {
+            method: "POST",
+            body: JSON.stringify({ type: "comment", targetId: comment.id, reason, note: note.value || "" }),
+          });
+          hideActionSheet();
+          showToast(t("reportSent"));
+        } catch (err) {
+          showToast(humanizeError(err?.message), true);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+      body.appendChild(btn);
+    }
+    body.appendChild(note);
+  });
+}
+
 function commentNode(comment, onReply, onDelete, post, depth = 0) {
   const wrap = document.createElement("div");
   wrap.className = "comment" + (depth > 0 ? " reply" : "");
@@ -3456,6 +3964,21 @@ function commentNode(comment, onReply, onDelete, post, depth = 0) {
   on(replyBtn, "click", () => onReply && onReply(comment));
   actionRow.appendChild(replyBtn);
 
+  const shareBtn = document.createElement("button");
+  shareBtn.type = "button";
+  shareBtn.className = "comment-reply-btn";
+  shareBtn.textContent = "Share";
+  on(shareBtn, "click", async () => {
+    const textToCopy = String(comment.text || "");
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(textToCopy);
+      showToast("Comment copied.");
+    } catch {
+      showToast(textToCopy || "Comment");
+    }
+  });
+  actionRow.appendChild(shareBtn);
+
   let localLiked = !!comment.likedByMe;
   let localCount = Number(comment.likeCount || 0);
   const likeBtn = document.createElement("button");
@@ -3487,15 +4010,50 @@ function commentNode(comment, onReply, onDelete, post, depth = 0) {
   });
   actionRow.appendChild(likeBtn);
 
-  const canDelete = isMineKey(comment.authorKey) || isMineKey(post && (post.authorId || post.authorKey));
-  if (canDelete) {
-    const deleteBtn = document.createElement("button");
-    deleteBtn.type = "button";
-    deleteBtn.className = "comment-reply-btn danger";
-    deleteBtn.textContent = "Delete";
-    on(deleteBtn, "click", () => onDelete && onDelete(comment));
-    actionRow.appendChild(deleteBtn);
+  const canEdit = isMineKey(comment.authorKey);
+  const canDelete = canEdit || isMineKey(post && (post.authorId || post.authorKey));
+  const menuWrap = document.createElement("span");
+  menuWrap.className = "comment-menu-wrap";
+  const menuBtn = document.createElement("button");
+  menuBtn.type = "button";
+  menuBtn.className = "comment-reply-btn";
+  menuBtn.setAttribute("aria-label", "Comment options");
+  menuBtn.textContent = "•••";
+  const menu = document.createElement("div");
+  menu.className = "comment-menu";
+  menu.hidden = true;
+
+  function addCommentMenuItem(label, action, danger = false) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "comment-menu-item" + (danger ? " danger" : "");
+    item.textContent = label;
+    on(item, "click", () => {
+      menu.hidden = true;
+      action();
+    });
+    menu.appendChild(item);
   }
+
+  addCommentMenuItem("Copy text", async () => {
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(String(comment.text || ""));
+      showToast("Comment copied.");
+    } catch {
+      showToast(String(comment.text || ""));
+    }
+  });
+  if (canEdit) {
+    addCommentMenuItem("Edit", () => openCommentEditSheet(comment, post, text));
+  }
+  if (canDelete) addCommentMenuItem("Delete", () => onDelete && onDelete(comment), true);
+  addCommentMenuItem("Report", () => openCommentReportSheet(comment));
+  on(menuBtn, "click", () => {
+    menu.hidden = !menu.hidden;
+  });
+  menuWrap.appendChild(menuBtn);
+  menuWrap.appendChild(menu);
+  actionRow.appendChild(menuWrap);
   body.appendChild(actionRow);
   wrap.appendChild(body);
   if (Array.isArray(comment.replies) && comment.replies.length) {
@@ -3952,6 +4510,17 @@ function postNode(post) {
   const commentComposer = document.createElement("div");
   commentComposer.className = "commentComposer";
 
+  const commentSort = document.createElement("div");
+  commentSort.className = "commentSort";
+  const topSortBtn = document.createElement("button");
+  topSortBtn.type = "button";
+  topSortBtn.textContent = "Top";
+  const newestSortBtn = document.createElement("button");
+  newestSortBtn.type = "button";
+  newestSortBtn.textContent = "Newest";
+  commentSort.appendChild(topSortBtn);
+  commentSort.appendChild(newestSortBtn);
+
   const commentInput = document.createElement("textarea");
   commentInput.className = "commentInput";
   commentInput.rows = 2;
@@ -3978,6 +4547,7 @@ function postNode(post) {
   commentsList.className = "commentsList";
 
   commentsWrap.appendChild(commentsHeader);
+  commentsWrap.appendChild(commentSort);
   commentsWrap.appendChild(commentComposer);
   commentsWrap.appendChild(commentsList);
   root.appendChild(commentsWrap);
@@ -3985,6 +4555,13 @@ function postNode(post) {
   let commentsLoaded = false;
   let commentsLoading = false;
   let replyToCommentId = null;
+  let commentSortMode = "newest";
+
+  function syncCommentSortButtons() {
+    topSortBtn.classList.toggle("active", commentSortMode === "top");
+    newestSortBtn.classList.toggle("active", commentSortMode === "newest");
+  }
+  syncCommentSortButtons();
 
   async function deleteComment(comment) {
     showDeleteConfirm("Delete comment", "This comment will be removed.", async () => {
@@ -4002,7 +4579,7 @@ function postNode(post) {
     commentsLoading = true;
     commentsList.textContent = "";
     try {
-      const r = await api(`/api/posts/${encodeURIComponent(post.id)}/comments?limit=50`, { method: "GET" });
+      const r = await api(`/api/posts/${encodeURIComponent(post.id)}/comments?limit=50&sort=${encodeURIComponent(commentSortMode)}`, { method: "GET" });
       const list = Array.isArray(r.comments) ? r.comments : [];
       if (!list.length) {
         const empty = document.createElement("div");
@@ -4041,6 +4618,18 @@ function postNode(post) {
   });
   on(commentsClose, "click", () => {
     commentsWrap.hidden = true;
+  });
+  on(topSortBtn, "click", async () => {
+    commentSortMode = "top";
+    commentsLoaded = false;
+    syncCommentSortButtons();
+    await loadComments();
+  });
+  on(newestSortBtn, "click", async () => {
+    commentSortMode = "newest";
+    commentsLoaded = false;
+    syncCommentSortButtons();
+    await loadComments();
   });
 
   on(commentSend, "click", async () => {
@@ -5326,7 +5915,12 @@ function route() {
   if (mDm) {
     closeExplorePage();
     const key = decodeURIComponent(mDm[1]);
-    openDmInbox().then(() => openDmThread(key)).catch(() => {});
+    if (key.startsWith("group/")) {
+      const groupId = decodeURIComponent(key.slice("group/".length));
+      openDmInbox().then(() => openDmGroup(groupId)).catch(() => {});
+    } else {
+      openDmInbox().then(() => openDmThread(key)).catch(() => {});
+    }
     return;
   }
   if (h === "#reels") {
@@ -5474,6 +6068,7 @@ function renderComposeMedia() {
     rm.textContent = "X";
     on(rm, "click", () => {
       if (item.previewUrl && item.previewUrl.startsWith("blob:")) URL.revokeObjectURL(item.previewUrl);
+      if (item.localPreviewUrl && item.localPreviewUrl.startsWith("blob:")) URL.revokeObjectURL(item.localPreviewUrl);
       composeMedia = composeMedia.filter((m) => m.localId !== item.localId);
       renderComposeMedia();
       updateComposeSendState();
@@ -5648,7 +6243,7 @@ async function handleComposeFiles(files) {
     try {
       const media = await uploadFile(f);
       if (media) {
-        composeMedia = composeMedia.map((m) => m.localId === localId ? { ...media, localId, previewUrl, uploading: false } : m);
+        composeMedia = composeMedia.map((m) => m.localId === localId ? { ...media, localId, localPreviewUrl: previewUrl, uploading: false } : m);
         renderComposeMedia();
       }
     } catch (err) {
@@ -5670,6 +6265,7 @@ async function handleComposeFiles(files) {
 }
 
 let pendingAvatarUrl = null;
+let pendingAvatarMedia = null;
 
 function ensureProfileEditFields() {
   if (el.profilePrivate && el.profileSkills) return;
@@ -5729,6 +6325,7 @@ function openProfileEdit() {
   if (!me || !el.profileModal) return;
   ensureProfileEditFields();
   pendingAvatarUrl = me.avatarUrl || "";
+  pendingAvatarMedia = me.avatarMeta || null;
   setAvatarPreview(pendingAvatarUrl);
   if (el.profileUsername) el.profileUsername.value = me.username || "";
   if (el.profileDisplayName) el.profileDisplayName.value = me.displayName || "";
@@ -6765,12 +7362,12 @@ async function boot() {
     }
   });
   on(el.dmAttach, "click", () => {
-    if (el.dmFiles && activeDmPeer) openMediaPicker("dm");
+    if (el.dmFiles && (activeDmPeer || activeDmGroup)) openMediaPicker("dm");
   });
   on(el.dmFiles, "change", async () => {
     const files = Array.from(el.dmFiles?.files || []);
     if (el.dmFiles) el.dmFiles.value = "";
-    if (!activeDmPeer || !files.length) return;
+    if ((!activeDmPeer && !activeDmGroup) || !files.length) return;
     const media = [];
     showToast(t("uploadProgress"));
     for (const file of files.slice(0, 4)) {
@@ -6882,7 +7479,13 @@ async function boot() {
     setMsg(el.composeMsg, "");
     const text = String(el.composeText?.value || "");
     const hasText = !!text.trim();
-    const readyMedia = composeMedia.filter((m) => m && !m.uploading && isFullMediaUrl(m.url)).map((m) => ({ url: m.url, kind: m.kind, mime: m.mime }));
+    const readyMedia = composeMedia
+      .filter((m) => m && !m.uploading && isFullMediaUrl(m.url))
+      .map((m) => {
+        const { localId, localPreviewUrl, uploading, ...media } = m;
+        void localId; void localPreviewUrl; void uploading;
+        return media;
+      });
     const hasMedia = readyMedia.length > 0;
     if (!hasText && !hasMedia) return setMsg(el.composeMsg, t("error_invalid_post"), true);
     if (composeUploading > 0) return setMsg(el.composeMsg, t("uploadProgress"), true);
@@ -6910,6 +7513,7 @@ async function boot() {
   });
   on(el.avatarRemove, "click", () => {
     pendingAvatarUrl = "";
+    pendingAvatarMedia = null;
     setAvatarPreview("");
   });
   on(el.avatarFile, "change", async () => {
@@ -6922,6 +7526,7 @@ async function boot() {
       const media = await uploadFile(file);
       if (media && media.kind === "image") {
         pendingAvatarUrl = media.url;
+        pendingAvatarMedia = media;
         setAvatarPreview(pendingAvatarUrl);
       } else {
         showToast(t("invalidFile"), true);
@@ -6953,7 +7558,7 @@ async function boot() {
         .slice(0, 20);
       const r = await api("/api/profile", {
         method: "POST",
-        body: JSON.stringify({ username, displayName, email, bio, avatarUrl: pendingAvatarUrl, isPrivate: !!el.profilePrivate?.checked, skills }),
+        body: JSON.stringify({ username, displayName, email, bio, avatarUrl: pendingAvatarUrl, avatar: pendingAvatarMedia, isPrivate: !!el.profilePrivate?.checked, skills }),
       });
       me = r.me;
       closeProfileEdit();
@@ -6979,6 +7584,14 @@ async function boot() {
   on(el.actionSheet, "click", (e) => {
     if (e.target === el.actionSheet) hideActionSheet();
   });
+  on(el.actionSheet, "touchstart", (e) => {
+    actionSheetTouchStartY = Number(e.touches && e.touches[0] && e.touches[0].clientY) || 0;
+  }, { passive: true });
+  on(el.actionSheet, "touchend", (e) => {
+    const endY = Number(e.changedTouches && e.changedTouches[0] && e.changedTouches[0].clientY) || 0;
+    if (actionSheetTouchStartY && endY - actionSheetTouchStartY > 90) hideActionSheet();
+    actionSheetTouchStartY = 0;
+  }, { passive: true });
   on(el.reportSend, "click", async () => {
     setMsg(el.reportMsg, "");
     const reason = String(el.reportReason?.value || "");
@@ -7173,6 +7786,7 @@ async function boot() {
 
   on(window, "keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (el.actionSheet && !el.actionSheet.hidden) { hideActionSheet(); return; }
     if (el.settingsView && !el.settingsView.hidden) { closeSettings(); return; }
     if (el.composeModal && !el.composeModal.hidden) closeCompose();
     if (el.profileModal && !el.profileModal.hidden) closeProfileEdit();

@@ -130,6 +130,16 @@ if (NODE_ENV === "production" && !USE_POSTGRES) {
   console.warn("[data] DATABASE_URL is not set; using data.json fallback");
 }
 
+if (!USE_CLOUDINARY) {
+  const missing = [
+    CLOUDINARY_CLOUD_NAME ? "" : "CLOUDINARY_CLOUD_NAME",
+    CLOUDINARY_API_KEY ? "" : "CLOUDINARY_API_KEY",
+    CLOUDINARY_API_SECRET ? "" : "CLOUDINARY_API_SECRET",
+    cloudinary ? "" : "cloudinary package",
+  ].filter(Boolean);
+  console.warn(`[cloudinary] Disabled${missing.length ? `; missing ${missing.join(", ")}` : ""}. Production uploads require Cloudinary; local /uploads is fallback only.`);
+}
+
 // Initialize PostgreSQL pool if DATABASE_URL is present
 let pgPool = null;
 if (USE_POSTGRES && Pool) {
@@ -172,6 +182,34 @@ async function initPostgresSchema() {
     await pgPool.query(schemaSql);
     await pgPool.query("ALTER TABLE IF EXISTS reels ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0");
     await pgPool.query("ALTER TABLE IF EXISTS reels ADD COLUMN IF NOT EXISTS viewed_by TEXT[] DEFAULT '{}'");
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS group_conversations (
+        id VARCHAR(50) PRIMARY KEY,
+        type VARCHAR(20) NOT NULL DEFAULT 'group',
+        name TEXT NOT NULL,
+        avatar JSONB DEFAULT '{}'::jsonb,
+        members TEXT[] DEFAULT '{}',
+        admins TEXT[] DEFAULT '{}',
+        created_by VARCHAR(50) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_message TEXT DEFAULT ''
+      )
+    `);
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS group_messages (
+        id VARCHAR(50) PRIMARY KEY,
+        conversation_id VARCHAR(50) NOT NULL REFERENCES group_conversations(id) ON DELETE CASCADE,
+        sender_key VARCHAR(50) NOT NULL,
+        text TEXT DEFAULT '',
+        media JSONB DEFAULT '[]',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        read_by TEXT[] DEFAULT '{}',
+        reactions JSONB DEFAULT '{}'::jsonb
+      )
+    `);
+    await pgPool.query("CREATE INDEX IF NOT EXISTS idx_group_conversations_members ON group_conversations USING GIN (members)");
+    await pgPool.query("CREATE INDEX IF NOT EXISTS idx_group_messages_conversation ON group_messages(conversation_id, created_at)");
     console.log("[postgres] Schema initialized (CREATE TABLE IF NOT EXISTS)");
   } catch (err) {
     console.error("[postgres] Schema initialization failed:", err.message);
@@ -543,6 +581,15 @@ function normalizeDmReactions(value) {
   return reactions;
 }
 
+function stableCreatedAt(value) {
+  const raw = String(value || "").trim();
+  if (raw) {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  return "2024-01-01T00:00:00.000Z";
+}
+
 function normalizeDmObject(m) {
   return {
     id: String((m && m.id) || crypto.randomBytes(12).toString("base64url")),
@@ -550,11 +597,63 @@ function normalizeDmObject(m) {
     to: String((m && m.to) || ""),
     text: String((m && m.text) || ""),
     media: asArray(m && m.media),
-    createdAt: String((m && m.createdAt) || new Date().toISOString()),
+    createdAt: stableCreatedAt(m && (m.createdAt || m.created_at)),
     readBy: asArray(m && m.readBy).map(String),
     reactions: normalizeDmReactions(m && m.reactions),
   };
 }
+
+function normalizeGroupConversationObject(c) {
+  const members = Array.from(new Set(asArray(c && c.members).map(String).filter(Boolean)));
+  const admins = Array.from(new Set(asArray(c && c.admins).map(String).filter((k) => members.includes(k))));
+  const createdBy = String((c && (c.createdBy || c.created_by)) || admins[0] || members[0] || "");
+  if (createdBy && !members.includes(createdBy)) members.unshift(createdBy);
+  if (createdBy && !admins.includes(createdBy)) admins.unshift(createdBy);
+  const createdAt = stableCreatedAt(c && (c.createdAt || c.created_at));
+  return {
+    id: String((c && c.id) || crypto.randomBytes(12).toString("base64url")),
+    type: "group",
+    name: stripUnsafeText((c && c.name) || "Group", 60) || "Group",
+    avatar: c && c.avatar && typeof c.avatar === "object" ? c.avatar : {},
+    members,
+    admins,
+    createdBy,
+    createdAt,
+    updatedAt: stableCreatedAt(c && (c.updatedAt || c.updated_at || c.createdAt || c.created_at)),
+    lastMessage: String((c && (c.lastMessage || c.last_message)) || ""),
+  };
+}
+
+function normalizeGroupMessageObject(m) {
+  return {
+    id: String((m && m.id) || crypto.randomBytes(12).toString("base64url")),
+    conversationId: String((m && (m.conversationId || m.conversation_id)) || ""),
+    from: String((m && (m.from || m.senderKey || m.sender_key)) || ""),
+    text: String((m && m.text) || ""),
+    media: asArray(m && m.media),
+    createdAt: stableCreatedAt(m && (m.createdAt || m.created_at)),
+    readBy: asArray(m && m.readBy).map(String),
+    reactions: normalizeDmReactions(m && m.reactions),
+  };
+}
+
+const GroupConversation = createJsonModel({
+  keyField: "id",
+  read: (data) => asArray(data.groupConversations).map(normalizeGroupConversationObject),
+  write: (data, docs) => {
+    data.groupConversations = docs.map(normalizeGroupConversationObject);
+  },
+  normalize: (doc) => normalizeGroupConversationObject(doc),
+});
+
+const GroupMessage = createJsonModel({
+  keyField: "id",
+  read: (data) => asArray(data.groupMessages).map(normalizeGroupMessageObject),
+  write: (data, docs) => {
+    data.groupMessages = docs.map(normalizeGroupMessageObject);
+  },
+  normalize: (doc) => normalizeGroupMessageObject(doc),
+});
 
 const DM = createJsonModel({
   keyField: "id",
@@ -578,7 +677,7 @@ const Report = createJsonModel({
     targetId: String((doc && doc.targetId) || ""),
     reason: String((doc && doc.reason) || ""),
     note: String((doc && doc.note) || ""),
-    createdAt: String((doc && doc.createdAt) || new Date().toISOString()),
+    createdAt: stableCreatedAt(doc && (doc.createdAt || doc.created_at)),
     ai: doc && doc.ai ? clonePlain(doc.ai) : undefined,
   }),
 });
@@ -606,6 +705,7 @@ async function pgFindUserByKey(key) {
     userKey: row.user_key,
     avatarUrl: row.avatar_url,
     avatar: row.avatar || row.avatar_url,
+    avatarMeta: row.avatar_meta || {},
     isPrivate: row.is_private,
     isPendingVerification: row.is_pending_verification,
     verificationRequestAt: row.verification_request_at,
@@ -634,7 +734,8 @@ async function pgFindUserByKey(key) {
         role = $15,
         google_id = $16,
         auth_provider = $17,
-        avatar = $18
+        avatar = $18,
+        avatar_meta = $19
       WHERE user_key = $1`,
       [
         obj.user_key || obj.userKey,
@@ -655,6 +756,7 @@ async function pgFindUserByKey(key) {
         obj.google_id || obj.googleId || "",
         obj.auth_provider || obj.authProvider || "password",
         obj.avatar || obj.avatar_url || obj.avatarUrl || "",
+        JSON.stringify(obj.avatar_meta || obj.avatarMeta || {}),
       ]
     );
   };
@@ -680,8 +782,8 @@ async function pgCreateUser(user) {
     `INSERT INTO users (
       user_key, username, password, created_at, bio, avatar_url,
       is_private, is_pending_verification, verification_request_at,
-      skills, following, token, email, display_name, verified, role, google_id, auth_provider, avatar
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      skills, following, token, email, display_name, verified, role, google_id, auth_provider, avatar, avatar_meta
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
     ON CONFLICT (user_key) DO UPDATE SET
       username = EXCLUDED.username,
       password = EXCLUDED.password,
@@ -696,7 +798,8 @@ async function pgCreateUser(user) {
       role = EXCLUDED.role,
       google_id = EXCLUDED.google_id,
       auth_provider = EXCLUDED.auth_provider,
-      avatar = EXCLUDED.avatar`,
+      avatar = EXCLUDED.avatar,
+      avatar_meta = EXCLUDED.avatar_meta`,
     [
       user.userKey,
       user.username,
@@ -717,6 +820,7 @@ async function pgCreateUser(user) {
       user.googleId || user.google_id || "",
       user.authProvider || user.auth_provider || "password",
       user.avatar || user.avatarUrl || "",
+      JSON.stringify(user.avatarMeta || user.avatar_meta || {}),
     ]
   );
   return pgFindUserByKey(user.userKey);
@@ -1027,6 +1131,94 @@ async function pgUpdateDmMeta(dm) {
   );
 }
 
+async function pgFindMyGroupConversations(userKey) {
+  const res = await pgPool.query(
+    "SELECT * FROM group_conversations WHERE $1 = ANY(members) ORDER BY updated_at DESC, created_at DESC",
+    [String(userKey)]
+  );
+  return res.rows.map((row) => normalizeGroupConversationObject({
+    id: row.id,
+    name: row.name,
+    avatar: row.avatar,
+    members: row.members,
+    admins: row.admins,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastMessage: row.last_message,
+  }));
+}
+
+async function pgFindGroupConversation(id) {
+  const res = await pgPool.query("SELECT * FROM group_conversations WHERE id = $1 LIMIT 1", [String(id)]);
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return normalizeGroupConversationObject({
+    id: row.id,
+    name: row.name,
+    avatar: row.avatar,
+    members: row.members,
+    admins: row.admins,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastMessage: row.last_message,
+  });
+}
+
+async function pgSaveGroupConversation(convo) {
+  const c = normalizeGroupConversationObject(convo);
+  await pgPool.query(
+    `INSERT INTO group_conversations (id, type, name, avatar, members, admins, created_by, created_at, updated_at, last_message)
+     VALUES ($1, 'group', $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (id) DO UPDATE SET
+       name = EXCLUDED.name,
+       avatar = EXCLUDED.avatar,
+       members = EXCLUDED.members,
+       admins = EXCLUDED.admins,
+       updated_at = EXCLUDED.updated_at,
+       last_message = EXCLUDED.last_message`,
+    [c.id, c.name, JSON.stringify(c.avatar || {}), c.members, c.admins, c.createdBy, c.createdAt, c.updatedAt, c.lastMessage]
+  );
+  return c;
+}
+
+async function pgFindGroupMessages(conversationId) {
+  const res = await pgPool.query(
+    "SELECT * FROM group_messages WHERE conversation_id = $1 ORDER BY created_at ASC",
+    [String(conversationId)]
+  );
+  return res.rows.map((row) => normalizeGroupMessageObject({
+    id: row.id,
+    conversationId: row.conversation_id,
+    senderKey: row.sender_key,
+    text: row.text,
+    media: row.media,
+    createdAt: row.created_at,
+    readBy: row.read_by,
+    reactions: row.reactions,
+  }));
+}
+
+async function pgCreateGroupMessage(message) {
+  const m = normalizeGroupMessageObject(message);
+  await pgPool.query(
+    `INSERT INTO group_messages (id, conversation_id, sender_key, text, media, created_at, read_by, reactions)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (id) DO NOTHING`,
+    [m.id, m.conversationId, m.from, m.text, JSON.stringify(m.media || []), m.createdAt, m.readBy || [], JSON.stringify(normalizeDmReactions(m.reactions))]
+  );
+  return m;
+}
+
+async function pgUpdateGroupMessageMeta(message) {
+  const m = normalizeGroupMessageObject(message);
+  await pgPool.query(
+    "UPDATE group_messages SET read_by = $2, reactions = $3 WHERE id = $1",
+    [m.id, asArray(m.readBy).map(String), JSON.stringify(normalizeDmReactions(m.reactions))]
+  );
+}
+
 async function pgFindAllReports() {
   const res = await pgPool.query("SELECT * FROM reports ORDER BY created_at");
   return res.rows;
@@ -1189,7 +1381,7 @@ function normalizeStoryRow(row) {
     author: row.author || "",
     media,
     filter: row.filter || "normal",
-    createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+    createdAt: stableCreatedAt(row.created_at || row.createdAt),
     expiresAt: row.expires_at || row.expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     seenBy: Array.isArray(row.seen_by) ? row.seen_by : (Array.isArray(row.seenBy) ? row.seenBy : []),
   };
@@ -1351,9 +1543,10 @@ function normalizeUserObject(u, fallbackKey) {
     userKey,
     username: display,
     password: u && u.password ? u.password : null,
-    createdAt: String((u && u.createdAt) || new Date().toISOString()),
+    createdAt: stableCreatedAt(u && (u.createdAt || u.created_at)),
     bio: String((u && u.bio) || ""),
     avatarUrl: publicStoredUrl(u && u.avatarUrl),
+    avatarMeta: u && u.avatarMeta && typeof u.avatarMeta === "object" ? normalizeStoredMedia(u.avatarMeta) : {},
     isPrivate: !!(u && u.isPrivate),
     isPendingVerification: !!(u && u.isPendingVerification),
     verificationRequestAt: String((u && u.verificationRequestAt) || ""),
@@ -1388,13 +1581,9 @@ function normalizePostObject(p) {
     author,
     authorKey,
     text: String((p && (p.text || p.content)) || ""),
-    media: media.map((m) => ({
-      url: String(m && m.url ? m.url : ""),
-      kind: String(m && m.kind ? m.kind : ""),
-      mime: String(m && m.mime ? m.mime : ""),
-    })),
+    media: media.map(normalizeStoredMedia),
     visibility: coerceVisibility(p && p.visibility),
-    createdAt: String((p && p.createdAt) || new Date().toISOString()),
+    createdAt: stableCreatedAt(p && (p.createdAt || p.created_at)),
     likes,
     bookmarks: asArray(p && p.bookmarks).map(String),
     repostOf: String((p && p.repostOf) || ""),
@@ -1408,8 +1597,10 @@ function normalizePostObject(p) {
       authorKey: String((c && c.authorKey) || normalizeUsername(c && c.author).key || ""),
       author: String((c && c.author) || ""),
       text: String((c && c.text) || ""),
-      parentId: String((c && c.parentId) || ""),
-      createdAt: String((c && c.createdAt) || new Date().toISOString()),
+      parentId: String((c && (c.parentId || c.parentCommentId)) || ""),
+      createdAt: stableCreatedAt(c && (c.createdAt || c.created_at)),
+      updatedAt: stableCreatedAt(c && (c.updatedAt || c.updated_at || c.createdAt || c.created_at)),
+      likes: asArray(c && c.likes).map(String),
     })),
     views,
     viewedBy,
@@ -1434,7 +1625,7 @@ function normalizeStoryObject(s) {
     author: String(s.author || ""),
     media: { url: mediaUrl, kind: mediaKind, mime: mediaMime },
     filter: normalizeStoryFilter(s.filter),
-    createdAt: String(s.createdAt || new Date().toISOString()),
+    createdAt: stableCreatedAt(s.createdAt || s.created_at),
     expiresAt: String(s.expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()),
     seenBy: asArray(s.seenBy).map(String),
   };
@@ -1666,6 +1857,7 @@ function toPublicMe(u) {
     email: String((u && u.email) || ""),
     bio: String((u && u.bio) || ""),
     avatarUrl: publicStoredUrl(u && u.avatarUrl),
+    avatarMeta: u && u.avatarMeta && typeof u.avatarMeta === "object" ? normalizeStoredMedia(u.avatarMeta) : {},
     isPrivate: !!(u && u.isPrivate),
     skills: asArray(u && u.skills).map(String),
     verified: !!(u && u.verified) || VERIFIED_USERS.has(key) || role === "owner",
@@ -1703,6 +1895,7 @@ async function toPublicProfile(target, viewer) {
     displayName: String((target && (target.displayName || target.display_name)) || ""),
     bio: String(target.bio || ""),
     avatarUrl: publicStoredUrl(target.avatarUrl),
+    avatarMeta: target && target.avatarMeta && typeof target.avatarMeta === "object" ? normalizeStoredMedia(target.avatarMeta) : {},
     isPrivate: !!target.isPrivate,
     skills: asArray(target.skills).map(String),
     verified: !!target.verified || VERIFIED_USERS.has(key) || role === "owner",
@@ -1750,9 +1943,11 @@ async function toPublicComment(c, viewerKey = "") {
     authorCreatedAt: String((authorUser && (authorUser.createdAt || authorUser.created_at)) || ""),
     text: String((c && c.text) || ""),
     parentId: String((c && c.parentId) || ""),
-    createdAt: String((c && c.createdAt) || new Date().toISOString()),
+    createdAt: stableCreatedAt(c && (c.createdAt || c.created_at)),
+    updatedAt: stableCreatedAt(c && (c.updatedAt || c.updated_at || c.createdAt || c.created_at)),
     likeCount: likes.length,
     likedByMe: !!(viewerKey && likes.includes(viewerKey)),
+    replyCount: asArray(c && c.replies).length,
   };
 }
 
@@ -1764,8 +1959,12 @@ function nestComments(flatComments) {
   }
   for (const c of byId.values()) {
     const parentId = String(c.parentId || "");
-    if (parentId && byId.has(parentId)) byId.get(parentId).replies.push(c);
-    else roots.push(c);
+    if (parentId && byId.has(parentId)) {
+      byId.get(parentId).replies.push(c);
+      byId.get(parentId).replyCount = Number(byId.get(parentId).replyCount || 0) + 1;
+    } else {
+      roots.push(c);
+    }
   }
   return roots;
 }
@@ -1845,7 +2044,7 @@ async function toPublicPost(p, viewer) {
     originalId: String(p.originalId || repostOf || ""),
     quotedPost,
     visibility: coerceVisibility(p.visibility),
-    createdAt: String(p.createdAt || new Date().toISOString()),
+    createdAt: stableCreatedAt(p.createdAt || p.created_at),
     likeCount: likes.length,
     commentCount: comments.length,
     viewCount,
@@ -1964,11 +2163,31 @@ function validateMediaList(media) {
     const url = String(m && m.url ? m.url : "");
     const kind = String(m && m.kind ? m.kind : "");
     const mime = String(m && m.mime ? m.mime : "");
-    if (!url || !isAllowedMediaUrl(url)) return { ok: false, error: "INVALID_MEDIA" };
+    if (!url || !isAllowedCreateMediaUrl(url)) return { ok: false, error: "INVALID_MEDIA" };
     if (kind !== "image" && kind !== "video") return { ok: false, error: "INVALID_MEDIA" };
     if (!mime || (!mime.startsWith("image/") && !mime.startsWith("video/"))) return { ok: false, error: "INVALID_MEDIA" };
   }
-  return { ok: true, media: list.map((m) => ({ url: String(m.url), kind: String(m.kind), mime: String(m.mime) })) };
+  return { ok: true, media: list.map(normalizeStoredMedia) };
+}
+
+function normalizeStoredMedia(m) {
+  const kind = String(m && m.kind ? m.kind : "");
+  const url = String(m && m.url ? m.url : "");
+  const media = {
+    url,
+    fullUrl: String(m && m.fullUrl ? m.fullUrl : ""),
+    previewUrl: String(m && m.previewUrl ? m.previewUrl : ""),
+    thumbnailUrl: String(m && m.thumbnailUrl ? m.thumbnailUrl : ""),
+    kind,
+    mime: String(m && m.mime ? m.mime : ""),
+    type: String(m && m.type ? m.type : ""),
+    publicId: String(m && (m.publicId || m.public_id) ? (m.publicId || m.public_id) : ""),
+    resourceType: String(m && (m.resourceType || m.resource_type) ? (m.resourceType || m.resource_type) : ""),
+  };
+  if (Number.isFinite(Number(m && m.width))) media.width = Number(m.width);
+  if (Number.isFinite(Number(m && m.height))) media.height = Number(m.height);
+  if (Number.isFinite(Number(m && m.duration))) media.duration = Number(m.duration);
+  return media;
 }
 
 function isAllowedMediaUrl(url) {
@@ -1976,6 +2195,15 @@ function isAllowedMediaUrl(url) {
   return /^data:(image|video|audio)\/[a-z0-9.+-]+;base64,/i.test(s) || 
     /^\/uploads\/[a-z0-9._-]+$/i.test(s) ||
     /^https?:\/\/(res\.cloudinary\.com|.*\.cloudinary\.com)/i.test(s);
+}
+
+function isCloudinaryUrl(url) {
+  return /^https?:\/\/(res\.cloudinary\.com|.*\.cloudinary\.com)/i.test(String(url || ""));
+}
+
+function isAllowedCreateMediaUrl(url) {
+  if (NODE_ENV === "production") return isCloudinaryUrl(url);
+  return isAllowedMediaUrl(url);
 }
 
 function uploadUrlExists(url) {
@@ -2079,16 +2307,14 @@ function validateDmMediaList(media) {
     const url = String(m && m.url ? m.url : "");
     const kind = String(m && m.kind ? m.kind : "");
     const mime = String(m && m.mime ? m.mime : "");
-    if (!url || !isAllowedMediaUrl(url)) return { ok: false, error: "INVALID_MEDIA" };
+    if (!url || !isAllowedCreateMediaUrl(url)) return { ok: false, error: "INVALID_MEDIA" };
     if (!["image", "video", "audio"].includes(kind)) return { ok: false, error: "INVALID_MEDIA" };
     if (!mime || !mime.startsWith(`${kind}/`)) return { ok: false, error: "INVALID_MEDIA" };
   }
   return {
     ok: true,
     media: list.map((m) => ({
-      url: String(m.url),
-      kind: String(m.kind),
-      mime: String(m.mime),
+      ...normalizeStoredMedia(m),
       type: String(m.type || ""),
       effect: String(m.effect || ""),
       speed: Number.isFinite(Number(m.speed)) ? Number(m.speed) : undefined,
@@ -2127,7 +2353,7 @@ function extForMime(mime) {
 }
 
 function readDataFile() {
-  const fallback = { users: {}, posts: [], stories: [], dms: [], nextPostId: 1, reports: [], notifications: [] };
+  const fallback = { users: {}, posts: [], stories: [], dms: [], groupConversations: [], groupMessages: [], nextPostId: 1, reports: [], notifications: [] };
   try {
     if (!isFile(DATA_FILE)) return fallback;
     const parsed = safeJsonParse(fs.readFileSync(DATA_FILE, "utf8"));
@@ -2137,6 +2363,8 @@ function readDataFile() {
       posts: Array.isArray(parsed.posts) ? parsed.posts : [],
       stories: Array.isArray(parsed.stories) ? parsed.stories : [],
       dms: Array.isArray(parsed.dms) ? parsed.dms : [],
+      groupConversations: Array.isArray(parsed.groupConversations) ? parsed.groupConversations : [],
+      groupMessages: Array.isArray(parsed.groupMessages) ? parsed.groupMessages : [],
       nextPostId: Number(parsed.nextPostId || 1) || 1,
       reports: Array.isArray(parsed.reports) ? parsed.reports : [],
       notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
@@ -2160,13 +2388,9 @@ async function upsertPostInDataFile(post) {
     authorKey: String(post.authorKey || ""),
     author: String(post.author || ""),
     text: String(post.text || ""),
-    media: asArray(post.media).map((m) => ({
-      url: String(m && m.url ? m.url : ""),
-      kind: String(m && m.kind ? m.kind : ""),
-      mime: String(m && m.mime ? m.mime : ""),
-    })),
+    media: asArray(post.media).map(normalizeStoredMedia),
     visibility: coerceVisibility(post.visibility),
-    createdAt: String(post.createdAt || new Date().toISOString()),
+    createdAt: stableCreatedAt(post.createdAt || post.created_at),
     likes: asArray(post.likes).map(String),
     bookmarks: asArray(post.bookmarks).map(String),
     repostOf: String(post.repostOf || ""),
@@ -2202,6 +2426,7 @@ async function syncDataJson() {
       createdAt: String(u.createdAt || ""),
       bio: String(u.bio || ""),
       avatarUrl: String(u.avatarUrl || ""),
+      avatarMeta: u.avatarMeta && typeof u.avatarMeta === "object" ? normalizeStoredMedia(u.avatarMeta) : {},
       isPrivate: !!u.isPrivate,
       isPendingVerification: !!u.isPendingVerification,
       verificationRequestAt: String(u.verificationRequestAt || ""),
@@ -2370,6 +2595,7 @@ app.use((req, res, next) => {
     "/api/auth/google",
   ]);
   if (publicAuthPaths.has(String(req.path || ""))) return next();
+  if (/^\/api\/(?:posts|reels)\/[^/]+\/view$/.test(String(req.path || ""))) return next();
 
   const authToken = getAuthToken(req);
   const expected = csrfTokenForAuthToken(authToken);
@@ -2758,7 +2984,7 @@ app.post("/api/stories", async (req, res) => {
   const mediaUrl = String(media && media.url ? media.url : "");
   const mediaKind = String(media && media.kind ? media.kind : "");
   const mediaMime = String(media && media.mime ? media.mime : "");
-  if (!mediaUrl || !isAllowedMediaUrl(mediaUrl)) return res.status(400).json({ ok: false, error: "INVALID_MEDIA" });
+  if (!mediaUrl || !isAllowedCreateMediaUrl(mediaUrl)) return res.status(400).json({ ok: false, error: "INVALID_MEDIA" });
   if (mediaKind !== "image" && mediaKind !== "video") return res.status(400).json({ ok: false, error: "INVALID_MEDIA" });
   if (!mediaMime || (!mediaMime.startsWith("image/") && !mediaMime.startsWith("video/"))) {
     return res.status(400).json({ ok: false, error: "INVALID_MEDIA" });
@@ -2767,7 +2993,7 @@ app.post("/api/stories", async (req, res) => {
     id: crypto.randomBytes(12).toString("base64url"),
     authorKey: String(viewer.userKey),
     author: String(viewer.username),
-    media: { url: mediaUrl, kind: mediaKind, mime: mediaMime },
+    media: normalizeStoredMedia(media),
     filter: normalizeStoryFilter(req.body && req.body.filter),
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
@@ -3088,7 +3314,17 @@ app.get("/api/posts/:id/comments", async (req, res) => {
   const limitRaw = Number.parseInt(String(req.query.limit || "50"), 10);
   const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, limitRaw)) : 50;
   const vk = String(viewer.userKey);
-  const comments = await Promise.all(asArray(post.comments).slice(-limit).map((c) => toPublicComment(c, vk)));
+  const sort = String(req.query.sort || "newest").toLowerCase() === "top" ? "top" : "newest";
+  const flat = asArray(post.comments).slice(-limit);
+  flat.sort((a, b) => {
+    if (sort === "top") {
+      const scoreA = asArray(a && a.likes).length + asArray(post.comments).filter((c) => String(c && c.parentId) === String(a && a.id)).length;
+      const scoreB = asArray(b && b.likes).length + asArray(post.comments).filter((c) => String(c && c.parentId) === String(b && b.id)).length;
+      if (scoreA !== scoreB) return scoreB - scoreA;
+    }
+    return String(b && b.createdAt || "").localeCompare(String(a && a.createdAt || ""));
+  });
+  const comments = await Promise.all(flat.map((c) => toPublicComment(c, vk)));
   return res.status(200).json({ ok: true, comments: nestComments(comments), commentCount: asArray(post.comments).length });
 });
 
@@ -3106,7 +3342,7 @@ app.post("/api/posts/:id/comments", rateLimit("comments"), async (req, res) => {
 
   const text = stripUnsafeText((req.body && req.body.text) || "", 200);
   const filteredText = filterProfanity(text);
-  const parentId = String((req.body && req.body.parentId) || "");
+  const parentId = String((req.body && (req.body.parentId || req.body.parentCommentId)) || "");
   if (!text || text.length > 200) return res.status(400).json({ ok: false, error: "INVALID_COMMENT" });
 
   if (!Array.isArray(post.comments)) post.comments = [];
@@ -3116,6 +3352,8 @@ app.post("/api/posts/:id/comments", rateLimit("comments"), async (req, res) => {
     text: filteredText,
     parentId,
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    likes: [],
   };
   post.comments.push(comment);
   await post.save();
@@ -3150,6 +3388,8 @@ app.post("/api/posts/:id/comments/:commentId/replies", rateLimit("comments"), as
     text: filteredText,
     parentId,
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    likes: [],
   };
   post.comments.push(comment);
   await post.save();
@@ -3187,6 +3427,33 @@ app.post("/api/posts/:id/comments/:commentId/like", async (req, res) => {
   await post.save();
   await syncDataJson();
   return res.status(200).json({ ok: true, liked, likeCount: comment.likes.length });
+});
+
+app.patch("/api/posts/:id/comments/:commentId", rateLimit("comments"), async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const id = String(req.params.id || "");
+  const commentId = String(req.params.commentId || "");
+  const post = await findPostById(id);
+  if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (!await canViewerSeePost(post, viewer)) {
+    return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  }
+
+  const comment = asArray(post.comments).find((c) => String(c && c.id) === commentId);
+  if (!comment) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (String(comment.authorKey || "") !== String(viewer.userKey || "")) {
+    return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+  }
+
+  const text = stripUnsafeText((req.body && req.body.text) || "", 200);
+  if (!text || text.length > 200) return res.status(400).json({ ok: false, error: "INVALID_COMMENT" });
+  comment.text = filterProfanity(text);
+  comment.updatedAt = new Date().toISOString();
+  await post.save();
+  await syncDataJson();
+  return res.status(200).json({ ok: true, comment: await toPublicComment(comment, String(viewer.userKey)) });
 });
 
 app.delete("/api/posts/:id/comments/:commentId", async (req, res) => {
@@ -3238,21 +3505,29 @@ app.delete("/api/posts/:id", async (req, res) => {
 });
 
 async function handlePostView(req, res) {
-  const viewer = await requireAuth(req, res);
-  if (!viewer) return;
+  const viewer = await authUserFromReq(req);
 
   const id = String(req.params.id || "");
   const post = await findPostById(id);
   if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
 
-  if (!await canViewerSeePost(post, viewer)) {
+  const canSee = viewer
+    ? await canViewerSeePost(post, viewer)
+    : coerceVisibility(post.visibility) === "public";
+  if (!canSee) {
     return res.status(404).json({ ok: false, error: "NOT_FOUND" });
   }
 
   if (!Array.isArray(post.viewedBy)) post.viewedBy = [];
-  const viewerKey = String(viewer.userKey);
-  if (!post.viewedBy.includes(viewerKey)) {
-    post.viewedBy.push(viewerKey);
+  const rawViewerKey = viewer
+    ? `user:${String(viewer.userKey)}`
+    : `anon:${crypto.createHash("sha256").update([
+        String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || req.ip || "unknown").split(",")[0].trim(),
+        String(req.headers["user-agent"] || "").slice(0, 160),
+      ].join("|")).digest("base64url").slice(0, 22)}`;
+  const legacyViewerKey = viewer ? String(viewer.userKey) : "";
+  if (!post.viewedBy.includes(rawViewerKey) && (!legacyViewerKey || !post.viewedBy.includes(legacyViewerKey))) {
+    post.viewedBy.push(rawViewerKey);
     post.views = Number.isFinite(Number(post.views)) ? Number(post.views) + 1 : 1;
     await post.save();
     await syncDataJson();
@@ -3288,12 +3563,16 @@ app.post("/api/profile", async (req, res) => {
   }
 
   const avatarUrl = String(body.avatarUrl || "");
-  if (avatarUrl && !isAllowedMediaUrl(avatarUrl)) return res.status(400).json({ ok: false, error: "UPLOAD_INVALID" });
+  if (avatarUrl && !isAllowedCreateMediaUrl(avatarUrl)) return res.status(400).json({ ok: false, error: "UPLOAD_INVALID" });
+  const avatarMeta = body.avatar && typeof body.avatar === "object" ? normalizeStoredMedia(body.avatar) : {};
+  if (avatarMeta.url && !isAllowedCreateMediaUrl(avatarMeta.url)) return res.status(400).json({ ok: false, error: "UPLOAD_INVALID" });
 
   viewer.bio = bioCheck.bio;
   viewer.email = email;
   viewer.displayName = stripUnsafeText(body.displayName || body.display_name || viewer.displayName || "", 80);
-  viewer.avatarUrl = avatarUrl;
+  viewer.avatarUrl = avatarMeta.url || avatarUrl;
+  viewer.avatarMeta = avatarMeta.url ? avatarMeta : {};
+  viewer.avatar = avatarMeta.url ? JSON.stringify(avatarMeta) : "";
   viewer.isPrivate = body.isPrivate === true || String(body.isPrivate || "").toLowerCase() === "true";
   viewer.skills = sanitizeSkills(body.skills);
   await viewer.save();
@@ -3480,6 +3759,81 @@ app.get("/api/friends", async (req, res) => {
   return res.status(200).json({ ok: true, friends: friends.slice(0, 50) });
 });
 
+async function findMyGroupConversations(userKey) {
+  const key = String(userKey || "");
+  if (USE_POSTGRES) return pgFindMyGroupConversations(key);
+  return (await GroupConversation.find()).filter((c) => asArray(c.members).map(String).includes(key));
+}
+
+async function findGroupConversation(id) {
+  const value = String(id || "");
+  if (!value) return null;
+  if (USE_POSTGRES) return pgFindGroupConversation(value);
+  return GroupConversation.findOne({ id: value });
+}
+
+async function saveGroupConversation(convo) {
+  const normalized = normalizeGroupConversationObject(convo);
+  if (USE_POSTGRES) return pgSaveGroupConversation(normalized);
+  const existing = await GroupConversation.findOne({ id: normalized.id });
+  if (existing) Object.assign(existing, normalized);
+  else await GroupConversation.create(normalized);
+  return normalized;
+}
+
+async function findGroupMessages(conversationId) {
+  const id = String(conversationId || "");
+  if (USE_POSTGRES) return pgFindGroupMessages(id);
+  return (await GroupMessage.find({ conversationId: id })).sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+}
+
+async function createGroupMessage(message) {
+  const normalized = normalizeGroupMessageObject(message);
+  if (USE_POSTGRES) return pgCreateGroupMessage(normalized);
+  await GroupMessage.create(normalized);
+  return normalized;
+}
+
+async function updateGroupMessageMeta(message) {
+  if (USE_POSTGRES) return pgUpdateGroupMessageMeta(message);
+  const existing = await GroupMessage.findOne({ id: String(message && message.id || "") });
+  if (existing) {
+    existing.readBy = asArray(message.readBy).map(String);
+    existing.reactions = normalizeDmReactions(message.reactions);
+  }
+  return null;
+}
+
+async function groupConversationPayload(convo, viewerKey) {
+  const c = normalizeGroupConversationObject(convo);
+  const members = await Promise.all(c.members.map((key) => findUserByKey(key)));
+  const validMembers = members.map((user, idx) => ({
+    key: c.members[idx],
+    username: String((user && user.username) || c.members[idx]),
+    avatarUrl: publicStoredUrl(user && user.avatarUrl),
+    verified: !!(user && user.verified) || VERIFIED_USERS.has(c.members[idx]) || c.members[idx] === OWNER_USER_KEY,
+    role: c.members[idx] === OWNER_USER_KEY ? "owner" : String((user && user.role) || ""),
+    isAdmin: c.admins.includes(c.members[idx]),
+  }));
+  const messages = await findGroupMessages(c.id);
+  const unreadCount = messages.filter((m) => String(m.from) !== viewerKey && !asArray(m.readBy).includes(viewerKey)).length;
+  return {
+    id: c.id,
+    type: "group",
+    name: c.name,
+    avatar: c.avatar || {},
+    members: validMembers,
+    memberCount: c.members.length,
+    admins: c.admins,
+    isAdmin: c.admins.includes(viewerKey),
+    createdBy: c.createdBy,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+    lastMessage: c.lastMessage,
+    unreadCount,
+  };
+}
+
 app.get("/api/dm/threads", async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
@@ -3517,6 +3871,7 @@ app.get("/api/dm/threads", async (req, res) => {
           });
 
       return {
+        type: "direct",
         peerKey,
         peerUsername: String((peer && peer.username) || peerKey),
         peerAvatar: publicStoredUrl(peer && peer.avatarUrl),
@@ -3529,8 +3884,193 @@ app.get("/api/dm/threads", async (req, res) => {
       };
   }));
 
+  const groupThreads = await Promise.all((await findMyGroupConversations(viewerKey)).map(async (convo) => {
+    const payload = await groupConversationPayload(convo, viewerKey);
+    return {
+      type: "group",
+      conversationId: payload.id,
+      peerKey: `group:${payload.id}`,
+      peerUsername: payload.name,
+      peerAvatar: publicStoredUrl(payload.avatar && (payload.avatar.url || payload.avatar.fullUrl)),
+      memberCount: payload.memberCount,
+      lastMessage: payload.lastMessage || "Group created",
+      createdAt: payload.updatedAt || payload.createdAt,
+      unreadCount: payload.unreadCount,
+    };
+  }));
+  threads.push(...groupThreads);
+
   threads.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   return res.status(200).json({ ok: true, threads });
+});
+
+app.post("/api/dm/groups", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  const name = stripUnsafeText(req.body && req.body.name, 60);
+  const memberKeys = Array.from(new Set(asArray(req.body && req.body.members).map((k) => normalizeUsername(k).key).filter(Boolean)));
+  if (!name || memberKeys.length < 1) return res.status(400).json({ ok: false, error: "INVALID_GROUP" });
+  const members = Array.from(new Set([viewerKey, ...memberKeys])).slice(0, 50);
+  if (members.length < 2) return res.status(400).json({ ok: false, error: "INVALID_GROUP" });
+  for (const key of members) {
+    if (!await findUserByKey(key)) return res.status(400).json({ ok: false, error: "INVALID_GROUP_MEMBER" });
+  }
+  const avatarCheck = req.body && req.body.avatar ? validateDmMediaList([req.body.avatar]) : { ok: true, media: [] };
+  if (!avatarCheck.ok) return res.status(400).json({ ok: false, error: avatarCheck.error });
+  const now = new Date().toISOString();
+  const convo = await saveGroupConversation({
+    id: crypto.randomBytes(12).toString("base64url"),
+    type: "group",
+    name,
+    avatar: avatarCheck.media[0] || {},
+    members,
+    admins: [viewerKey],
+    createdBy: viewerKey,
+    createdAt: now,
+    updatedAt: now,
+    lastMessage: "Group created",
+  });
+  await syncDataJson();
+  return res.status(200).json({ ok: true, conversation: await groupConversationPayload(convo, viewerKey) });
+});
+
+app.get("/api/dm/groups/:id", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  const convo = await findGroupConversation(String(req.params.id || ""));
+  if (!convo || !asArray(convo.members).includes(viewerKey)) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  const messagesRaw = await findGroupMessages(convo.id);
+  for (const message of messagesRaw) {
+    if (String(message.from) === viewerKey || asArray(message.readBy).includes(viewerKey)) continue;
+    message.readBy = asArray(message.readBy).concat(viewerKey);
+    await updateGroupMessageMeta(message);
+  }
+  const messages = await Promise.all(messagesRaw.map(async (m) => {
+    const sender = await findUserByKey(String(m.from || ""));
+    return {
+      id: String(m.id || ""),
+      conversationId: convo.id,
+      from: String(m.from || ""),
+      senderUsername: String((sender && sender.username) || m.from || ""),
+      senderAvatar: publicStoredUrl(sender && sender.avatarUrl),
+      text: String(m.text || ""),
+      media: toPublicMediaList(m.media),
+      createdAt: String(m.createdAt || ""),
+      mine: String(m.from) === viewerKey,
+      seen: String(m.from) === viewerKey ? asArray(m.readBy).some((k) => k !== viewerKey) : true,
+      reactions: normalizeDmReactions(m.reactions),
+    };
+  }));
+  await syncDataJson();
+  return res.status(200).json({ ok: true, conversation: await groupConversationPayload(convo, viewerKey), messages });
+});
+
+app.post("/api/dm/groups/:id/messages", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  const convo = await findGroupConversation(String(req.params.id || ""));
+  if (!convo || !asArray(convo.members).includes(viewerKey)) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  const text = stripUnsafeText((req.body && req.body.text) || "", 600);
+  const mediaCheck = validateDmMediaList(req.body && req.body.media);
+  if (!mediaCheck.ok) return res.status(400).json({ ok: false, error: mediaCheck.error });
+  if (!text && !mediaCheck.media.length) return res.status(400).json({ ok: false, error: "INVALID_MESSAGE" });
+  const message = await createGroupMessage({
+    id: crypto.randomBytes(12).toString("base64url"),
+    conversationId: convo.id,
+    from: viewerKey,
+    text,
+    media: mediaCheck.media,
+    createdAt: new Date().toISOString(),
+    readBy: [viewerKey],
+    reactions: {},
+  });
+  convo.lastMessage = text || (mediaCheck.media.length ? `[${mediaCheck.media[0].kind || "media"}]` : "");
+  convo.updatedAt = message.createdAt;
+  await saveGroupConversation(convo);
+  for (const key of asArray(convo.members)) {
+    if (String(key) !== viewerKey) await addNotification({ userKey: String(key), type: "dm", actorKey: viewerKey });
+  }
+  await syncDataJson();
+  return res.status(200).json({ ok: true, message: { ...message, mine: true } });
+});
+
+app.patch("/api/dm/groups/:id", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  const convo = await findGroupConversation(String(req.params.id || ""));
+  if (!convo || !asArray(convo.members).includes(viewerKey)) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (!asArray(convo.admins).includes(viewerKey)) return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+  const nextName = req.body && req.body.name !== undefined ? stripUnsafeText(req.body.name, 60) : convo.name;
+  if (!nextName) return res.status(400).json({ ok: false, error: "INVALID_GROUP" });
+  convo.name = nextName;
+  if (req.body && req.body.avatar !== undefined) {
+    const avatarCheck = req.body.avatar ? validateDmMediaList([req.body.avatar]) : { ok: true, media: [] };
+    if (!avatarCheck.ok) return res.status(400).json({ ok: false, error: avatarCheck.error });
+    convo.avatar = avatarCheck.media[0] || {};
+  }
+  convo.updatedAt = new Date().toISOString();
+  await saveGroupConversation(convo);
+  await syncDataJson();
+  return res.status(200).json({ ok: true, conversation: await groupConversationPayload(convo, viewerKey) });
+});
+
+app.post("/api/dm/groups/:id/members", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  const convo = await findGroupConversation(String(req.params.id || ""));
+  if (!convo || !asArray(convo.members).includes(viewerKey)) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (!asArray(convo.admins).includes(viewerKey)) return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+  const additions = Array.from(new Set(asArray(req.body && req.body.members).map((k) => normalizeUsername(k).key).filter(Boolean)));
+  for (const key of additions) {
+    if (!await findUserByKey(key)) return res.status(400).json({ ok: false, error: "INVALID_GROUP_MEMBER" });
+    if (!convo.members.includes(key)) convo.members.push(key);
+  }
+  convo.updatedAt = new Date().toISOString();
+  await saveGroupConversation(convo);
+  await syncDataJson();
+  return res.status(200).json({ ok: true, conversation: await groupConversationPayload(convo, viewerKey) });
+});
+
+app.delete("/api/dm/groups/:id/members/:key", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  const targetKey = normalizeUsername(req.params.key).key;
+  const convo = await findGroupConversation(String(req.params.id || ""));
+  if (!convo || !asArray(convo.members).includes(viewerKey)) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (!asArray(convo.admins).includes(viewerKey)) return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+  if (targetKey === convo.createdBy && convo.admins.length <= 1) return res.status(400).json({ ok: false, error: "GROUP_REQUIRES_ADMIN" });
+  convo.members = asArray(convo.members).filter((k) => String(k) !== targetKey);
+  convo.admins = asArray(convo.admins).filter((k) => String(k) !== targetKey && convo.members.includes(String(k)));
+  if (!convo.admins.length && convo.members.length) convo.admins = [convo.members[0]];
+  convo.updatedAt = new Date().toISOString();
+  await saveGroupConversation(convo);
+  await syncDataJson();
+  return res.status(200).json({ ok: true, conversation: await groupConversationPayload(convo, viewerKey) });
+});
+
+app.post("/api/dm/groups/:id/leave", async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const viewerKey = String(viewer.userKey);
+  const convo = await findGroupConversation(String(req.params.id || ""));
+  if (!convo || !asArray(convo.members).includes(viewerKey)) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  if (viewerKey === convo.createdBy && asArray(convo.admins).length <= 1 && asArray(convo.members).length > 1) {
+    const replacement = asArray(convo.members).find((k) => String(k) !== viewerKey);
+    convo.admins = replacement ? [replacement] : [];
+  }
+  convo.members = asArray(convo.members).filter((k) => String(k) !== viewerKey);
+  convo.admins = asArray(convo.admins).filter((k) => String(k) !== viewerKey && convo.members.includes(String(k)));
+  if (!convo.admins.length && convo.members.length) convo.admins = [convo.members[0]];
+  convo.updatedAt = new Date().toISOString();
+  await saveGroupConversation(convo);
+  await syncDataJson();
+  return res.status(200).json({ ok: true });
 });
 
 app.get("/api/dm/:key", async (req, res) => {
@@ -3664,12 +4204,14 @@ app.post("/api/report", async (req, res) => {
   const targetId = String(body.targetId || "");
   const reason = String(body.reason || "");
   const note = String(body.note || "");
-  const validReasons = new Set(["spam", "abuse", "fake", "other"]);
-  if (type !== "post" || !targetId || !validReasons.has(reason) || note.length > 300) {
+  const validReasons = new Set(["spam", "abuse", "fake", "other", "comment_report"]);
+  if (!["post", "comment"].includes(type) || !targetId || !validReasons.has(reason) || note.length > 300) {
     return res.status(400).json({ ok: false, error: "REPORT_INVALID" });
   }
 
-  const post = await findPostById(targetId);
+  const post = type === "post"
+    ? await findPostById(targetId)
+    : (await visiblePostsForViewer(viewer)).find((p) => asArray(p.comments).some((c) => String(c && c.id) === targetId));
   if (!post) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
 
   const report = {
@@ -3974,12 +4516,12 @@ app.post("/api/ai/video", async (req, res) => {
 
 async function uploadToCloudinary(dataUrl, kind) {
   const result = await cloudinary.uploader.upload(dataUrl, {
-    resource_type: kind === "image" ? "image" : "video",
+    resource_type: kind === "image" ? "image" : kind === "audio" ? "video" : "video",
     folder: "hysa1",
     use_filename: true,
     unique_filename: true,
   });
-  return result.secure_url;
+  return result;
 }
 
 app.post("/api/upload", rateLimit("uploads"), async (req, res) => {
@@ -4009,6 +4551,7 @@ app.post("/api/upload", rateLimit("uploads"), async (req, res) => {
   if (buf.length > MAX_UPLOAD_BYTES) return res.status(413).json({ ok: false, error: "UPLOAD_TOO_LARGE" });
 
   let mediaUrl;
+  let cloudinaryMeta = null;
   if (USE_CLOUDINARY) {
     try {
       const result = await cloudinary.uploader.upload(body.dataUrl, {
@@ -4023,6 +4566,7 @@ app.post("/api/upload", rateLimit("uploads"), async (req, res) => {
           : [{ width: 720, crop: "limit", quality: "auto:eco", fetch_format: "auto" }],
       });
       mediaUrl = result.secure_url;
+      cloudinaryMeta = result;
     } catch (err) {
       console.warn("[cloudinary] Upload failed:", err.message);
       if (NODE_ENV === "production") {
@@ -4042,7 +4586,17 @@ app.post("/api/upload", rateLimit("uploads"), async (req, res) => {
     mediaUrl = `/uploads/${filename}`;
   }
 
-  const media = { ...publicMediaVariants(mediaUrl, kind), url: mediaUrl, kind, mime: normalizedMime };
+  const media = {
+    ...publicMediaVariants(mediaUrl, kind),
+    url: mediaUrl,
+    kind,
+    mime: normalizedMime,
+    publicId: String(cloudinaryMeta && cloudinaryMeta.public_id || ""),
+    resourceType: String(cloudinaryMeta && cloudinaryMeta.resource_type || (kind === "image" ? "image" : "video")),
+    width: Number.isFinite(Number(cloudinaryMeta && cloudinaryMeta.width)) ? Number(cloudinaryMeta.width) : undefined,
+    height: Number.isFinite(Number(cloudinaryMeta && cloudinaryMeta.height)) ? Number(cloudinaryMeta.height) : undefined,
+    duration: Number.isFinite(Number(cloudinaryMeta && cloudinaryMeta.duration)) ? Number(cloudinaryMeta.duration) : undefined,
+  };
   return res.status(200).json({ ok: true, media });
 });
 
@@ -4871,17 +5425,14 @@ function sendIndexHtml(req, res) {
 app.get(["/", "/index.html"], (req, res) => sendIndexHtml(req, res));
 
 app.use(express.static(path.resolve(PUBLIC_DIR), { index: false }));
-if (NODE_ENV !== "production") {
-  app.use("/uploads", express.static(path.resolve(UPLOADS_DIR), {
-    maxAge: "7d",
-    immutable: true,
-    fallthrough: true,
-  }));
-} else {
-  app.use("/uploads", (_req, res) => {
-    res.status(410).json({ ok: false, error: "CLOUDINARY_REQUIRED" });
-  });
-}
+app.use("/uploads", express.static(path.resolve(UPLOADS_DIR), {
+  maxAge: "7d",
+  immutable: true,
+  fallthrough: true,
+}));
+app.use("/uploads", (_req, res) => {
+  res.status(410).json({ ok: false, error: "CLOUDINARY_REQUIRED" });
+});
 
 // Health Check route
 app.get('/healthz', (req, res) => res.sendStatus(200));
