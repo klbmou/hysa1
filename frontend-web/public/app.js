@@ -658,10 +658,8 @@ function renderUserBadge(user = {}) {
   if (!verified) return null;
   const badge = document.createElement("button");
   badge.type = "button";
-  badge.className = `verifiedBadge hysaUserBadge ${role === "owner" ? "ownerBadge" : ""}`.trim();
-  badge.innerHTML = role === "owner"
-    ? '<span class="hysaBadgeCore">H</span><span class="hysaBadgeSpark"></span>'
-    : '<span class="hysaBadgeCore">H</span>';
+  badge.className = `verifiedBadge verified-badge hysaUserBadge ${role === "owner" ? "ownerBadge avatar-badge" : "small"}`.trim();
+  badge.innerHTML = '<span class="verifiedCheck" aria-hidden="true">✓</span>';
   badge.title = role === "owner" ? "Verified Owner" : "Verified";
   on(badge, "click", (event) => {
     event.preventDefault();
@@ -3587,6 +3585,7 @@ function renderProfileHeader(profile) {
 
   const bio = document.createElement("div");
   bio.className = "profileBio";
+  applyTextDirection(bio, profile.bio || "");
   bio.textContent = profile.bio || t("noBio");
 
   const stats = document.createElement("div");
@@ -5019,7 +5018,6 @@ async function loadReels() {
     rail.appendChild(likeAction);
     rail.appendChild(commentAction);
     rail.appendChild(shareAction);
-    rail.appendChild(messageAction);
     rail.appendChild(saveAction);
     rail.appendChild(moreAction);
 
