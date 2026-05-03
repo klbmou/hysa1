@@ -96,12 +96,12 @@ function contentSecurityPolicy(req, nonce) {
     `script-src 'self' 'nonce-${nonce}' https://accounts.google.com`,
     "script-src-attr 'none'",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    `style-src-elem 'self' 'nonce-${nonce}' https://fonts.googleapis.com`,
+    "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "style-src-attr 'unsafe-inline'",
     "font-src 'self' data: https://fonts.gstatic.com",
     "img-src 'self' data: blob: https://res.cloudinary.com https://*.googleusercontent.com",
     "media-src 'self' blob: https://res.cloudinary.com https://*.googleusercontent.com",
-    `connect-src 'self' https://accounts.google.com https://res.cloudinary.com https://*.googleusercontent.com ${websocketSelf.join(" ")}`.trim(),
+    `connect-src 'self' https://res.cloudinary.com https://fonts.googleapis.com https://fonts.gstatic.com wss: ${websocketSelf.join(" ")}`.trim(),
     "frame-src https://accounts.google.com",
     "worker-src 'self'",
     "manifest-src 'self'",
@@ -146,6 +146,18 @@ if (USE_CLOUDINARY && cloudinary) {
     api_key: CLOUDINARY_API_KEY,
     api_secret: CLOUDINARY_API_SECRET,
   });
+}
+
+async function fallbackToDataJson(reason) {
+  if (!USE_POSTGRES) return;
+  console.warn(`[postgres] Unavailable during request; falling back to data.json (${reason || "unknown"})`);
+  USE_POSTGRES = false;
+  pgPool = null;
+  try {
+    await connectDataFile();
+  } catch (err) {
+    console.error("[data] data.json fallback initialization failed:", err && err.message ? err.message : err);
+  }
 }
 
 async function initPostgresSchema() {
@@ -570,8 +582,12 @@ const Report = createJsonModel({
 async function connectDataFile() {
   ensureDirSync(STORAGE_DIR);
   ensureDirSync(UPLOADS_DIR);
-  const current = readDataFile();
-  await writeDataFile(current);
+  try {
+    const current = readDataFile();
+    await writeDataFile(current);
+  } catch (err) {
+    console.warn("[data] data.json write check failed; continuing with read fallback:", err && err.message ? err.message : err);
+  }
 }
 
 // -----------------------------
@@ -1492,7 +1508,11 @@ async function authUserFromReq(req) {
   if (!token) return null;
   
   if (USE_POSTGRES) {
-    return await pgFindUserByToken(token);
+    try {
+      return await pgFindUserByToken(token);
+    } catch (err) {
+      await fallbackToDataJson(err && (err.code || err.message));
+    }
   }
   
   return await User.findOne({ token });
@@ -1542,7 +1562,11 @@ async function findUserByKey(key) {
   const k = String(key || "");
   
   if (USE_POSTGRES) {
-    return await pgFindUserByKey(k);
+    try {
+      return await pgFindUserByKey(k);
+    } catch (err) {
+      await fallbackToDataJson(err && (err.code || err.message));
+    }
   }
   
   return await User.findOne({ userKey: k });
@@ -1553,7 +1577,11 @@ async function findUserByCurrentUsername(username) {
   if (!display) return null;
 
   if (USE_POSTGRES) {
-    return await pgFindUserByUsername(display);
+    try {
+      return await pgFindUserByUsername(display);
+    } catch (err) {
+      await fallbackToDataJson(err && (err.code || err.message));
+    }
   }
 
   return await User.findOne({ username: { $regex: `^${escapeRegex(display)}$`, $options: "i" } });
@@ -1564,7 +1592,11 @@ async function findUserByEmailAddress(email) {
   if (!value) return null;
 
   if (USE_POSTGRES) {
-    return await pgFindUserByEmail(value);
+    try {
+      return await pgFindUserByEmail(value);
+    } catch (err) {
+      await fallbackToDataJson(err && (err.code || err.message));
+    }
   }
 
   return await User.findOne({ email: { $regex: `^${escapeRegex(value)}$`, $options: "i" } });
@@ -4932,7 +4964,6 @@ async function start() {
 process.on("unhandledRejection", (err) => console.error("[server] unhandledRejection:", err));
 process.on("uncaughtException", (err) => {
   console.error("[server] uncaughtException:", err);
-  process.exit(1);
 });
 
 start();

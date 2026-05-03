@@ -1,5 +1,5 @@
 /* HYSA Service Worker - bandwidth-aware app shell cache */
-const CACHE = "hysa-v2";
+const CACHE = "hysa-v5";
 const SHELL = [
   "/",
   "/index.html",
@@ -12,7 +12,7 @@ const SHELL = [
 function offlineResponse(type) {
   if (type === "json") {
     return new Response(JSON.stringify({ ok: false, message: "OFFLINE" }), {
-      status: 503,
+      status: 200,
       headers: { "Content-Type": "application/json" }
     });
   }
@@ -48,37 +48,20 @@ self.addEventListener("fetch", (event) => {
 
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(
-      fetch(event.request).catch(() => offlineResponse("json"))
+      fetch(event.request, { cache: "no-store" }).catch(() => offlineResponse("json"))
     );
     return;
   }
 
-  if (url.hostname.includes("cloudinary.com")) {
-    const isVideoRequest = (event.request.destination === "video" || /\/video\/upload\//i.test(url.pathname)) && !/f_jpg/i.test(url.pathname);
-    const isImageRequest = !isVideoRequest && (event.request.destination === "image" || /\/image\/upload\//i.test(url.pathname) || /f_jpg/i.test(url.pathname));
-    if (!isImageRequest) {
-      event.respondWith(fetch(event.request, { cache: "no-store" }).catch(() => failedAssetResponse()));
-      return;
-    }
-    event.respondWith(
-      caches.open(CACHE).then((cache) =>
-        caches.match(event.request).then((cached) => {
-          const fetched = fetch(event.request, { cache: "force-cache" }).then((response) => {
-            if (response && response.ok) cache.put(event.request, response.clone()).catch(() => {});
-            return response;
-          }).catch(() => cached || failedAssetResponse());
-          return cached || fetched;
-        })
-      )
-    );
-    return;
-  }
-
-  if (url.pathname.startsWith("/uploads/")) {
-    event.respondWith(
-      fetch(event.request, { cache: "force-cache" })
-        .catch(() => caches.match(event.request).then((cached) => cached || failedAssetResponse()))
-    );
+  if (
+    url.hostname.includes("cloudinary.com") ||
+    url.hostname.endsWith("googleusercontent.com") ||
+    url.pathname.startsWith("/uploads/") ||
+    event.request.destination === "image" ||
+    event.request.destination === "video" ||
+    event.request.destination === "audio"
+  ) {
+    event.respondWith(fetch(event.request, { cache: "no-store" }).catch(() => failedAssetResponse()));
     return;
   }
 
