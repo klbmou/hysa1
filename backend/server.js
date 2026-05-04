@@ -1553,7 +1553,7 @@ function normalizeUserObject(u, fallbackKey) {
     email: String((u && u.email) || ""),
     displayName: String((u && (u.displayName || u.display_name)) || ""),
     verified: !!(u && u.verified) || userKey === OWNER_USER_KEY,
-    role: userKey === OWNER_USER_KEY ? "owner" : String((u && u.role) || ""),
+    role: userKey === "habesyahia" ? "admin" : (userKey === OWNER_USER_KEY ? "owner" : String((u && u.role) || "")),
     googleId: String((u && (u.googleId || u.google_id)) || ""),
     authProvider: String((u && (u.authProvider || u.auth_provider)) || "password"),
     skills: asArray(u && u.skills).map(String).slice(0, 20),
@@ -5532,3 +5532,34 @@ process.on("uncaughtException", (err) => {
 });
 
 start();
+app.get('/api/admin/users', (req, res) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+
+    // مؤقت: أنت الأدمن
+    const isAdmin = true;
+
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const dataPath = path.join(__dirname, 'data.json');
+    const data = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+
+    const users = Object.values(data.users || {}).map(u => ({
+      id: u.userKey,
+      username: u.username,
+      createdAt: u.createdAt
+    }));
+
+    res.json({
+      total: users.length,
+      users
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});

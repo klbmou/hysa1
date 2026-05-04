@@ -21,7 +21,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { useAuth } from '../context/AuthContext';
 import { feedAPI, postAPI, uploadAPI } from '../api/client';
 import PostCard from '../components/PostCard';
-import { PlusCircle, X, Send, Image as ImageIcon, Camera, Trash2 } from 'lucide-react-native';
+import { PlusCircle, X, Send, Image as ImageIcon, Camera, Trash2, Search, Bell } from 'lucide-react-native';
 import theme from '../theme';
 
 const THROTTLE_MS = 800;
@@ -257,20 +257,63 @@ const Feed = ({ navigation, route }) => {
     }
   };
 
+  const renderStories = () => (
+    <View style={styles.storiesWrap}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <TouchableOpacity style={styles.storyItem} onPress={() => {}} activeOpacity={0.7}>
+          <View style={styles.storyRing}>
+            {currentUser?.avatarUrl ? (
+              <Image source={{ uri: currentUser.avatarUrl }} style={styles.storyAvatar} />
+            ) : (
+              <View style={styles.storyAvatarPlaceholder}>
+                <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#77778A' }} />
+              </View>
+            )}
+            <View style={styles.storyPlusBadge}>
+              <Text style={styles.storyPlusText}>+</Text>
+            </View>
+          </View>
+          <Text style={styles.storyLabel}>Your Story</Text>
+        </TouchableOpacity>
+
+        {[1,2,3,4].map((i) => (
+          <TouchableOpacity key={i} style={styles.storyItem} activeOpacity={0.7}>
+            <View style={styles.storyRing}>
+              <View style={styles.storyAvatarPlaceholder}>
+                <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#77778A' }} />
+              </View>
+            </View>
+            <Text style={styles.storyLabel}>User {i}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+
   const renderPost = ({ item }) => (
-    <PostCard
-      post={item}
-      onLike={handleLike}
-      onBookmark={handleBookmark}
-      onComment={handleComment}
-      onRepost={handleRepost}
-      onViewProfile={handleViewProfile}
-    />
+    <View style={{ marginBottom: 12 }}>
+      <PostCard
+        post={item}
+        onLike={handleLike}
+        onBookmark={handleBookmark}
+        onComment={handleComment}
+        onRepost={handleRepost}
+        onViewProfile={handleViewProfile}
+      />
+    </View>
   );
 
   const renderHeader = () => (
     <View style={styles.header}>
-      <Text style={styles.headerTitle}>HYSA1</Text>
+      <Text style={styles.logoText}>HYSA</Text>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <TouchableOpacity style={styles.headerIconBtn}>
+          <Search size={18} color="#FFFFFF" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.headerIconBtn}>
+          <Bell size={18} color="#FFFFFF" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -348,6 +391,8 @@ const Feed = ({ navigation, route }) => {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={styles.bgGlowOne} />
+      <View style={styles.bgGlowTwo} />
       {renderHeader()}
       <FlatList
         data={posts}
@@ -355,17 +400,18 @@ const Feed = ({ navigation, route }) => {
         keyExtractor={(item) => getPostId(item)}
         ListEmptyComponent={renderEmpty}
         ListFooterComponent={renderFooter}
+        ListHeaderComponent={renderStories}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={theme.colors.accent}
+            tintColor="#5CCBE3"
           />
         }
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 80 }}
+        contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 80 }}
       />
 
       <Modal visible={composeOpen} animationType="slide" transparent statusBarTranslucent>
@@ -444,23 +490,112 @@ const Feed = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.bgPrimary,
+  storiesWrap: {
+    paddingVertical: 12,
+    paddingLeft: 14,
   },
-  header: {
-    flexDirection: 'row',
+  storyItem: {
+    width: 72,
+    marginRight: 12,
+    alignItems: 'center',
+  },
+  storyRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    padding: 3,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  storyAvatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 30,
+    backgroundColor: '#0A0F1E',
+    borderWidth: 2,
+    borderColor: '#070711',
+  },
+  storyLabel: {
+    marginTop: 6,
+    color: '#B7B7C8',
+    fontSize: 11,
+    maxWidth: 72,
+    textAlign: 'center',
+  },
+  storyPlusBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#FF3B8A',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-    backgroundColor: theme.colors.bgGlass,
   },
-  headerTitle: {
-    ...theme.typography.h3,
-    color: theme.colors.textPrimary,
+  storyPlusText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  storyAvatarPlaceholder: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 30,
+    backgroundColor: 'rgba(124,58,237,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(168,85,247,0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  container: {
+    flex: 1,
+    backgroundColor: '#070711',
+  },
+  bgGlowOne: {
+    position: 'absolute',
+    top: -120,
+    right: -90,
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    backgroundColor: 'rgba(124,58,237,0.08)',
+    pointerEvents: 'none',
+  },
+  bgGlowTwo: {
+    position: 'absolute',
+    top: 240,
+    left: -140,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: 'rgba(92,203,227,0.06)',
+    pointerEvents: 'none',
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  logoText: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   centerContainer: {
     flex: 1,

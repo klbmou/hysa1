@@ -814,7 +814,7 @@ const Profile = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.bgPrimary,
+    backgroundColor: '#0f0f0f',
   },
   centerContainer: {
     flex: 1,
@@ -905,11 +905,11 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 16,
     fontWeight: '700',
-    color: theme.colors.textPrimary,
+    color: '#ffffff',
   },
   statLabel: {
     fontSize: 13,
-    color: theme.colors.textSecondary,
+    color: '#aaaaaa',
     marginLeft: 4,
   },
   statDivider: {
@@ -929,17 +929,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.colors.bgInput,
+    backgroundColor: 'rgba(124, 58, 237, 0.10)',
     paddingVertical: 10,
-    borderRadius: theme.radius.sm,
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: theme.colors.borderLight,
+    borderColor: 'rgba(168, 85, 247, 0.15)',
     gap: 6,
   },
   actionBtnText: {
     fontSize: 14,
     fontWeight: '600',
-    color: theme.colors.textPrimary,
+    color: '#ffffff',
   },
   iconBtn: {
     width: 42,
@@ -953,9 +953,9 @@ const styles = StyleSheet.create({
   },
   followBtn: {
     flex: 1,
-    backgroundColor: theme.colors.accent,
+    backgroundColor: '#FF3B8A',
     paddingVertical: 10,
-    borderRadius: theme.radius.sm,
+    borderRadius: 22,
     alignItems: 'center',
   },
   followBtnText: {
@@ -964,12 +964,12 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   followingBtn: {
-    backgroundColor: theme.colors.bgPrimary,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
   followingBtnText: {
-    color: theme.colors.textPrimary,
+    color: '#ffffff',
   },
   followLoadingBtn: {
     opacity: 0.7,
@@ -983,7 +983,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     ...theme.typography.bodySm,
     fontWeight: '700',
-    color: theme.colors.textMuted,
+    color: '#aaaaaa',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 8,
@@ -991,7 +991,7 @@ const styles = StyleSheet.create({
   bio: {
     fontSize: 15,
     lineHeight: 22,
-    color: theme.colors.textSecondary,
+    color: '#aaaaaa',
   },
   skillsContainer: {
     flexDirection: 'row',
@@ -1027,9 +1027,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   editCard: {
-    backgroundColor: theme.colors.bgCard,
-    borderTopLeftRadius: theme.radius.xl,
-    borderTopRightRadius: theme.radius.xl,
+    backgroundColor: '#0f0f0f',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     padding: 20,
     paddingTop: 8,
     minHeight: 300,
@@ -1050,7 +1050,7 @@ const styles = StyleSheet.create({
   },
   editTitle: {
     ...theme.typography.h3,
-    color: theme.colors.textPrimary,
+    color: '#ffffff',
   },
   editLabel: {
     ...theme.typography.bodySm,
@@ -1130,9 +1130,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   settingsSheet: {
-    backgroundColor: theme.colors.bgCard,
-    borderTopLeftRadius: theme.radius.xl,
-    borderTopRightRadius: theme.radius.xl,
+    backgroundColor: '#0f0f0f',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 8,
@@ -1157,7 +1157,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1165,9 +1165,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   messageSheet: {
-    backgroundColor: theme.colors.bgCard,
-    borderTopLeftRadius: theme.radius.xl,
-    borderTopRightRadius: theme.radius.xl,
+    backgroundColor: '#0f0f0f',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     paddingHorizontal: 24,
     paddingTop: 12,
     paddingBottom: 8,
@@ -1196,7 +1196,7 @@ const styles = StyleSheet.create({
   sheetItemText: {
     flex: 1,
     fontSize: 16,
-    color: theme.colors.textPrimary,
+    color: '#ffffff',
   },
   sheetItemSubtext: {
     fontSize: 13,
@@ -1251,19 +1251,19 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: 'rgba(124, 58, 237, 0.14)',
+    backgroundColor: 'rgba(255, 59, 92, 0.14)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
   messageSheetTitle: {
     ...theme.typography.h3,
-    color: theme.colors.textPrimary,
+    color: '#ffffff',
     marginBottom: 8,
   },
   messageSheetDesc: {
     ...theme.typography.body,
-    color: theme.colors.textSecondary,
+    color: '#aaaaaa',
     textAlign: 'center',
     marginBottom: 20,
     lineHeight: 22,

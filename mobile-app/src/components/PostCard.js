@@ -15,7 +15,6 @@ import {
   Repeat,
   Bookmark,
   MoreHorizontal,
-  User,
   Verified,
   Share2,
   Copy,
@@ -31,6 +30,14 @@ import { sharePost, copyLink } from '../utils/share';
 import theme from '../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+const getCount = (...values) => {
+  for (const value of values) {
+    if (typeof value === 'number') return value;
+    if (Array.isArray(value)) return value.length;
+  }
+  return 0;
+};
 const MEDIA_MAX_WIDTH = SCREEN_WIDTH - 24;
 
 const PostCard = memo(({
@@ -46,8 +53,9 @@ const PostCard = memo(({
   const [liked, setLiked] = useState(post.likedByMe || false);
   const [bookmarked, setBookmarked] = useState(post.bookmarkedByMe || false);
   const [reposted, setReposted] = useState(post.repostedByMe || false);
-  const [likeCount, setLikeCount] = useState(post.likeCount || 0);
-  const [repostCount, setRepostCount] = useState(post.repostCount || 0);
+  const likeCount = getCount(post.likeCount, post.likesCount, post.likes, post.reactions?.likes, post.stats?.likes);
+  const commentCount = getCount(post.commentCount, post.commentsCount, post.comments, post.stats?.comments);
+  const repostCount = getCount(post.repostCount, post.repostsCount, post.reposts, post.stats?.reposts);
   const [actionLoading, setActionLoading] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   const [actionFeedback, setActionFeedback] = useState(null);
@@ -170,18 +178,20 @@ const PostCard = memo(({
       const thumbUrl = media.thumbnailUrl || displayUrl;
       if (!displayUrl) return null;
       return (
-        <TouchableOpacity
-          style={styles.mediaContainer}
-          onPress={() => { setViewerMedia(media); haptics.light(); }}
-          activeOpacity={0.8}
-        >
-          <Image source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }} style={styles.fullMedia} resizeMode="cover" />
+        <View style={styles.mediaWrap}>
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            onPress={() => { setViewerMedia(media); haptics.light(); }}
+            activeOpacity={0.8}
+          >
+            <Image source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }} style={styles.media} resizeMode="cover" />
+          </TouchableOpacity>
           {media.kind === 'video' && (
             <View style={styles.playOverlay}>
               <Play size={32} color="#fff" fill="#fff" />
             </View>
           )}
-        </TouchableOpacity>
+        </View>
       );
     }
 
@@ -192,28 +202,44 @@ const PostCard = memo(({
           const thumbUrl = media.thumbnailUrl || displayUrl;
           if (!displayUrl) return null;
           return (
-            <TouchableOpacity
-              key={index}
-              style={[styles.gridItem, mediaItems.length === 1 && styles.gridItemFull]}
-              onPress={() => { setViewerMedia(media); haptics.light(); }}
-              activeOpacity={0.8}
-            >
-              <Image source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }} style={styles.gridImage} resizeMode="cover" />
+            <View key={index} style={[styles.gridItem, mediaItems.length === 1 && styles.gridItemFull]}>
+              <TouchableOpacity
+                style={{ flex: 1 }}
+                onPress={() => { setViewerMedia(media); haptics.light(); }}
+                activeOpacity={0.8}
+              >
+                <Image source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }} style={styles.gridImage} resizeMode="cover" />
+              </TouchableOpacity>
               {media.kind === 'video' && (
                 <View style={styles.gridPlayOverlay}>
                   <Play size={20} color="#fff" fill="#fff" />
                 </View>
               )}
-            </TouchableOpacity>
+            </View>
           );
         })}
       </View>
     );
   };
 
+  const repostUser =
+    post.repostedBy?.username ||
+    post.repostUser?.username ||
+    post.repostAuthor?.username ||
+    post.repostedByName ||
+    post.repostedBy ||
+    null;
+
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
+    <View style={styles.card}>
+      {repostUser ? (
+        <View style={styles.repostRow}>
+          <Repeat size={13} color="#A855F7" />
+          <Text style={styles.repostText}>@{repostUser} reposted</Text>
+        </View>
+      ) : null}
+
+      <View style={styles.authorRow}>
         <TouchableOpacity
           style={styles.avatarContainer}
           onPress={() => onViewProfile && onViewProfile(post.authorKey)}
@@ -222,24 +248,24 @@ const PostCard = memo(({
             <Image source={{ uri: post.authorAvatar }} style={styles.avatar} />
           ) : (
             <View style={styles.avatarPlaceholder}>
-              <User size={20} color={theme.colors.textMuted} />
+              <View style={styles.avatarDot} />
             </View>
           )}
         </TouchableOpacity>
         <View style={styles.headerInfo}>
-          <View style={styles.authorRow}>
+          <View style={styles.authorNameRow}>
             <Text style={styles.authorName}>{post.author}</Text>
-            {post.verified && <Verified size={14} color={theme.colors.verified} fill={theme.colors.verified} />}
+            {post.verified && <Verified size={14} color="#7C3AED" fill="#7C3AED" />}
           </View>
           <Text style={styles.timestamp}>{formatDate(post.createdAt)}</Text>
         </View>
         <TouchableOpacity style={styles.moreButton} onPress={() => setMenuOpen(true)}>
-          <MoreHorizontal size={20} color={theme.colors.textMuted} />
+          <MoreHorizontal size={20} color="#B7B7C8" />
         </TouchableOpacity>
       </View>
 
       {post.text ? (
-        <Text style={styles.content}>{post.text}</Text>
+        <Text style={styles.postText}>{post.text}</Text>
       ) : null}
 
       {renderMedia()}
@@ -258,19 +284,19 @@ const PostCard = memo(({
 
       <View style={styles.actions}>
         <TouchableOpacity style={styles.actionButton} onPress={handleLike} disabled={actionLoading.like}>
-          <Heart
-            size={20}
-            color={liked ? theme.colors.like : theme.colors.textSecondary}
-            fill={liked ? theme.colors.like : 'transparent'}
-          />
-          <Text style={[styles.actionText, liked && styles.actionTextActive]}>
-            {likeCount}
-          </Text>
+            <Heart
+              size={20}
+              color={liked ? '#FF3B8A' : '#B7B7C8'}
+              fill={liked ? '#FF3B8A' : 'transparent'}
+            />
+            <Text style={[styles.actionText, liked && styles.actionTextActive]}>
+              {likeCount}
+            </Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionButton} onPress={() => onComment && onComment(post.id)}>
-          <MessageCircle size={20} color={theme.colors.textSecondary} />
-          <Text style={styles.actionText}>{post.commentCount || 0}</Text>
+            <MessageCircle size={20} color={'#aaaaaa'} />
+            <Text style={styles.actionText}>{commentCount}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -278,14 +304,14 @@ const PostCard = memo(({
           onPress={handleRepost}
           disabled={actionLoading.repost}
         >
-          <Repeat
-            size={20}
-            color={reposted ? theme.colors.success : theme.colors.textSecondary}
-            fill={reposted ? theme.colors.success : 'transparent'}
-          />
-          <Text style={[styles.actionText, reposted && styles.actionTextRepost]}>
-            {repostCount}
-          </Text>
+            <Repeat
+              size={20}
+              color={reposted ? '#A855F7' : '#B7B7C8'}
+              fill={reposted ? '#A855F7' : 'transparent'}
+            />
+            <Text style={[styles.actionText, reposted && styles.actionTextRepost]}>
+              {repostCount}
+            </Text>
         </TouchableOpacity>
 
         <View style={styles.actionsRight}>
@@ -296,8 +322,8 @@ const PostCard = memo(({
           >
             <Bookmark
               size={20}
-              color={bookmarked ? theme.colors.bookmark : theme.colors.textSecondary}
-              fill={bookmarked ? theme.colors.bookmark : 'transparent'}
+              color={bookmarked ? '#7C3AED' : '#B7B7C8'}
+              fill={bookmarked ? '#7C3AED' : 'transparent'}
             />
           </TouchableOpacity>
         </View>
@@ -353,93 +379,95 @@ const PostCard = memo(({
 });
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: theme.colors.bgCard,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.borderLight,
-    paddingVertical: 12,
+  card: {
+    marginHorizontal: 12,
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    overflow: 'hidden',
   },
-  header: {
+  repostRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    gap: 6,
     marginBottom: 8,
+  },
+  repostText: {
+    color: '#B7B7C8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  authorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
   },
   avatarContainer: {
     marginRight: 10,
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
   avatarPlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: theme.colors.bgInput,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerInfo: {
+  avatarDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#A855F7',
+  },
+  authorNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
     minWidth: 0,
   },
-  authorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   authorName: {
+    color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
+    fontWeight: '800',
   },
   timestamp: {
-    fontSize: 13,
-    color: theme.colors.textMuted,
+    color: '#77778A',
+    fontSize: 12,
+    marginTop: 2,
   },
   moreButton: {
     padding: 8,
     marginLeft: 4,
   },
-  content: {
+  postText: {
+    color: '#FFFFFF',
     fontSize: 15,
-    lineHeight: 20,
-    color: theme.colors.textPrimary,
-    paddingHorizontal: 12,
-    marginBottom: 12,
+    lineHeight: 21,
   },
-  mediaContainer: {
-    width: MEDIA_MAX_WIDTH,
-    maxHeight: 300,
-    marginBottom: 12,
-    marginLeft: 12,
+  mediaWrap: {
+    marginTop: 12,
+    borderRadius: 20,
     overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
-  fullMedia: {
-    width: MEDIA_MAX_WIDTH,
-    height: 250,
-    borderRadius: theme.radius.sm,
-  },
-  playOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.2)',
-  },
-  gridPlayOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.2)',
+  media: {
+    width: '100%',
+    borderRadius: 20,
   },
   mediaGrid: {
     flexDirection: 'row',
@@ -451,7 +479,7 @@ const styles = StyleSheet.create({
     width: '48%',
     aspectRatio: 1,
     margin: '1%',
-    borderRadius: theme.radius.sm,
+    borderRadius: 20,
     overflow: 'hidden',
   },
   gridItemFull: {
@@ -462,14 +490,24 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  playOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
   quotedPost: {
     marginHorizontal: 12,
     marginBottom: 12,
     padding: 12,
-    backgroundColor: theme.colors.bgInput,
-    borderRadius: theme.radius.md,
+    backgroundColor: 'rgba(255,255,255,0.035)',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: theme.colors.borderLight,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
   quotedHeader: {
     flexDirection: 'row',
@@ -479,37 +517,39 @@ const styles = StyleSheet.create({
   quotedAuthor: {
     fontSize: 13,
     fontWeight: '600',
-    color: theme.colors.textPrimary,
+    color: '#FFFFFF',
   },
   quotedText: {
     fontSize: 14,
-    color: theme.colors.textSecondary,
+    color: '#B7B7C8',
   },
-  actions: {
+  actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingTop: 8,
+    justifyContent: 'flex-start',
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+    gap: 20,
   },
-  actionButton: {
+  actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 24,
+    gap: 6,
+    paddingHorizontal: 10,
     paddingVertical: 8,
   },
-  actionsRight: {
-    marginLeft: 'auto',
-  },
   actionText: {
-    fontSize: 13,
-    color: theme.colors.textSecondary,
-    marginLeft: 4,
+    color: '#B7B7C8',
+    fontSize: 12,
+    fontWeight: '600',
   },
   actionTextActive: {
-    color: theme.colors.like,
+    color: '#FF3B8A',
   },
   actionTextRepost: {
-    color: theme.colors.success,
+    color: '#A855F7',
   },
   menuOverlay: {
     flex: 1,
@@ -518,9 +558,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   menuCard: {
-    backgroundColor: theme.colors.bgCard,
-    borderTopLeftRadius: theme.radius.lg,
-    borderTopRightRadius: theme.radius.lg,
+    backgroundColor: '#070711',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     width: '100%',
     maxWidth: 400,
     paddingBottom: 20,
@@ -534,38 +574,38 @@ const styles = StyleSheet.create({
   },
   menuItemText: {
     fontSize: 16,
-    color: theme.colors.textPrimary,
+    color: '#FFFFFF',
   },
   menuClose: {
     alignItems: 'center',
     paddingVertical: 14,
     marginTop: 8,
     borderTopWidth: 1,
-    borderTopColor: theme.colors.borderLight,
+    borderTopColor: 'rgba(255,255,255,0.06)',
   },
   menuCloseText: {
     fontSize: 16,
     fontWeight: '600',
-    color: theme.colors.textSecondary,
+    color: '#B7B7C8',
   },
   feedbackToast: {
     position: 'absolute',
     bottom: 16,
     left: 24,
     right: 24,
-    backgroundColor: theme.colors.bgCard,
-    borderRadius: theme.radius.md,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 20,
     paddingVertical: 12,
     paddingHorizontal: 16,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: theme.colors.borderLight,
+    borderColor: 'rgba(255,255,255,0.06)',
     zIndex: 100,
   },
   feedbackText: {
     fontSize: 14,
     fontWeight: '600',
-    color: theme.colors.textPrimary,
+    color: '#FFFFFF',
   },
 });
 

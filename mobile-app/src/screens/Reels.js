@@ -45,7 +45,7 @@ import { shareReel, copyLink } from '../utils/share';
 import theme from '../theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const BATCH_SIZE = 6;
+const BATCH_SIZE = 3;
 const DOUBLE_TAP_MS = 300;
 
 const CommentItem = React.memo(({ comment, onReply }) => {
@@ -212,6 +212,9 @@ const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOp
   const reelId = item.id;
   const media = item.media && item.media[0];
   const thumbUrl = useMemo(() => media && (media.thumbnailUrl || media.fullUrl || media.url), [media]);
+  const likeCount = item.likeCount ?? item.likesCount ?? item.likes?.length ?? item.reactions?.likes ?? 0;
+  const commentCount = item.commentCount ?? item.commentsCount ?? item.comments?.length ?? 0;
+  const repostCount = item.repostCount ?? item.repostsCount ?? item.reposts?.length ?? 0;
   const [naturalAspect, setNaturalAspect] = useState(null);
   const videoAspect = useMemo(() => {
     // Use natural aspect if available, otherwise fallback to metadata
@@ -492,21 +495,21 @@ const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOp
                   fill={item.likedByMe ? theme.colors.danger : 'transparent'}
                 />
               </View>
-              <Text style={styles.actionText}>{item.likeCount || 0}</Text>
+              <Text style={styles.actionText}>{likeCount}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionBtn} onPress={handleCommentsPress} activeOpacity={0.7}>
               <View style={styles.actionIconCircle}>
                 <MessageCircle size={26} color="#fff" />
               </View>
-              <Text style={styles.actionText}>{item.commentCount || 0}</Text>
+              <Text style={styles.actionText}>{commentCount}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionBtn} onPress={handleRepostPress} activeOpacity={0.7}>
               <View style={[styles.actionIconCircle, item.repostedByMe && styles.actionIconCircleRepost]}>
                 <Repeat size={24} color={item.repostedByMe ? theme.colors.success : '#fff'} />
               </View>
-              <Text style={styles.actionText}>{item.repostCount || 0}</Text>
+              <Text style={styles.actionText}>{repostCount}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionBtn} onPress={handleSharePress} activeOpacity={0.7}>
@@ -620,6 +623,8 @@ const Reels = ({ navigation }) => {
   const [reels, setReels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [nextCursor, setNextCursor] = useState(null);
+  const [totalLoaded, setTotalLoaded] = useState(0);
+  const MAX_REELS = 15; // Hard limit to prevent unbounded bandwidth usage
   const [muted, setMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -642,8 +647,12 @@ const Reels = ({ navigation }) => {
   const commentsBgAnim = useRef(new Animated.Value(0)).current;
 
   const videoRefsArr = useRef([]);
+  const didInitialFetch = useRef(false);
+  const lastFetchAt = useRef(0);
 
   useEffect(() => {
+    if (didInitialFetch.current) return;
+    didInitialFetch.current = true;
     (async () => {
       try {
         await Audio.setAudioModeAsync({
@@ -655,8 +664,8 @@ const Reels = ({ navigation }) => {
       } catch (e) {
         console.error('Audio mode error:', e);
       }
+      fetchReels();
     })();
-    fetchReels();
     return () => stopAllVideos();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -678,14 +687,18 @@ const Reels = ({ navigation }) => {
     videoRefsArr.current[index] = ref;
   }, []);
 
-  const fetchReels = async () => {
-    if (fetchingRef.current) return;
+  const fetchReels = useCallback(async () => {
+    const now = Date.now();
+    if (fetchingRef.current || (now - lastFetchAt.current < 10000)) return;
     fetchingRef.current = true;
+    lastFetchAt.current = now;
     try {
       setLoading(true);
       const response = await feedAPI.getReels(BATCH_SIZE);
       if (response.data.ok) {
-        setReels(response.data.reels || []);
+        const fetchedReels = (response.data.reels || []).slice(0, MAX_REELS);
+        setReels(fetchedReels);
+        setTotalLoaded(fetchedReels.length);
         setNextCursor(response.data.nextCursor);
       }
     } catch (err) {
@@ -694,20 +707,26 @@ const Reels = ({ navigation }) => {
       setLoading(false);
       fetchingRef.current = false;
     }
-  };
+  }, []);
 
-  const fetchMoreReels = async () => {
-    if (loadingMore || !nextCursor || fetchingRef.current) return;
+  const fetchMoreReels = useCallback(async () => {
+    const now = Date.now();
+    if (loadingMore || !nextCursor || fetchingRef.current || (now - lastFetchAt.current < 10000)) return;
+    if (totalLoaded >= MAX_REELS) {
+      setNextCursor(null);
+      return;
+    }
     fetchingRef.current = true;
+    lastFetchAt.current = now;
     setLoadingMore(true);
     try {
       const response = await feedAPI.getReels(BATCH_SIZE, nextCursor);
       if (response.data.ok && response.data.reels && response.data.reels.length > 0) {
-        setReels((prev) => {
-          const existingIds = new Set(prev.map((r) => r.id));
-          const newReels = response.data.reels.filter((r) => !existingIds.has(r.id));
-          return [...prev, ...newReels];
-        });
+        const newReels = response.data.reels.filter((r) => !reels.some((existing) => existing.id === r.id));
+        if (newReels.length > 0) {
+          setReels((prev) => [...prev, ...newReels.slice(0, MAX_REELS - prev.length)]);
+          setTotalLoaded((prev) => Math.min(prev + newReels.length, MAX_REELS));
+        }
         setNextCursor(response.data.nextCursor || null);
       } else {
         setNextCursor(null);
@@ -718,7 +737,7 @@ const Reels = ({ navigation }) => {
       setLoadingMore(false);
       fetchingRef.current = false;
     }
-  };
+  }, [loadingMore, nextCursor, totalLoaded, reels]);
 
   const onViewableItemsChanged = useCallback(({ viewableItems }) => {
     if (viewableItems.length > 0) {
@@ -978,16 +997,18 @@ const Reels = ({ navigation }) => {
         keyExtractor={keyExtractor}
         getItemLayout={getItemLayout}
         pagingEnabled
+        snapToInterval={SCREEN_H}
+        snapToAlignment="start"
+        decelerationRate="fast"
+        disableIntervalMomentum
         showsVerticalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig.current}
-        snapToInterval={SCREEN_H}
-        decelerationRate="fast"
         removeClippedSubviews
         maxToRenderPerBatch={2}
         windowSize={3}
         onEndReached={fetchMoreReels}
-        onEndReachedThreshold={0.5}
+        onEndReachedThreshold={1.5}
         ListFooterComponent={
           loadingMore ? (
             <View style={styles.footerLoader}>
