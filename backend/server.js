@@ -5530,36 +5530,54 @@ process.on("unhandledRejection", (err) => console.error("[server] unhandledRejec
 process.on("uncaughtException", (err) => {
   console.error("[server] uncaughtException:", err);
 });
-
-start();
 app.get('/api/admin/users', (req, res) => {
   try {
     const fs = require('fs');
     const path = require('path');
 
-    // مؤقت: أنت الأدمن
-    const isAdmin = true;
+    // مسار data.json
+    const dataPath = path.join(__dirname, 'data.json');
 
-    if (!isAdmin) {
-      return res.status(403).json({ error: 'Forbidden' });
+    // إذا الملف غير موجود
+    if (!fs.existsSync(dataPath)) {
+      return res.json({ total: 0, users: [] });
     }
 
-    const dataPath = path.join(__dirname, 'data.json');
-    const data = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+    // قراءة البيانات
+    let raw = fs.readFileSync(dataPath, 'utf8');
+    let data;
 
-    const users = Object.values(data.users || {}).map(u => ({
-      id: u.userKey,
-      username: u.username,
-      createdAt: u.createdAt
+    try {
+      data = JSON.parse(raw);
+    } catch (e) {
+      console.error("JSON parse error:", e);
+      return res.status(500).json({ error: "Invalid JSON format" });
+    }
+
+    // استخراج المستخدمين مهما كان الشكل
+    let usersArray = [];
+
+    if (data.users && typeof data.users === 'object') {
+      usersArray = Object.values(data.users);
+    } else if (typeof data === 'object') {
+      usersArray = Object.values(data);
+    }
+
+    // تنظيف البيانات (آمن)
+    const safeUsers = usersArray.map((u, index) => ({
+      id: u?.userKey || u?.id || `user_${index}`,
+      username: u?.username || u?.name || "unknown",
+      createdAt: u?.createdAt || null
     }));
 
+    // الرد النهائي
     res.json({
-      total: users.length,
-      users
+      total: safeUsers.length,
+      users: safeUsers
     });
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error("ADMIN USERS ERROR:", err);
+    res.status(500).json({ error: "Server error" });
   }
 });
