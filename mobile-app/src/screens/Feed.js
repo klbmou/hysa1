@@ -11,13 +11,17 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Image,
+  ScrollView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useAuth } from '../context/AuthContext';
-import { feedAPI, postAPI } from '../api/client';
+import { feedAPI, postAPI, uploadAPI } from '../api/client';
 import PostCard from '../components/PostCard';
-import { PlusCircle, X, Send } from 'lucide-react-native';
+import { PlusCircle, X, Send, Image as ImageIcon, Camera, Trash2 } from 'lucide-react-native';
 import theme from '../theme';
 
 const THROTTLE_MS = 800;
@@ -38,7 +42,7 @@ function dedupePosts(posts) {
 }
 
 const Feed = ({ navigation, route }) => {
-  const { logout } = useAuth();
+  const { user: currentUser, logout } = useAuth();
   const insets = useSafeAreaInsets();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +56,9 @@ const Feed = ({ navigation, route }) => {
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeText, setComposeText] = useState('');
   const [composeSubmitting, setComposeSubmitting] = useState(false);
+  const [composeMedia, setComposeMedia] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
 
   const actionTimers = useRef({});
 
@@ -143,21 +150,108 @@ const Feed = ({ navigation, route }) => {
   });
 
   const handleViewProfile = (userKey) => {
-    navigation.navigate('Profile', { userKey });
+    const myKey = currentUser && (currentUser.key || currentUser.userKey || '');
+    if (userKey && myKey && String(userKey) === String(myKey)) {
+      navigation.navigate('Profile');
+    } else {
+      navigation.navigate('UserProfile', { userKey });
+    }
+  };
+
+  const pickFromGallery = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        setUploadError('Permission to access media library is required.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        allowsMultipleSelection: false,
+        quality: 0.8,
+        videoMaxDuration: 60,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        await uploadLocalMedia(result.assets[0]);
+      }
+    } catch (err) {
+      console.error('Gallery pick error:', err);
+      setUploadError('Failed to pick media from gallery.');
+    }
+  };
+
+  const pickFromCamera = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        setUploadError('Permission to use camera is required.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        quality: 0.8,
+        videoMaxDuration: 60,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        await uploadLocalMedia(result.assets[0]);
+      }
+    } catch (err) {
+      console.error('Camera pick error:', err);
+      setUploadError('Failed to capture media.');
+    }
+  };
+
+  const uploadLocalMedia = async (asset) => {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      console.log('[upload] asset.uri:', asset.uri ? 'present' : 'missing');
+      const mime = asset.mimeType || asset.type || (asset.uri.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg');
+      console.log('[upload] mime:', mime);
+      const b64 = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: 'base64',
+      });
+      const dataUrl = `data:${mime};base64,${b64}`;
+      console.log('[upload] dataUrl length:', dataUrl.length);
+
+      const uploadResponse = await uploadAPI.uploadMedia(dataUrl);
+      console.log('[upload] response keys:', Object.keys(uploadResponse.data || {}));
+      if (uploadResponse.data.ok) {
+        setComposeMedia([uploadResponse.data.media]);
+      } else {
+        setUploadError(uploadResponse.data.error || 'Upload failed.');
+      }
+    } catch (err) {
+      console.error('[upload] error:', err.message, err.stack);
+      setUploadError('Failed to upload media. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeMedia = () => {
+    setComposeMedia([]);
+    setUploadError(null);
   };
 
   const handleComposeSubmit = async () => {
-    if (!composeText.trim()) return;
+    if (!composeText.trim() && composeMedia.length === 0) return;
     setComposeSubmitting(true);
     try {
-      const response = await postAPI.createPost(composeText.trim());
+      const response = await postAPI.createPost(
+        composeText.trim(),
+        composeMedia.length > 0 ? composeMedia : []
+      );
       if (response.data.ok) {
         setComposeText('');
+        setComposeMedia([]);
+        setUploadError(null);
         setComposeOpen(false);
         fetchFeed(true);
       }
     } catch (err) {
       console.error('Create post error:', err);
+      setUploadError('Failed to create post.');
     } finally {
       setComposeSubmitting(false);
     }
@@ -229,6 +323,29 @@ const Feed = ({ navigation, route }) => {
     );
   };
 
+  const renderMediaPreview = () => {
+    if (composeMedia.length === 0) return null;
+    const media = composeMedia[0];
+    const displayUrl = media.fullUrl || media.url;
+    return (
+      <View style={styles.mediaPreviewContainer}>
+        {media.kind === 'video' ? (
+          <Image source={{ uri: media.thumbnailUrl || displayUrl }} style={styles.mediaPreview} />
+        ) : (
+          <Image source={{ uri: displayUrl }} style={styles.mediaPreview} />
+        )}
+        <TouchableOpacity style={styles.removeMediaBtn} onPress={removeMedia} activeOpacity={0.7}>
+          <Trash2 size={16} color="#fff" />
+        </TouchableOpacity>
+        {media.kind === 'video' && (
+          <View style={styles.videoBadge}>
+            <Text style={styles.videoBadgeText}>Video</Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {renderHeader()}
@@ -251,20 +368,25 @@ const Feed = ({ navigation, route }) => {
         contentContainerStyle={{ paddingBottom: 80 }}
       />
 
-      <Modal visible={composeOpen} animationType="slide" transparent>
+      <Modal visible={composeOpen} animationType="slide" transparent statusBarTranslucent>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.composeOverlay}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
         >
           <View style={styles.composeCard}>
+            <View style={styles.composeHandle} />
             <View style={styles.composeHeader}>
               <Text style={styles.composeTitle}>New Post</Text>
-              <TouchableOpacity onPress={() => { setComposeOpen(false); setComposeText(''); }}>
+              <TouchableOpacity onPress={() => { setComposeOpen(false); setComposeText(''); setComposeMedia([]); setUploadError(null); }} activeOpacity={0.7}>
                 <X size={22} color={theme.colors.textSecondary} />
               </TouchableOpacity>
             </View>
+
+            {renderMediaPreview()}
+
             <TextInput
-              style={styles.composeInput}
+              style={[styles.composeInput, composeMedia.length > 0 && styles.composeInputWithMedia]}
               placeholder="What's happening?"
               placeholderTextColor={theme.colors.textMuted}
               value={composeText}
@@ -273,20 +395,47 @@ const Feed = ({ navigation, route }) => {
               maxLength={1000}
               autoFocus
             />
-            <TouchableOpacity
-              style={[styles.composeSubmit, (!composeText.trim() || composeSubmitting) && styles.composeSubmitDisabled]}
-              onPress={handleComposeSubmit}
-              disabled={!composeText.trim() || composeSubmitting}
-            >
-              {composeSubmitting ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <>
-                  <Send size={16} color="#fff" />
-                  <Text style={styles.composeSubmitText}>Post</Text>
-                </>
-              )}
-            </TouchableOpacity>
+
+            {uploadError && (
+              <Text style={styles.uploadErrorText}>{uploadError}</Text>
+            )}
+
+            <View style={styles.composeToolbar}>
+              <View style={styles.composeToolbarLeft}>
+                <TouchableOpacity
+                  style={styles.toolbarBtn}
+                  onPress={pickFromGallery}
+                  disabled={uploading || composeSubmitting}
+                  activeOpacity={0.7}
+                >
+                  <ImageIcon size={20} color={uploading || composeSubmitting ? theme.colors.textMuted : theme.colors.accent} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.toolbarBtn}
+                  onPress={pickFromCamera}
+                  disabled={uploading || composeSubmitting}
+                  activeOpacity={0.7}
+                >
+                  <Camera size={20} color={uploading || composeSubmitting ? theme.colors.textMuted : theme.colors.accent} />
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity
+                style={[styles.composeSubmit, (!composeText.trim() && composeMedia.length === 0 || composeSubmitting || uploading) && styles.composeSubmitDisabled]}
+                onPress={handleComposeSubmit}
+                disabled={!composeText.trim() && composeMedia.length === 0 || composeSubmitting || uploading}
+                activeOpacity={0.7}
+              >
+                {composeSubmitting || uploading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Send size={16} color="#fff" />
+                    <Text style={styles.composeSubmitText}>Post</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+            <View style={{ height: Math.max(insets.bottom, 12) }} />
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -363,14 +512,24 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.bgCard,
     borderTopLeftRadius: theme.radius.xl,
     borderTopRightRadius: theme.radius.xl,
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
     minHeight: 280,
+  },
+  composeHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.colors.border,
+    alignSelf: 'center',
+    marginBottom: 12,
   },
   composeHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   composeTitle: {
     ...theme.typography.h3,
@@ -384,7 +543,70 @@ const styles = StyleSheet.create({
     color: theme.colors.textPrimary,
     minHeight: 100,
     textAlignVertical: 'top',
-    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: theme.colors.borderLight,
+  },
+  composeInputWithMedia: {
+    marginBottom: 12,
+  },
+  mediaPreviewContainer: {
+    position: 'relative',
+    marginBottom: 12,
+    borderRadius: theme.radius.md,
+    overflow: 'hidden',
+  },
+  mediaPreview: {
+    width: '100%',
+    height: 180,
+    borderRadius: theme.radius.md,
+  },
+  removeMediaBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoBadge: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: theme.radius.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  videoBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  uploadErrorText: {
+    fontSize: 13,
+    color: theme.colors.danger,
+    marginBottom: 8,
+  },
+  composeToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  composeToolbarLeft: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  toolbarBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.bgInput,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: theme.colors.borderLight,
   },
@@ -394,7 +616,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: theme.colors.accent,
     borderRadius: theme.radius.md,
-    paddingVertical: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     gap: 8,
   },
   composeSubmitDisabled: {

@@ -1,0 +1,3224 @@
+diff --git a/mobile-app/App.js b/mobile-app/App.js
+index 93039be..f226ac7 100644
+--- a/mobile-app/App.js
++++ b/mobile-app/App.js
+@@ -1,16 +1,19 @@
+ import React from 'react';
+ import { StatusBar } from 'expo-status-bar';
+ import { SafeAreaProvider } from 'react-native-safe-area-context';
++import { GestureHandlerRootView } from 'react-native-gesture-handler';
+ import { AuthProvider } from './src/context/AuthContext';
+ import AppNavigator from './src/navigation/AppNavigator';
+ 
+ export default function App() {
+   return (
+-    <SafeAreaProvider>
+-      <AuthProvider>
+-        <AppNavigator />
+-        <StatusBar style="light" />
+-      </AuthProvider>
+-    </SafeAreaProvider>
++    <GestureHandlerRootView style={{ flex: 1 }}>
++      <SafeAreaProvider>
++        <AuthProvider>
++          <AppNavigator />
++          <StatusBar style="light" />
++        </AuthProvider>
++      </SafeAreaProvider>
++    </GestureHandlerRootView>
+   );
+ }
+\ No newline at end of file
+diff --git a/mobile-app/package-lock.json b/mobile-app/package-lock.json
+index 0f3633f..e35de92 100644
+--- a/mobile-app/package-lock.json
++++ b/mobile-app/package-lock.json
+@@ -14,6 +14,9 @@
+         "axios": "^1.6.0",
+         "expo": "~54.0.33",
+         "expo-av": "~15.0.0",
++        "expo-camera": "~16.0.0",
++        "expo-file-system": "~18.0.0",
++        "expo-image-picker": "~17.0.11",
+         "expo-secure-store": "~15.0.8",
+         "expo-status-bar": "~3.0.9",
+         "lucide-react-native": "^0.400.0",
+@@ -4796,6 +4799,60 @@
+         }
+       }
+     },
++    "node_modules/expo-camera": {
++      "version": "16.0.18",
++      "resolved": "https://registry.npmjs.org/expo-camera/-/expo-camera-16.0.18.tgz",
++      "integrity": "sha512-NP5u2yyc+wZc9GdUXH+jcEytyXZwBnHxItMwXoZQQxi4wgltwvs4XfSWjBtRZe1LngnhpBfPyPJV0aShjWlLDg==",
++      "license": "MIT",
++      "dependencies": {
++        "invariant": "^2.2.4"
++      },
++      "peerDependencies": {
++        "expo": "*",
++        "react": "*",
++        "react-native": "*",
++        "react-native-web": "*"
++      },
++      "peerDependenciesMeta": {
++        "react-native-web": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/expo-file-system": {
++      "version": "18.0.12",
++      "resolved": "https://registry.npmjs.org/expo-file-system/-/expo-file-system-18.0.12.tgz",
++      "integrity": "sha512-HAkrd/mb8r+G3lJ9MzmGeuW2B+BxQR1joKfeCyY4deLl1zoZ48FrAWjgZjHK9aHUVhJ0ehzInu/NQtikKytaeg==",
++      "license": "MIT",
++      "dependencies": {
++        "web-streams-polyfill": "^3.3.2"
++      },
++      "peerDependencies": {
++        "expo": "*",
++        "react-native": "*"
++      }
++    },
++    "node_modules/expo-image-loader": {
++      "version": "6.0.0",
++      "resolved": "https://registry.npmjs.org/expo-image-loader/-/expo-image-loader-6.0.0.tgz",
++      "integrity": "sha512-nKs/xnOGw6ACb4g26xceBD57FKLFkSwEUTDXEDF3Gtcu3MqF3ZIYd3YM+sSb1/z9AKV1dYT7rMSGVNgsveXLIQ==",
++      "license": "MIT",
++      "peerDependencies": {
++        "expo": "*"
++      }
++    },
++    "node_modules/expo-image-picker": {
++      "version": "17.0.11",
++      "resolved": "https://registry.npmjs.org/expo-image-picker/-/expo-image-picker-17.0.11.tgz",
++      "integrity": "sha512-/apkoyukDvsCHHb9fzP+F34A1uQqSzUtYH/2P/xJACNEwq+mwEXjXvVU8bzlJq6ih0Qo1+tpVivIa7B9kYSwOQ==",
++      "license": "MIT",
++      "dependencies": {
++        "expo-image-loader": "~6.0.0"
++      },
++      "peerDependencies": {
++        "expo": "*"
++      }
++    },
+     "node_modules/expo-modules-autolinking": {
+       "version": "3.0.25",
+       "resolved": "https://registry.npmjs.org/expo-modules-autolinking/-/expo-modules-autolinking-3.0.25.tgz",
+@@ -9549,6 +9606,15 @@
+         "defaults": "^1.0.3"
+       }
+     },
++    "node_modules/web-streams-polyfill": {
++      "version": "3.3.3",
++      "resolved": "https://registry.npmjs.org/web-streams-polyfill/-/web-streams-polyfill-3.3.3.tgz",
++      "integrity": "sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 8"
++      }
++    },
+     "node_modules/webidl-conversions": {
+       "version": "5.0.0",
+       "resolved": "https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-5.0.0.tgz",
+diff --git a/mobile-app/package.json b/mobile-app/package.json
+index d830a60..8c54ecf 100644
+--- a/mobile-app/package.json
++++ b/mobile-app/package.json
+@@ -15,6 +15,9 @@
+     "axios": "^1.6.0",
+     "expo": "~54.0.33",
+     "expo-av": "~15.0.0",
++    "expo-camera": "~16.0.0",
++    "expo-file-system": "~18.0.0",
++    "expo-image-picker": "~17.0.11",
+     "expo-secure-store": "~15.0.8",
+     "expo-status-bar": "~3.0.9",
+     "lucide-react-native": "^0.400.0",
+diff --git a/mobile-app/src/api/client.js b/mobile-app/src/api/client.js
+index fb39030..db3c949 100644
+--- a/mobile-app/src/api/client.js
++++ b/mobile-app/src/api/client.js
+@@ -161,6 +161,9 @@ export const userAPI = {
+   getUser: (key) => api.get(`/api/user/${key}`),
+   followUser: (key) => api.post(`/api/follow/${key}`),
+   updateProfile: (data) => api.post('/api/profile', data),
++  setPrivacy: (isPrivate) => api.patch('/api/users/privacy', { isPrivate }),
++  changePassword: (oldPassword, newPassword) =>
++    api.post('/api/auth/change-password', { oldPassword, newPassword }),
+   getInsights: () => api.get('/api/insights'),
+   getPostInsights: (id) => api.get(`/api/posts/${id}/insights`),
+ };
+@@ -190,4 +193,18 @@ export const searchAPI = {
+     api.get(`/api/search?q=${encodeURIComponent(query)}&type=${type}`),
+ };
+ 
++// Upload API
++export const uploadAPI = {
++  uploadMedia: (dataUrl) =>
++    api.post('/api/upload', { dataUrl }),
++};
++
++// DM / Chat API
++export const dmAPI = {
++  getThreads: () => api.get('/api/dm/threads'),
++  getConversation: (userKey) => api.get(`/api/dm/${userKey}`),
++  sendMessage: (userKey, text) =>
++    api.post(`/api/dm/${userKey}`, { text }),
++};
++
+ export default api;
+diff --git a/mobile-app/src/components/PostCard.js b/mobile-app/src/components/PostCard.js
+index 0a72485..f1f06e3 100644
+--- a/mobile-app/src/components/PostCard.js
++++ b/mobile-app/src/components/PostCard.js
+@@ -7,10 +7,8 @@ import {
+   StyleSheet,
+   Dimensions,
+   Modal,
+-  Share,
+-  Clipboard,
++  Clipboard as RNClipboard,
+ } from 'react-native';
+-import { Video, ResizeMode } from 'expo-av';
+ import {
+   Heart,
+   MessageCircle,
+@@ -24,10 +22,12 @@ import {
+   Flag,
+   Trash2,
+   X,
+-  AlertCircle,
++  Play,
+ } from 'lucide-react-native';
+ import { useAuth } from '../context/AuthContext';
++import MediaViewer from './MediaViewer';
+ import * as haptics from '../utils/haptics';
++import { sharePost, copyLink } from '../utils/share';
+ import theme from '../theme';
+ 
+ const { width: SCREEN_WIDTH } = Dimensions.get('window');
+@@ -51,6 +51,7 @@ const PostCard = memo(({
+   const [actionLoading, setActionLoading] = useState({});
+   const [menuOpen, setMenuOpen] = useState(false);
+   const [actionFeedback, setActionFeedback] = useState(null);
++  const [viewerMedia, setViewerMedia] = useState(null);
+ 
+   const isOwner = currentUser && (post.authorKey === currentUser.key || post.authorId === currentUser.id);
+ 
+@@ -108,28 +109,21 @@ const PostCard = memo(({
+   const handleShare = async () => {
+     setMenuOpen(false);
+     haptics.light();
+-    try {
+-      await Share.share({
+-        message: post.text
+-          ? `${post.author}: ${post.text}`
+-          : `Post by @${post.authorKey || post.author}`,
+-        title: 'Share Post',
+-      });
+-    } catch (err) {
+-      if (err.message !== 'User did not share') {
+-        console.error('Share error:', err);
+-      }
+-    }
++    await sharePost({
++      postId: post.id,
++      username: post.authorKey || post.author,
++      text: post.text,
++    });
+   };
+ 
+   const handleCopyText = async () => {
+     setMenuOpen(false);
+     haptics.light();
+     try {
+-      if (Clipboard.setString) {
+-        Clipboard.setString(post.text || '');
++      if (RNClipboard.setString) {
++        RNClipboard.setString(post.text || '');
+       } else {
+-        await Clipboard.setStringAsync(post.text || '');
++        await RNClipboard.setStringAsync(post.text || '');
+       }
+       setActionFeedback({ icon: 'Copy', text: 'Copied to clipboard' });
+       setTimeout(() => setActionFeedback(null), 1500);
+@@ -172,57 +166,46 @@ const PostCard = memo(({
+ 
+     if (mediaItems.length === 1) {
+       const media = mediaItems[0];
+-      if (media.kind === 'video' && media.url) {
+-        return (
+-          <View style={styles.mediaContainer}>
+-            <Video
+-              source={{ uri: media.url }}
+-              style={styles.fullMedia}
+-              useNativeControls
+-              resizeMode={ResizeMode.COVER}
+-              isLooping
+-            />
+-          </View>
+-        );
+-      } else if (media.url) {
+-        return (
+-          <View style={styles.mediaContainer}>
+-            <Image
+-              source={{ uri: media.url }}
+-              style={styles.fullMedia}
+-              resizeMode="cover"
+-            />
+-          </View>
+-        );
+-      }
++      const displayUrl = media.fullUrl || media.url;
++      const thumbUrl = media.thumbnailUrl || displayUrl;
++      if (!displayUrl) return null;
++      return (
++        <TouchableOpacity
++          style={styles.mediaContainer}
++          onPress={() => { setViewerMedia(media); haptics.light(); }}
++          activeOpacity={0.8}
++        >
++          <Image source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }} style={styles.fullMedia} resizeMode="cover" />
++          {media.kind === 'video' && (
++            <View style={styles.playOverlay}>
++              <Play size={32} color="#fff" fill="#fff" />
++            </View>
++          )}
++        </TouchableOpacity>
++      );
+     }
+ 
+     return (
+       <View style={styles.mediaGrid}>
+         {mediaItems.map((media, index) => {
+-          if (media.kind === 'video' && media.url) {
+-            return (
+-              <View key={index} style={[styles.gridItem, mediaItems.length === 1 && styles.gridItemFull]}>
+-                <Video
+-                  source={{ uri: media.url }}
+-                  style={styles.gridVideo}
+-                  useNativeControls
+-                  resizeMode={ResizeMode.COVER}
+-                />
+-              </View>
+-            );
+-          } else if (media.url) {
+-            return (
+-              <View key={index} style={[styles.gridItem, mediaItems.length === 1 && styles.gridItemFull]}>
+-                <Image
+-                  source={{ uri: media.url }}
+-                  style={styles.gridImage}
+-                  resizeMode="cover"
+-                />
+-              </View>
+-            );
+-          }
+-          return null;
++          const displayUrl = media.fullUrl || media.url;
++          const thumbUrl = media.thumbnailUrl || displayUrl;
++          if (!displayUrl) return null;
++          return (
++            <TouchableOpacity
++              key={index}
++              style={[styles.gridItem, mediaItems.length === 1 && styles.gridItemFull]}
++              onPress={() => { setViewerMedia(media); haptics.light(); }}
++              activeOpacity={0.8}
++            >
++              <Image source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }} style={styles.gridImage} resizeMode="cover" />
++              {media.kind === 'video' && (
++                <View style={styles.gridPlayOverlay}>
++                  <Play size={20} color="#fff" fill="#fff" />
++                </View>
++              )}
++            </TouchableOpacity>
++          );
+         })}
+       </View>
+     );
+@@ -359,6 +342,12 @@ const PostCard = memo(({
+           <Text style={styles.feedbackText}>{actionFeedback.text}</Text>
+         </View>
+       )}
++
++      <MediaViewer
++        visible={!!viewerMedia}
++        media={viewerMedia}
++        onClose={() => setViewerMedia(null)}
++      />
+     </View>
+   );
+ });
+@@ -432,6 +421,26 @@ const styles = StyleSheet.create({
+     height: 250,
+     borderRadius: theme.radius.sm,
+   },
++  playOverlay: {
++    position: 'absolute',
++    top: 0,
++    left: 0,
++    right: 0,
++    bottom: 0,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: 'rgba(0,0,0,0.2)',
++  },
++  gridPlayOverlay: {
++    position: 'absolute',
++    top: 0,
++    left: 0,
++    right: 0,
++    bottom: 0,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: 'rgba(0,0,0,0.2)',
++  },
+   mediaGrid: {
+     flexDirection: 'row',
+     flexWrap: 'wrap',
+@@ -453,10 +462,6 @@ const styles = StyleSheet.create({
+     width: '100%',
+     height: '100%',
+   },
+-  gridVideo: {
+-    width: '100%',
+-    height: '100%',
+-  },
+   quotedPost: {
+     marginHorizontal: 12,
+     marginBottom: 12,
+diff --git a/mobile-app/src/navigation/AppNavigator.js b/mobile-app/src/navigation/AppNavigator.js
+index 7c55267..48bf32e 100644
+--- a/mobile-app/src/navigation/AppNavigator.js
++++ b/mobile-app/src/navigation/AppNavigator.js
+@@ -11,6 +11,7 @@ import {
+   Search as SearchIcon,
+   Film,
+   Plus,
++  MessageSquare,
+ } from 'lucide-react-native';
+ 
+ import { useAuth } from '../context/AuthContext';
+@@ -18,8 +19,11 @@ import FeedScreen from '../screens/Feed';
+ import SearchScreen from '../screens/Search';
+ import NotificationsScreen from '../screens/Notifications';
+ import ProfileScreen from '../screens/Profile';
++import UserProfileScreen from '../screens/UserProfile';
+ import PostDetailScreen from '../screens/PostDetail';
+ import ReelsScreen from '../screens/Reels';
++import DMThreadsScreen from '../screens/DMThreads';
++import ChatScreen from '../screens/Chat';
+ import LoginScreen from '../screens/Login';
+ import SignupScreen from '../screens/Signup';
+ import theme from '../theme';
+@@ -121,6 +125,9 @@ const AppStack = () => {
+     <Stack.Navigator screenOptions={{ headerShown: false }}>
+       <Stack.Screen name="MainTabs" component={MainTabs} />
+       <Stack.Screen name="PostDetail" component={PostDetailScreen} />
++      <Stack.Screen name="UserProfile" component={UserProfileScreen} />
++      <Stack.Screen name="DMThreads" component={DMThreadsScreen} />
++      <Stack.Screen name="Chat" component={ChatScreen} />
+     </Stack.Navigator>
+   );
+ };
+diff --git a/mobile-app/src/screens/Feed.js b/mobile-app/src/screens/Feed.js
+index 5250315..6094b73 100644
+--- a/mobile-app/src/screens/Feed.js
++++ b/mobile-app/src/screens/Feed.js
+@@ -11,13 +11,17 @@ import {
+   TextInput,
+   KeyboardAvoidingView,
+   Platform,
++  Image,
++  ScrollView,
+ } from 'react-native';
+ import { useFocusEffect } from '@react-navigation/native';
+ import { useSafeAreaInsets } from 'react-native-safe-area-context';
++import * as ImagePicker from 'expo-image-picker';
++import * as FileSystem from 'expo-file-system/legacy';
+ import { useAuth } from '../context/AuthContext';
+-import { feedAPI, postAPI } from '../api/client';
++import { feedAPI, postAPI, uploadAPI } from '../api/client';
+ import PostCard from '../components/PostCard';
+-import { PlusCircle, X, Send } from 'lucide-react-native';
++import { PlusCircle, X, Send, Image as ImageIcon, Camera, Trash2 } from 'lucide-react-native';
+ import theme from '../theme';
+ 
+ const THROTTLE_MS = 800;
+@@ -38,7 +42,7 @@ function dedupePosts(posts) {
+ }
+ 
+ const Feed = ({ navigation, route }) => {
+-  const { logout } = useAuth();
++  const { user: currentUser, logout } = useAuth();
+   const insets = useSafeAreaInsets();
+   const [posts, setPosts] = useState([]);
+   const [loading, setLoading] = useState(true);
+@@ -52,6 +56,9 @@ const Feed = ({ navigation, route }) => {
+   const [composeOpen, setComposeOpen] = useState(false);
+   const [composeText, setComposeText] = useState('');
+   const [composeSubmitting, setComposeSubmitting] = useState(false);
++  const [composeMedia, setComposeMedia] = useState([]);
++  const [uploading, setUploading] = useState(false);
++  const [uploadError, setUploadError] = useState(null);
+ 
+   const actionTimers = useRef({});
+ 
+@@ -143,21 +150,108 @@ const Feed = ({ navigation, route }) => {
+   });
+ 
+   const handleViewProfile = (userKey) => {
+-    navigation.navigate('Profile', { userKey });
++    const myKey = currentUser && (currentUser.key || currentUser.userKey || '');
++    if (userKey && myKey && String(userKey) === String(myKey)) {
++      navigation.navigate('Profile');
++    } else {
++      navigation.navigate('UserProfile', { userKey });
++    }
++  };
++
++  const pickFromGallery = async () => {
++    try {
++      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
++      if (status !== 'granted') {
++        setUploadError('Permission to access media library is required.');
++        return;
++      }
++      const result = await ImagePicker.launchImageLibraryAsync({
++        mediaTypes: ImagePicker.MediaTypeOptions.All,
++        allowsMultipleSelection: false,
++        quality: 0.8,
++        videoMaxDuration: 60,
++      });
++      if (!result.canceled && result.assets && result.assets.length > 0) {
++        await uploadLocalMedia(result.assets[0]);
++      }
++    } catch (err) {
++      console.error('Gallery pick error:', err);
++      setUploadError('Failed to pick media from gallery.');
++    }
++  };
++
++  const pickFromCamera = async () => {
++    try {
++      const { status } = await ImagePicker.requestCameraPermissionsAsync();
++      if (status !== 'granted') {
++        setUploadError('Permission to use camera is required.');
++        return;
++      }
++      const result = await ImagePicker.launchCameraAsync({
++        mediaTypes: ImagePicker.MediaTypeOptions.All,
++        quality: 0.8,
++        videoMaxDuration: 60,
++      });
++      if (!result.canceled && result.assets && result.assets.length > 0) {
++        await uploadLocalMedia(result.assets[0]);
++      }
++    } catch (err) {
++      console.error('Camera pick error:', err);
++      setUploadError('Failed to capture media.');
++    }
++  };
++
++  const uploadLocalMedia = async (asset) => {
++    setUploading(true);
++    setUploadError(null);
++    try {
++      console.log('[upload] asset.uri:', asset.uri ? 'present' : 'missing');
++      const mime = asset.mimeType || asset.type || (asset.uri.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg');
++      console.log('[upload] mime:', mime);
++      const b64 = await FileSystem.readAsStringAsync(asset.uri, {
++        encoding: 'base64',
++      });
++      const dataUrl = `data:${mime};base64,${b64}`;
++      console.log('[upload] dataUrl length:', dataUrl.length);
++
++      const uploadResponse = await uploadAPI.uploadMedia(dataUrl);
++      console.log('[upload] response keys:', Object.keys(uploadResponse.data || {}));
++      if (uploadResponse.data.ok) {
++        setComposeMedia([uploadResponse.data.media]);
++      } else {
++        setUploadError(uploadResponse.data.error || 'Upload failed.');
++      }
++    } catch (err) {
++      console.error('[upload] error:', err.message, err.stack);
++      setUploadError('Failed to upload media. Please try again.');
++    } finally {
++      setUploading(false);
++    }
++  };
++
++  const removeMedia = () => {
++    setComposeMedia([]);
++    setUploadError(null);
+   };
+ 
+   const handleComposeSubmit = async () => {
+-    if (!composeText.trim()) return;
++    if (!composeText.trim() && composeMedia.length === 0) return;
+     setComposeSubmitting(true);
+     try {
+-      const response = await postAPI.createPost(composeText.trim());
++      const response = await postAPI.createPost(
++        composeText.trim(),
++        composeMedia.length > 0 ? composeMedia : []
++      );
+       if (response.data.ok) {
+         setComposeText('');
++        setComposeMedia([]);
++        setUploadError(null);
+         setComposeOpen(false);
+         fetchFeed(true);
+       }
+     } catch (err) {
+       console.error('Create post error:', err);
++      setUploadError('Failed to create post.');
+     } finally {
+       setComposeSubmitting(false);
+     }
+@@ -229,6 +323,29 @@ const Feed = ({ navigation, route }) => {
+     );
+   };
+ 
++  const renderMediaPreview = () => {
++    if (composeMedia.length === 0) return null;
++    const media = composeMedia[0];
++    const displayUrl = media.fullUrl || media.url;
++    return (
++      <View style={styles.mediaPreviewContainer}>
++        {media.kind === 'video' ? (
++          <Image source={{ uri: media.thumbnailUrl || displayUrl }} style={styles.mediaPreview} />
++        ) : (
++          <Image source={{ uri: displayUrl }} style={styles.mediaPreview} />
++        )}
++        <TouchableOpacity style={styles.removeMediaBtn} onPress={removeMedia} activeOpacity={0.7}>
++          <Trash2 size={16} color="#fff" />
++        </TouchableOpacity>
++        {media.kind === 'video' && (
++          <View style={styles.videoBadge}>
++            <Text style={styles.videoBadgeText}>Video</Text>
++          </View>
++        )}
++      </View>
++    );
++  };
++
+   return (
+     <View style={[styles.container, { paddingTop: insets.top }]}>
+       {renderHeader()}
+@@ -251,20 +368,25 @@ const Feed = ({ navigation, route }) => {
+         contentContainerStyle={{ paddingBottom: 80 }}
+       />
+ 
+-      <Modal visible={composeOpen} animationType="slide" transparent>
++      <Modal visible={composeOpen} animationType="slide" transparent statusBarTranslucent>
+         <KeyboardAvoidingView
+           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+           style={styles.composeOverlay}
++          keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+         >
+           <View style={styles.composeCard}>
++            <View style={styles.composeHandle} />
+             <View style={styles.composeHeader}>
+               <Text style={styles.composeTitle}>New Post</Text>
+-              <TouchableOpacity onPress={() => { setComposeOpen(false); setComposeText(''); }}>
++              <TouchableOpacity onPress={() => { setComposeOpen(false); setComposeText(''); setComposeMedia([]); setUploadError(null); }} activeOpacity={0.7}>
+                 <X size={22} color={theme.colors.textSecondary} />
+               </TouchableOpacity>
+             </View>
++
++            {renderMediaPreview()}
++
+             <TextInput
+-              style={styles.composeInput}
++              style={[styles.composeInput, composeMedia.length > 0 && styles.composeInputWithMedia]}
+               placeholder="What's happening?"
+               placeholderTextColor={theme.colors.textMuted}
+               value={composeText}
+@@ -273,20 +395,47 @@ const Feed = ({ navigation, route }) => {
+               maxLength={1000}
+               autoFocus
+             />
+-            <TouchableOpacity
+-              style={[styles.composeSubmit, (!composeText.trim() || composeSubmitting) && styles.composeSubmitDisabled]}
+-              onPress={handleComposeSubmit}
+-              disabled={!composeText.trim() || composeSubmitting}
+-            >
+-              {composeSubmitting ? (
+-                <ActivityIndicator size="small" color="#fff" />
+-              ) : (
+-                <>
+-                  <Send size={16} color="#fff" />
+-                  <Text style={styles.composeSubmitText}>Post</Text>
+-                </>
+-              )}
+-            </TouchableOpacity>
++
++            {uploadError && (
++              <Text style={styles.uploadErrorText}>{uploadError}</Text>
++            )}
++
++            <View style={styles.composeToolbar}>
++              <View style={styles.composeToolbarLeft}>
++                <TouchableOpacity
++                  style={styles.toolbarBtn}
++                  onPress={pickFromGallery}
++                  disabled={uploading || composeSubmitting}
++                  activeOpacity={0.7}
++                >
++                  <ImageIcon size={20} color={uploading || composeSubmitting ? theme.colors.textMuted : theme.colors.accent} />
++                </TouchableOpacity>
++                <TouchableOpacity
++                  style={styles.toolbarBtn}
++                  onPress={pickFromCamera}
++                  disabled={uploading || composeSubmitting}
++                  activeOpacity={0.7}
++                >
++                  <Camera size={20} color={uploading || composeSubmitting ? theme.colors.textMuted : theme.colors.accent} />
++                </TouchableOpacity>
++              </View>
++              <TouchableOpacity
++                style={[styles.composeSubmit, (!composeText.trim() && composeMedia.length === 0 || composeSubmitting || uploading) && styles.composeSubmitDisabled]}
++                onPress={handleComposeSubmit}
++                disabled={!composeText.trim() && composeMedia.length === 0 || composeSubmitting || uploading}
++                activeOpacity={0.7}
++              >
++                {composeSubmitting || uploading ? (
++                  <ActivityIndicator size="small" color="#fff" />
++                ) : (
++                  <>
++                    <Send size={16} color="#fff" />
++                    <Text style={styles.composeSubmitText}>Post</Text>
++                  </>
++                )}
++              </TouchableOpacity>
++            </View>
++            <View style={{ height: Math.max(insets.bottom, 12) }} />
+           </View>
+         </KeyboardAvoidingView>
+       </Modal>
+@@ -363,14 +512,24 @@ const styles = StyleSheet.create({
+     backgroundColor: theme.colors.bgCard,
+     borderTopLeftRadius: theme.radius.xl,
+     borderTopRightRadius: theme.radius.xl,
+-    padding: 20,
++    paddingHorizontal: 20,
++    paddingTop: 8,
++    paddingBottom: 12,
+     minHeight: 280,
+   },
++  composeHandle: {
++    width: 36,
++    height: 4,
++    borderRadius: 2,
++    backgroundColor: theme.colors.border,
++    alignSelf: 'center',
++    marginBottom: 12,
++  },
+   composeHeader: {
+     flexDirection: 'row',
+     justifyContent: 'space-between',
+     alignItems: 'center',
+-    marginBottom: 16,
++    marginBottom: 12,
+   },
+   composeTitle: {
+     ...theme.typography.h3,
+@@ -384,7 +543,70 @@ const styles = StyleSheet.create({
+     color: theme.colors.textPrimary,
+     minHeight: 100,
+     textAlignVertical: 'top',
+-    marginBottom: 16,
++    borderWidth: 1,
++    borderColor: theme.colors.borderLight,
++  },
++  composeInputWithMedia: {
++    marginBottom: 12,
++  },
++  mediaPreviewContainer: {
++    position: 'relative',
++    marginBottom: 12,
++    borderRadius: theme.radius.md,
++    overflow: 'hidden',
++  },
++  mediaPreview: {
++    width: '100%',
++    height: 180,
++    borderRadius: theme.radius.md,
++  },
++  removeMediaBtn: {
++    position: 'absolute',
++    top: 8,
++    right: 8,
++    width: 32,
++    height: 32,
++    borderRadius: 16,
++    backgroundColor: 'rgba(0,0,0,0.6)',
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  videoBadge: {
++    position: 'absolute',
++    bottom: 8,
++    left: 8,
++    backgroundColor: 'rgba(0,0,0,0.6)',
++    borderRadius: theme.radius.sm,
++    paddingHorizontal: 8,
++    paddingVertical: 4,
++  },
++  videoBadgeText: {
++    fontSize: 12,
++    fontWeight: '600',
++    color: '#fff',
++  },
++  uploadErrorText: {
++    fontSize: 13,
++    color: theme.colors.danger,
++    marginBottom: 8,
++  },
++  composeToolbar: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++    marginTop: 8,
++  },
++  composeToolbarLeft: {
++    flexDirection: 'row',
++    gap: 8,
++  },
++  toolbarBtn: {
++    width: 40,
++    height: 40,
++    borderRadius: theme.radius.sm,
++    backgroundColor: theme.colors.bgInput,
++    alignItems: 'center',
++    justifyContent: 'center',
+     borderWidth: 1,
+     borderColor: theme.colors.borderLight,
+   },
+@@ -394,7 +616,8 @@ const styles = StyleSheet.create({
+     justifyContent: 'center',
+     backgroundColor: theme.colors.accent,
+     borderRadius: theme.radius.md,
+-    paddingVertical: 14,
++    paddingVertical: 12,
++    paddingHorizontal: 20,
+     gap: 8,
+   },
+   composeSubmitDisabled: {
+diff --git a/mobile-app/src/screens/Notifications.js b/mobile-app/src/screens/Notifications.js
+index 989213a..c0003f8 100644
+--- a/mobile-app/src/screens/Notifications.js
++++ b/mobile-app/src/screens/Notifications.js
+@@ -168,8 +168,8 @@ const Notifications = ({ navigation }) => {
+     const post = safePost(item);
+     if (post.id) {
+       navigation.navigate('PostDetail', { postId: post.id });
+-    } else if (actor.username) {
+-      navigation.navigate('Profile', { userKey: actor.username });
++    } else if (actor.key) {
++      navigation.navigate('UserProfile', { userKey: actor.key });
+     }
+   };
+ 
+diff --git a/mobile-app/src/screens/PostDetail.js b/mobile-app/src/screens/PostDetail.js
+index a24d811..1eed289 100644
+--- a/mobile-app/src/screens/PostDetail.js
++++ b/mobile-app/src/screens/PostDetail.js
+@@ -1,4 +1,4 @@
+-import React, { useState, useEffect } from 'react';
++import React, { useState, useEffect, useCallback } from 'react';
+ import {
+   View,
+   Text,
+@@ -13,7 +13,6 @@ import {
+   Alert,
+ } from 'react-native';
+ import { useSafeAreaInsets } from 'react-native-safe-area-context';
+-import { Video, ResizeMode } from 'expo-av';
+ import {
+   ArrowLeft,
+   Heart,
+@@ -24,12 +23,170 @@ import {
+   Verified,
+   Send,
+   Share2,
+-  MoreHorizontal,
++  Play,
+ } from 'lucide-react-native';
+ import { postAPI } from '../api/client';
++import { useAuth } from '../context/AuthContext';
++import MediaViewer from '../components/MediaViewer';
++import * as haptics from '../utils/haptics';
++import { sharePost } from '../utils/share';
+ import theme from '../theme';
+ 
++const CommentItem = ({ comment, depth = 0, onReply, replyingTo, setReplyingTo }) => {
++  const [showReplies, setShowReplies] = useState(false);
++  const [replyText, setReplyText] = useState('');
++  const [replySubmitting, setReplySubmitting] = useState(false);
++  const replies = comment.replies || [];
++  const isReplying = replyingTo && replyingTo.id === comment.id;
++  const hasReplies = replies.length > 0;
++  const isRoot = depth === 0;
++
++  const handleStartReply = () => {
++    haptics.light();
++    setReplyingTo({ id: comment.id, author: comment.author });
++  };
++
++  const handleReply = async () => {
++    if (!replyText.trim()) return;
++    setReplySubmitting(true);
++    try {
++      await onReply(comment.id, replyText.trim());
++      setReplyText('');
++      setReplyingTo(null);
++      if (hasReplies) setShowReplies(true);
++    } catch (err) {
++      Alert.alert('Error', 'Failed to add reply.');
++    } finally {
++      setReplySubmitting(false);
++    }
++  };
++
++  const avatarSize = isRoot ? 32 : Math.max(20, 28 - depth * 3);
++  const avatarRadius = avatarSize / 2;
++
++  return (
++    <View style={styles.commentWrapper}>
++      {isRoot && <View style={styles.commentItemRoot}>
++        <View style={[styles.commentAvatar, { width: avatarSize, height: avatarSize, borderRadius: avatarRadius }]}>
++          {comment.authorAvatar ? (
++            <Image source={{ uri: comment.authorAvatar }} style={{ width: avatarSize, height: avatarSize, borderRadius: avatarRadius }} />
++          ) : (
++            <View style={[styles.commentAvatarPlaceholder, { width: avatarSize, height: avatarSize, borderRadius: avatarRadius }]}>
++              <User size={avatarSize * 0.5} color={theme.colors.textMuted} />
++            </View>
++          )}
++        </View>
++        <View style={styles.commentContent}>
++          <View style={styles.commentHeader}>
++            <View style={styles.nameRow}>
++              <Text style={styles.commentAuthor}>{comment.author || comment.authorKey || 'User'}</Text>
++              {comment.authorVerified && <Verified size={12} color={theme.colors.verified} fill={theme.colors.verified} />}
++              {comment.authorRole === 'owner' && (
++                <Text style={styles.ownerBadge}>OP</Text>
++              )}
++            </View>
++            <Text style={styles.commentTime}>{formatDate(comment.createdAt)}</Text>
++          </View>
++          <Text style={styles.commentText}>{comment.text}</Text>
++          <View style={styles.commentActions}>
++            <Text style={styles.likeCountText}>{comment.likeCount || 0}</Text>
++            <TouchableOpacity style={styles.commentActionBtn} onPress={handleStartReply} activeOpacity={0.6}>
++              <Text style={styles.replyBtnText}>Reply</Text>
++            </TouchableOpacity>
++          </View>
++
++          {hasReplies && (
++            <TouchableOpacity
++              style={styles.viewRepliesBtn}
++              onPress={() => { setShowReplies(!showReplies); haptics.light(); }}
++              activeOpacity={0.6}
++            >
++              <Text style={styles.viewRepliesText}>
++                {showReplies ? 'Hide' : `View`} {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
++              </Text>
++            </TouchableOpacity>
++          )}
++
++          {showReplies && replies.map((reply) => (
++            <View key={reply.id || reply.text} style={styles.replyContainer}>
++              <View style={styles.replyAvatarWrap}>
++                {reply.authorAvatar ? (
++                  <Image source={{ uri: reply.authorAvatar }} style={styles.replyAvatar} />
++                ) : (
++                  <View style={styles.replyAvatarPlaceholder}>
++                    <User size={10} color={theme.colors.textMuted} />
++                  </View>
++                )}
++              </View>
++              <View style={styles.replyContent}>
++                <View style={styles.replyHeader}>
++                  <Text style={styles.replyAuthor}>{reply.author || 'User'}</Text>
++                  <Text style={styles.replyTime}>{formatDate(reply.createdAt)}</Text>
++                </View>
++                <Text style={styles.replyText}>{reply.text}</Text>
++                <View style={styles.replyActions}>
++                  <Text style={styles.replyLikeText}>{reply.likeCount || 0}</Text>
++                  <TouchableOpacity onPress={() => setReplyingTo({ id: comment.id, author: reply.author })} activeOpacity={0.6}>
++                    <Text style={styles.replyReplyBtn}>Reply</Text>
++                  </TouchableOpacity>
++                </View>
++              </View>
++            </View>
++          ))}
++
++          {isReplying && (
++            <View style={styles.replyInputRow}>
++              <TextInput
++                style={styles.replyInput}
++                placeholder={`Reply to @${comment.author}...`}
++                placeholderTextColor={theme.colors.textMuted}
++                value={replyText}
++                onChangeText={setReplyText}
++                multiline
++                autoFocus
++                maxLength={500}
++              />
++              <TouchableOpacity
++                style={[styles.replySendBtn, (!replyText.trim() || replySubmitting) && styles.replySendBtnDisabled]}
++                onPress={handleReply}
++                disabled={!replyText.trim() || replySubmitting}
++                activeOpacity={0.7}
++              >
++                {replySubmitting ? (
++                  <ActivityIndicator size="small" color="#fff" />
++                ) : (
++                  <Send size={14} color="#fff" />
++                )}
++              </TouchableOpacity>
++              <TouchableOpacity style={styles.cancelReplyBtn} onPress={() => setReplyingTo(null)} activeOpacity={0.7}>
++                <Text style={styles.cancelReplyText}>Cancel</Text>
++              </TouchableOpacity>
++            </View>
++          )}
++        </View>
++      </View>}
++    </View>
++  );
++};
++
++function formatDate(dateString) {
++  if (!dateString) return '';
++  const date = new Date(dateString);
++  const now = new Date();
++  const diffMs = now - date;
++  const diffMin = Math.floor(diffMs / 60000);
++  const diffHr = Math.floor(diffMs / 3600000);
++  const diffDay = Math.floor(diffMs / 86400000);
++
++  if (diffMin < 1) return 'Just now';
++  if (diffMin < 60) return `${diffMin}m`;
++  if (diffHr < 24) return `${diffHr}h`;
++  if (diffDay < 7) return `${diffDay}d`;
++  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
++}
++
+ const PostDetail = ({ navigation, route }) => {
++  const { user: currentUser } = useAuth();
+   const postId = route.params?.postId;
+   const passedPost = route.params?.post;
+   const insets = useSafeAreaInsets();
+@@ -38,8 +195,11 @@ const PostDetail = ({ navigation, route }) => {
+   const [loading, setLoading] = useState(!passedPost);
+   const [error, setError] = useState(null);
+   const [comments, setComments] = useState([]);
++  const [commentCount, setCommentCount] = useState(0);
+   const [commentText, setCommentText] = useState('');
+   const [submitting, setSubmitting] = useState(false);
++  const [viewerMedia, setViewerMedia] = useState(null);
++  const [replyingTo, setReplyingTo] = useState(null);
+ 
+   useEffect(() => {
+     if (!postId && !passedPost) {
+@@ -79,6 +239,7 @@ const PostDetail = ({ navigation, route }) => {
+       const response = await postAPI.getComments(targetId);
+       if (response.data.ok) {
+         setComments(response.data.comments || []);
++        setCommentCount(response.data.commentCount || 0);
+       }
+     } catch (err) {
+       console.error('Comments fetch error:', err);
+@@ -102,41 +263,44 @@ const PostDetail = ({ navigation, route }) => {
+     }
+   };
+ 
+-  const formatDate = (dateString) => {
+-    if (!dateString) return '';
+-    const date = new Date(dateString);
+-    return date.toLocaleDateString('en-US', {
+-      month: 'short',
+-      day: 'numeric',
+-      year: 'numeric',
+-      hour: '2-digit',
+-      minute: '2-digit',
+-    });
+-  };
++  const handleReply = useCallback(async (parentId, text) => {
++    if (!postId) return;
++    try {
++      const response = await postAPI.addReply(postId, parentId, text);
++      if (response.data.ok) {
++        fetchComments(postId);
++      }
++    } catch (err) {
++      console.error('Reply error:', err);
++      throw err;
++    }
++  }, [postId]);
+ 
+   const renderMedia = () => {
+     if (!post?.media || post.media.length === 0) return null;
+     return post.media.map((media, index) => {
+-      if (media.kind === 'video' && media.url) {
+-        return (
+-          <View key={index} style={styles.mediaContainer}>
+-            <Video
+-              source={{ uri: media.url }}
+-              style={styles.media}
+-              useNativeControls
+-              resizeMode={ResizeMode.COVER}
+-            />
+-          </View>
+-        );
+-      }
+-      if (media.url) {
+-        return (
+-          <View key={index} style={styles.mediaContainer}>
+-            <Image source={{ uri: media.url }} style={styles.media} resizeMode="cover" />
+-          </View>
+-        );
+-      }
+-      return null;
++      const displayUrl = media.fullUrl || media.url;
++      const thumbUrl = media.thumbnailUrl || displayUrl;
++      if (!displayUrl) return null;
++      return (
++        <TouchableOpacity
++          key={index}
++          style={styles.mediaContainer}
++          onPress={() => { setViewerMedia(media); haptics.light(); }}
++          activeOpacity={0.8}
++        >
++          <Image
++            source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }}
++            style={styles.media}
++            resizeMode="cover"
++          />
++          {media.kind === 'video' && (
++            <View style={styles.mediaPlayOverlay}>
++              <Play size={32} color="#fff" fill="#fff" />
++            </View>
++          )}
++        </TouchableOpacity>
++      );
+     });
+   };
+ 
+@@ -188,7 +352,12 @@ const PostDetail = ({ navigation, route }) => {
+             style={styles.avatarContainer}
+             onPress={() => {
+               if (post.authorKey) {
+-                navigation.navigate('Profile', { userKey: post.authorKey });
++                const myKey = currentUser && (currentUser.key || currentUser.userKey || '');
++                if (myKey && String(post.authorKey) === String(myKey)) {
++                  navigation.navigate('Profile');
++                } else {
++                  navigation.navigate('UserProfile', { userKey: post.authorKey });
++                }
+               }
+             }}
+           >
+@@ -233,7 +402,7 @@ const PostDetail = ({ navigation, route }) => {
+             onPress={() => navigation.navigate('PostDetail', { postId: post.id })}
+           >
+             <MessageCircle size={20} color={theme.colors.textSecondary} />
+-            <Text style={styles.actionText}>{post.commentCount || comments.length || 0}</Text>
++            <Text style={styles.actionText}>{post.commentCount || commentCount || 0}</Text>
+           </TouchableOpacity>
+           <TouchableOpacity style={styles.action}>
+             <Repeat size={20} color={theme.colors.textSecondary} />
+@@ -242,39 +411,43 @@ const PostDetail = ({ navigation, route }) => {
+           <TouchableOpacity style={[styles.action, { marginLeft: 'auto' }]}>
+             <Bookmark size={20} color={theme.colors.textSecondary} />
+           </TouchableOpacity>
+-          <TouchableOpacity style={styles.action}>
++          <TouchableOpacity style={styles.action} onPress={() => { haptics.light(); sharePost({ postId: post.id, username: post.authorKey || post.author, text: post.text }); }}>
+             <Share2 size={18} color={theme.colors.textSecondary} />
+           </TouchableOpacity>
+         </View>
+ 
+         <View style={styles.commentsSection}>
+           <Text style={styles.commentsTitle}>
+-            Comments ({comments.length})
++            Comments ({commentCount})
+           </Text>
+           {comments.length === 0 ? (
+             <Text style={styles.noComments}>No comments yet.</Text>
+           ) : (
+             comments.map((comment) => (
+-              <View key={comment.id || comment.text} style={styles.commentItem}>
+-                <View style={styles.commentAvatar}>
+-                  <User size={16} color={theme.colors.textMuted} />
+-                </View>
+-                <View style={styles.commentContent}>
+-                  <Text style={styles.commentAuthor}>
+-                    {comment.author || comment.authorKey || 'User'}
+-                  </Text>
+-                  <Text style={styles.commentText}>{comment.text}</Text>
+-                </View>
+-              </View>
++              <CommentItem
++                key={comment.id || comment.text}
++                comment={comment}
++                onReply={handleReply}
++                replyingTo={replyingTo}
++                setReplyingTo={setReplyingTo}
++              />
+             ))
+           )}
+         </View>
+       </ScrollView>
+ 
+       <View style={styles.commentInputRow}>
++        {replyingTo && (
++          <View style={styles.replyingIndicator}>
++            <Text style={styles.replyingText}>Replying to @{replyingTo.author}</Text>
++            <TouchableOpacity onPress={() => setReplyingTo(null)} activeOpacity={0.7}>
++              <Text style={styles.replyingCancel}>Cancel</Text>
++            </TouchableOpacity>
++          </View>
++        )}
+         <TextInput
+           style={styles.commentInput}
+-          placeholder="Write a comment..."
++          placeholder={replyingTo ? `Reply to @${replyingTo.author}...` : 'Write a comment...'}
+           placeholderTextColor={theme.colors.textMuted}
+           value={commentText}
+           onChangeText={setCommentText}
+@@ -292,6 +465,11 @@ const PostDetail = ({ navigation, route }) => {
+           )}
+         </TouchableOpacity>
+       </View>
++      <MediaViewer
++        visible={!!viewerMedia}
++        media={viewerMedia}
++        onClose={() => setViewerMedia(null)}
++      />
+     </KeyboardAvoidingView>
+   );
+ };
+@@ -386,6 +564,16 @@ const styles = StyleSheet.create({
+     height: 250,
+     borderRadius: theme.radius.md,
+   },
++  mediaPlayOverlay: {
++    position: 'absolute',
++    top: 0,
++    left: 0,
++    right: 0,
++    bottom: 0,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: 'rgba(0,0,0,0.2)',
++  },
+   quotedPost: {
+     marginHorizontal: 16,
+     marginBottom: 12,
+@@ -438,61 +626,260 @@ const styles = StyleSheet.create({
+     fontSize: 14,
+     color: theme.colors.textMuted,
+     textAlign: 'center',
+-    paddingVertical: 20,
++    paddingVertical: 32,
++  },
++  commentWrapper: {
++    paddingHorizontal: 16,
++    paddingTop: 12,
++    paddingBottom: 4,
++    borderTopWidth: 1,
++    borderTopColor: theme.colors.borderLight,
+   },
+-  commentItem: {
++  commentItemRoot: {
+     flexDirection: 'row',
+-    marginBottom: 12,
++    alignItems: 'flex-start',
+   },
+   commentAvatar: {
+-    width: 32,
+-    height: 32,
+-    borderRadius: 16,
++    width: 34,
++    height: 34,
++    borderRadius: 17,
+     backgroundColor: theme.colors.bgInput,
+     alignItems: 'center',
+     justifyContent: 'center',
+-    marginRight: 8,
++    marginRight: 10,
++    flexShrink: 0,
+   },
+   commentContent: {
+     flex: 1,
++    paddingRight: 8,
++  },
++  commentHeader: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    marginBottom: 4,
+   },
+   commentAuthor: {
+-    fontSize: 13,
++    fontSize: 14,
+     fontWeight: '600',
+     color: theme.colors.textPrimary,
+-    marginBottom: 2,
++    marginRight: 6,
++  },
++  ownerBadge: {
++    fontSize: 10,
++    fontWeight: '700',
++    color: '#fff',
++    backgroundColor: theme.colors.accent,
++    paddingHorizontal: 5,
++    paddingVertical: 2,
++    borderRadius: 4,
++    marginLeft: 6,
++  },
++  commentTime: {
++    fontSize: 11,
++    color: theme.colors.textMuted,
++    marginLeft: 'auto',
+   },
+   commentText: {
+     fontSize: 14,
++    lineHeight: 20,
+     color: theme.colors.textSecondary,
++    marginBottom: 6,
++  },
++  commentActions: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    marginBottom: 4,
++  },
++  commentActionBtn: {
++    paddingHorizontal: 10,
++    paddingVertical: 4,
++    borderRadius: theme.radius.sm,
++    marginRight: 2,
++  },
++  likeCountText: {
++    fontSize: 12,
++    color: theme.colors.textMuted,
++    marginRight: 14,
++  },
++  commentActionText: {
++    fontSize: 12,
++    color: theme.colors.textMuted,
++  },
++  replyBtnText: {
++    fontSize: 12,
++    color: theme.colors.accent,
++    fontWeight: '600',
++  },
++  viewRepliesBtn: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingVertical: 6,
++  },
++  viewRepliesText: {
++    fontSize: 13,
++    color: theme.colors.accent,
++    fontWeight: '600',
++  },
++  replyContainer: {
++    flexDirection: 'row',
++    alignItems: 'flex-start',
++    marginTop: 10,
++    paddingTop: 10,
++    borderTopWidth: 1,
++    borderTopColor: theme.colors.borderLight,
++    paddingLeft: 8,
++  },
++  replyAvatarWrap: {
++    marginRight: 8,
++    flexShrink: 0,
++    marginTop: 1,
++  },
++  replyAvatar: {
++    width: 24,
++    height: 24,
++    borderRadius: 12,
++  },
++  replyAvatarPlaceholder: {
++    width: 24,
++    height: 24,
++    borderRadius: 12,
++    backgroundColor: theme.colors.bgInput,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  replyContent: {
++    flex: 1,
++    minWidth: 0,
++  },
++  replyHeader: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    marginBottom: 3,
++  },
++  replyAuthor: {
++    fontSize: 13,
++    fontWeight: '600',
++    color: theme.colors.textPrimary,
++    marginRight: 6,
++  },
++  replyTime: {
++    fontSize: 11,
++    color: theme.colors.textMuted,
++    marginLeft: 6,
++  },
++  replyText: {
++    fontSize: 13,
+     lineHeight: 18,
++    color: theme.colors.textSecondary,
++    marginBottom: 4,
+   },
+-  commentInputRow: {
++  replyActions: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    marginTop: 2,
++  },
++  replyLikeText: {
++    fontSize: 11,
++    color: theme.colors.textMuted,
++    marginRight: 12,
++  },
++  replyReplyBtn: {
++    fontSize: 11,
++    color: theme.colors.accent,
++    fontWeight: '600',
++  },
++  replyInputRow: {
+     flexDirection: 'row',
+     alignItems: 'flex-end',
++    marginTop: 8,
++    marginBottom: 4,
++  },
++  replyInput: {
++    flex: 1,
++    backgroundColor: theme.colors.bgInput,
++    borderRadius: theme.radius.md,
++    paddingHorizontal: 14,
++    paddingVertical: 10,
++    fontSize: 13,
++    color: theme.colors.textPrimary,
++    maxHeight: 80,
++    marginRight: 8,
++    borderWidth: 1,
++    borderColor: theme.colors.borderLight,
++  },
++  replySendBtn: {
++    width: 36,
++    height: 36,
++    borderRadius: theme.radius.sm,
++    backgroundColor: theme.colors.accent,
++    alignItems: 'center',
++    justifyContent: 'center',
++    flexShrink: 0,
++  },
++  replySendBtnDisabled: {
++    opacity: 0.4,
++  },
++  cancelReplyBtn: {
++    paddingHorizontal: 12,
++    paddingVertical: 10,
++    marginLeft: 4,
++    flexShrink: 0,
++  },
++  cancelReplyText: {
++    fontSize: 12,
++    color: theme.colors.textMuted,
++    fontWeight: '500',
++  },
++  commentInputRow: {
++    flexDirection: 'column',
+     padding: 12,
+     borderTopWidth: 1,
+     borderTopColor: theme.colors.border,
+-    backgroundColor: theme.colors.bgCard,
++    backgroundColor: theme.colors.bgSecondary,
++  },
++  replyingIndicator: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++    marginBottom: 8,
++    paddingHorizontal: 8,
++    paddingVertical: 6,
++    backgroundColor: 'rgba(124, 58, 237, 0.12)',
++    borderRadius: theme.radius.sm,
++  },
++  replyingText: {
++    fontSize: 12,
++    color: theme.colors.accent,
++    fontWeight: '600',
++  },
++  replyingCancel: {
++    fontSize: 12,
++    color: theme.colors.textMuted,
++    fontWeight: '500',
+   },
+   commentInput: {
+     flex: 1,
++    flexDirection: 'row',
++    alignItems: 'center',
+     backgroundColor: theme.colors.bgInput,
+     borderRadius: theme.radius.full,
+-    paddingHorizontal: 16,
++    paddingHorizontal: 18,
+     paddingVertical: 10,
+     fontSize: 14,
+     color: theme.colors.textPrimary,
+     maxHeight: 100,
+-    marginRight: 8,
++    marginRight: 10,
++    borderWidth: 1,
++    borderColor: theme.colors.borderLight,
+   },
+   sendButton: {
+-    width: 40,
+-    height: 40,
+-    borderRadius: 20,
++    width: 42,
++    height: 42,
++    borderRadius: 21,
+     backgroundColor: theme.colors.accent,
+     alignItems: 'center',
+     justifyContent: 'center',
++    flexShrink: 0,
+   },
+   sendButtonDisabled: {
+     opacity: 0.5,
+diff --git a/mobile-app/src/screens/Profile.js b/mobile-app/src/screens/Profile.js
+index 5257757..6cd071a 100644
+--- a/mobile-app/src/screens/Profile.js
++++ b/mobile-app/src/screens/Profile.js
+@@ -12,10 +12,12 @@ import {
+   TextInput,
+   KeyboardAvoidingView,
+   Platform,
+-  Share,
+   Animated,
+ } from 'react-native';
++import { useFocusEffect } from '@react-navigation/native';
+ import { useSafeAreaInsets } from 'react-native-safe-area-context';
++import * as ImagePicker from 'expo-image-picker';
++import * as FileSystem from 'expo-file-system/legacy';
+ import {
+   User,
+   Verified,
+@@ -30,12 +32,19 @@ import {
+   Bell,
+   Shield,
+   ChevronRight,
++  Camera,
++  Globe,
++  Info,
++  Moon,
++  Smartphone,
++  LifeBuoy,
+ } from 'lucide-react-native';
+ import { useAuth } from '../context/AuthContext';
+-import { userAPI } from '../api/client';
++import { userAPI, uploadAPI } from '../api/client';
+ import PostCard from '../components/PostCard';
+ import AnimatedPressable from '../components/AnimatedPressable';
+ import * as haptics from '../utils/haptics';
++import { shareProfile } from '../utils/share';
+ import theme from '../theme';
+ 
+ const Profile = ({ navigation, route }) => {
+@@ -52,25 +61,51 @@ const Profile = ({ navigation, route }) => {
+   const [editBio, setEditBio] = useState('');
+   const [editSkills, setEditSkills] = useState('');
+   const [editSubmitting, setEditSubmitting] = useState(false);
++  const [editAvatarUri, setEditAvatarUri] = useState(null);
++  const [editAvatarUploading, setEditAvatarUploading] = useState(false);
++  const [editAvatarError, setEditAvatarError] = useState(null);
+ 
+   const [settingsOpen, setSettingsOpen] = useState(false);
+   const [messageSheetOpen, setMessageSheetOpen] = useState(false);
++  const [isPrivate, setIsPrivate] = useState(false);
++  const [privacyLoading, setPrivacyLoading] = useState(false);
++  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
++  const [oldPassword, setOldPassword] = useState('');
++  const [newPassword, setNewPassword] = useState('');
++  const [passwordLoading, setPasswordLoading] = useState(false);
++  const [passwordError, setPasswordError] = useState(null);
+ 
+   const settingsAnim = useRef(new Animated.Value(0)).current;
+   const messageAnim = useRef(new Animated.Value(0)).current;
+ 
+   const targetUserKey = route.params?.userKey;
+ 
++  const currentKey = currentUser && (currentUser.key || currentUser.userKey || '');
++
+   useEffect(() => {
+-    fetchProfile();
+-  }, [targetUserKey]);
++    const isOwn = !targetUserKey || (currentKey && String(targetUserKey) === String(currentKey));
++    setIsViewingOwnProfile(isOwn);
++    fetchProfile(isOwn);
++  }, [targetUserKey, currentKey]);
++
++  useFocusEffect(
++    React.useCallback(() => {
++      if (!targetUserKey && currentUser) {
++        setIsViewingOwnProfile(true);
++        setProfileUser(currentUser);
++        setLoading(false);
++      }
++    }, [targetUserKey, currentUser])
++  );
+ 
+-  const fetchProfile = async () => {
++  const fetchProfile = async (isOwn) => {
+     setLoading(true);
+ 
+-    if (!targetUserKey && currentUser) {
++    if (isOwn && currentUser) {
+       setProfileUser(currentUser);
+       setIsViewingOwnProfile(true);
++      setIsPrivate(!!currentUser.isPrivate);
++      setUserPosts([]);
+       setLoading(false);
+       return;
+     }
+@@ -124,15 +159,112 @@ const Profile = ({ navigation, route }) => {
+     await logout();
+   };
+ 
++  const handleTogglePrivacy = async () => {
++    setPrivacyLoading(true);
++    try {
++      const newValue = !isPrivate;
++      const response = await userAPI.setPrivacy(newValue);
++      if (response.data.ok) {
++        setIsPrivate(newValue);
++        setProfileUser((prev) => prev ? { ...prev, isPrivate: newValue } : prev);
++        haptics.success();
++      }
++    } catch (err) {
++      console.error('Privacy error:', err);
++      haptics.error();
++    } finally {
++      setPrivacyLoading(false);
++    }
++  };
++
++  const handleChangePassword = async () => {
++    if (!oldPassword.trim() || !newPassword.trim()) {
++      setPasswordError('Both fields are required.');
++      return;
++    }
++    if (newPassword.length < 8) {
++      setPasswordError('Password must be at least 8 characters.');
++      return;
++    }
++    setPasswordLoading(true);
++    setPasswordError(null);
++    try {
++      const response = await userAPI.changePassword(oldPassword, newPassword);
++      if (response.data.ok) {
++        setOldPassword('');
++        setNewPassword('');
++        setChangePasswordOpen(false);
++        haptics.success();
++      } else {
++        setPasswordError(response.data.error || 'Failed to change password.');
++      }
++    } catch (err) {
++      console.error('Password change error:', err);
++      setPasswordError('Failed to change password.');
++    } finally {
++      setPasswordLoading(false);
++    }
++  };
++
+   const handleOpenEdit = () => {
+     haptics.light();
+     if (profileUser) {
+       setEditBio(profileUser.bio || '');
+       setEditSkills(Array.isArray(profileUser.skills) ? profileUser.skills.join(', ') : '');
++      setEditAvatarUri(null);
++      setEditAvatarUploading(false);
++      setEditAvatarError(null);
+       setEditOpen(true);
+     }
+   };
+ 
++  const handleChangeAvatar = async () => {
++    try {
++      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
++      if (status !== 'granted') {
++        setEditAvatarError('Permission to access media library is required.');
++        return;
++      }
++      const result = await ImagePicker.launchImageLibraryAsync({
++        mediaTypes: ImagePicker.MediaTypeOptions.Images,
++        allowsMultipleSelection: false,
++        quality: 0.7,
++      });
++      if (!result.canceled && result.assets && result.assets.length > 0) {
++        setEditAvatarUploading(true);
++        setEditAvatarError(null);
++        try {
++          const asset = result.assets[0];
++          console.log('[avatar-upload] asset.uri:', asset.uri ? 'present' : 'missing');
++          const mime = asset.mimeType || asset.type || 'image/jpeg';
++          console.log('[avatar-upload] mime:', mime);
++          const b64 = await FileSystem.readAsStringAsync(asset.uri, {
++            encoding: 'base64',
++          });
++          const dataUrl = `data:${mime};base64,${b64}`;
++          console.log('[avatar-upload] dataUrl length:', dataUrl.length);
++
++          const uploadResponse = await uploadAPI.uploadMedia(dataUrl);
++          console.log('[avatar-upload] response keys:', Object.keys(uploadResponse.data || {}));
++          if (uploadResponse.data.ok) {
++            setEditAvatarUri(uploadResponse.data.media.fullUrl || uploadResponse.data.media.url);
++            setEditAvatarUploading(false);
++          } else {
++            setEditAvatarError(uploadResponse.data.error || 'Upload failed.');
++            setEditAvatarUploading(false);
++          }
++        } catch (err) {
++          console.error('Avatar upload error:', err);
++          setEditAvatarError('Failed to upload avatar.');
++          setEditAvatarUploading(false);
++        }
++      }
++    } catch (err) {
++      console.error('Avatar pick error:', err);
++      setEditAvatarError('Failed to pick image.');
++    }
++  };
++
+   const handleEditSubmit = async () => {
+     setEditSubmitting(true);
+     try {
+@@ -141,14 +273,21 @@ const Profile = ({ navigation, route }) => {
+         : [];
+       const updates = { bio: editBio };
+       if (skills.length > 0) updates.skills = skills;
++      if (editAvatarUri) {
++        updates.avatarUrl = editAvatarUri;
++      }
+       const response = await userAPI.updateProfile(updates);
+       if (response.data.ok) {
+         haptics.success();
+-        setProfileUser((prev) => ({
+-          ...prev,
++        const updatedUser = {
++          ...profileUser,
+           bio: editBio,
+           skills,
+-        }));
++        };
++        if (editAvatarUri) {
++          updatedUser.avatarUrl = editAvatarUri;
++        }
++        setProfileUser(updatedUser);
+         setEditOpen(false);
+       }
+     } catch (err) {
+@@ -162,14 +301,10 @@ const Profile = ({ navigation, route }) => {
+   const handleShareProfile = async () => {
+     haptics.light();
+     if (!profileUser) return;
+-    try {
+-      await Share.share({
+-        message: `Check out @${profileUser.username || profileUser.key} on HYSA1`,
+-        title: `${profileUser.username || profileUser.key}'s Profile`,
+-      });
+-    } catch (err) {
+-      console.error('Share error:', err);
+-    }
++    await shareProfile({
++      username: profileUser.username,
++      userKey: profileUser.key,
++    });
+   };
+ 
+   const openMessageSheet = () => {
+@@ -249,7 +384,7 @@ const Profile = ({ navigation, route }) => {
+       onRepost={() => {}}
+       onViewProfile={(userKey) => {
+         if (userKey !== profileUser.key) {
+-          navigation.navigate('Profile', { userKey });
++          navigation.navigate('UserProfile', { userKey });
+         }
+       }}
+     />
+@@ -415,6 +550,28 @@ const Profile = ({ navigation, route }) => {
+               </TouchableOpacity>
+             </View>
+ 
++            <TouchableOpacity style={styles.avatarEditRow} onPress={handleChangeAvatar} disabled={editAvatarUploading} activeOpacity={0.7}>
++              {editAvatarUri ? (
++                <Image source={{ uri: editAvatarUri }} style={styles.avatarEditPreview} />
++              ) : editAvatarUploading ? (
++                <View style={styles.avatarEditPlaceholder}>
++                  <ActivityIndicator size="small" color={theme.colors.accent} />
++                </View>
++              ) : (
++                <View style={styles.avatarEditPlaceholder}>
++                  <Camera size={24} color={theme.colors.accent} />
++                </View>
++              )}
++              <View style={styles.avatarEditInfo}>
++                <Text style={styles.avatarEditLabel}>Change avatar</Text>
++                <Text style={styles.avatarEditSubtext}>Tap to pick an image</Text>
++              </View>
++            </TouchableOpacity>
++
++            {editAvatarError && (
++              <Text style={styles.editErrorText}>{editAvatarError}</Text>
++            )}
++
+             <Text style={styles.editLabel}>Bio</Text>
+             <TextInput
+               style={styles.editInput}
+@@ -463,31 +620,106 @@ const Profile = ({ navigation, route }) => {
+               <View style={styles.sheetHandle} />
+               <Text style={styles.sheetTitle}>Settings</Text>
+ 
+-              <View style={styles.sheetItem}>
+-                <User size={20} color={theme.colors.textSecondary} />
+-                <Text style={styles.sheetItemText}>Account</Text>
+-                <Text style={styles.sheetItemSubtext}>Coming soon</Text>
++              <Text style={styles.sheetSectionLabel}>Account</Text>
++
++              <TouchableOpacity style={styles.sheetItem} onPress={() => { setSettingsOpen(false); navigation.navigate('DMThreads'); haptics.light(); }} activeOpacity={0.7}>
++                <View style={styles.sheetItemIcon}>
++                  <MessageSquare size={18} color={theme.colors.accent} />
++                </View>
++                <View style={styles.sheetItemContent}>
++                  <Text style={styles.sheetItemText}>Messages</Text>
++                  <Text style={styles.sheetItemSubtext}>Direct messages and threads</Text>
++                </View>
+                 <ChevronRight size={16} color={theme.colors.textMuted} />
+-              </View>
++              </TouchableOpacity>
+ 
+-              <View style={styles.sheetItem}>
+-                <Shield size={20} color={theme.colors.textSecondary} />
+-                <Text style={styles.sheetItemText}>Privacy</Text>
+-                <Text style={styles.sheetItemSubtext}>Coming soon</Text>
++              <TouchableOpacity style={styles.sheetItem} onPress={handleOpenEdit} activeOpacity={0.7}>
++                <View style={styles.sheetItemIcon}>
++                  <Edit3 size={18} color={theme.colors.textSecondary} />
++                </View>
++                <View style={styles.sheetItemContent}>
++                  <Text style={styles.sheetItemText}>Edit Profile</Text>
++                  <Text style={styles.sheetItemSubtext}>Bio, skills, avatar</Text>
++                </View>
+                 <ChevronRight size={16} color={theme.colors.textMuted} />
+-              </View>
++              </TouchableOpacity>
+ 
+-              <View style={styles.sheetItem}>
+-                <Bell size={20} color={theme.colors.textSecondary} />
+-                <Text style={styles.sheetItemText}>Notifications</Text>
+-                <Text style={styles.sheetItemSubtext}>Coming soon</Text>
++              <TouchableOpacity style={styles.sheetItem} onPress={() => { setChangePasswordOpen(true); setPasswordError(null); setOldPassword(''); setNewPassword(''); haptics.light(); }} activeOpacity={0.7}>
++                <View style={styles.sheetItemIcon}>
++                  <Shield size={18} color={theme.colors.textSecondary} />
++                </View>
++                <View style={styles.sheetItemContent}>
++                  <Text style={styles.sheetItemText}>Change Password</Text>
++                  <Text style={styles.sheetItemSubtext}>Update your security credentials</Text>
++                </View>
+                 <ChevronRight size={16} color={theme.colors.textMuted} />
++              </TouchableOpacity>
++
++              <View style={styles.sheetSectionDivider} />
++              <Text style={styles.sheetSectionLabel}>Preferences</Text>
++
++              <TouchableOpacity style={styles.sheetItem} onPress={handleTogglePrivacy} disabled={privacyLoading} activeOpacity={0.7}>
++                <View style={styles.sheetItemIcon}>
++                  <Shield size={18} color={isPrivate ? theme.colors.accent : theme.colors.textSecondary} />
++                </View>
++                <View style={styles.sheetItemContent}>
++                  <Text style={styles.sheetItemText}>Private Account</Text>
++                  <Text style={styles.sheetItemSubtext}>{isPrivate ? 'Only followers can see your posts' : 'Anyone can view your posts'}</Text>
++                </View>
++                <View style={styles.toggleTrack}>
++                  <View style={[styles.toggleThumb, isPrivate && styles.toggleThumbOn, privacyLoading && styles.toggleThumbLoading]} />
++                </View>
++              </TouchableOpacity>
++
++              <View style={[styles.sheetItem, { opacity: 0.45 }]}>
++                <View style={styles.sheetItemIcon}>
++                  <Globe size={18} color={theme.colors.textMuted} />
++                </View>
++                <View style={styles.sheetItemContent}>
++                  <Text style={styles.sheetItemText}>Language</Text>
++                  <Text style={styles.sheetItemSubtext}>Coming later</Text>
++                </View>
++              </View>
++
++              <View style={[styles.sheetItem, { opacity: 0.45 }]}>
++                <View style={styles.sheetItemIcon}>
++                  <Bell size={18} color={theme.colors.textMuted} />
++                </View>
++                <View style={styles.sheetItemContent}>
++                  <Text style={styles.sheetItemText}>Notifications</Text>
++                  <Text style={styles.sheetItemSubtext}>Coming later</Text>
++                </View>
++              </View>
++
++              <View style={styles.sheetSectionDivider} />
++              <Text style={styles.sheetSectionLabel}>Support</Text>
++
++              <View style={[styles.sheetItem, { opacity: 0.45 }]}>
++                <View style={styles.sheetItemIcon}>
++                  <LifeBuoy size={18} color={theme.colors.textMuted} />
++                </View>
++                <View style={styles.sheetItemContent}>
++                  <Text style={styles.sheetItemText}>Help & Support</Text>
++                  <Text style={styles.sheetItemSubtext}>Coming later</Text>
++                </View>
++              </View>
++
++              <View style={[styles.sheetItem, { opacity: 0.45 }]}>
++                <View style={styles.sheetItemIcon}>
++                  <Info size={18} color={theme.colors.textMuted} />
++                </View>
++                <View style={styles.sheetItemContent}>
++                  <Text style={styles.sheetItemText}>About HYSA</Text>
++                  <Text style={styles.sheetItemSubtext}>Version 1.0.0</Text>
++                </View>
+               </View>
+ 
+               <View style={styles.sheetDivider} />
+ 
+               <TouchableOpacity style={styles.sheetItemDanger} onPress={handleLogout} activeOpacity={0.6}>
+-                <LogOut size={20} color={theme.colors.danger} />
++                <View style={styles.sheetItemIcon}>
++                  <LogOut size={18} color={theme.colors.danger} />
++                </View>
+                 <Text style={[styles.sheetItemText, { color: theme.colors.danger }]}>Logout</Text>
+               </TouchableOpacity>
+ 
+@@ -500,6 +732,59 @@ const Profile = ({ navigation, route }) => {
+         </TouchableOpacity>
+       </Modal>
+ 
++      {/* Change Password Modal */}
++      <Modal visible={changePasswordOpen} transparent animationType="slide" statusBarTranslucent>
++        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.editOverlay} keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}>
++          <View style={styles.editCard}>
++            <View style={styles.editHandle} />
++            <View style={styles.editHeader}>
++              <Text style={styles.editTitle}>Change Password</Text>
++              <TouchableOpacity onPress={() => setChangePasswordOpen(false)} activeOpacity={0.7}>
++                <X size={22} color={theme.colors.textSecondary} />
++              </TouchableOpacity>
++            </View>
++
++            <Text style={styles.editLabel}>Current Password</Text>
++            <TextInput
++              style={styles.editInput}
++              placeholder="Enter current password"
++              placeholderTextColor={theme.colors.textMuted}
++              value={oldPassword}
++              onChangeText={setOldPassword}
++              secureTextEntry
++              autoCapitalize="none"
++            />
++
++            <Text style={styles.editLabel}>New Password</Text>
++            <TextInput
++              style={styles.editInput}
++              placeholder="Enter new password (min 8 chars)"
++              placeholderTextColor={theme.colors.textMuted}
++              value={newPassword}
++              onChangeText={setNewPassword}
++              secureTextEntry
++              autoCapitalize="none"
++            />
++
++            {passwordError && <Text style={styles.editErrorText}>{passwordError}</Text>}
++
++            <TouchableOpacity
++              style={[styles.editSubmit, passwordLoading && styles.editSubmitDisabled]}
++              onPress={handleChangePassword}
++              disabled={passwordLoading}
++              activeOpacity={0.7}
++            >
++              {passwordLoading ? (
++                <ActivityIndicator size="small" color="#fff" />
++              ) : (
++                <Text style={styles.editSubmitText}>Update Password</Text>
++              )}
++            </TouchableOpacity>
++            <View style={{ height: Math.max(insets.bottom, 12) }} />
++          </View>
++        </KeyboardAvoidingView>
++      </Modal>
++
+       {/* Message Sheet */}
+       <Modal visible={messageSheetOpen} transparent animationType="fade" statusBarTranslucent>
+         <TouchableOpacity style={styles.sheetOverlay} activeOpacity={1} onPress={closeMessageSheet}>
+@@ -802,6 +1087,43 @@ const styles = StyleSheet.create({
+     ...theme.typography.button,
+     color: '#fff',
+   },
++  avatarEditRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingVertical: 12,
++    marginBottom: 8,
++    gap: 12,
++  },
++  avatarEditPreview: {
++    width: 48,
++    height: 48,
++    borderRadius: 24,
++  },
++  avatarEditPlaceholder: {
++    width: 48,
++    height: 48,
++    borderRadius: 24,
++    backgroundColor: 'rgba(124, 58, 237, 0.14)',
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  avatarEditInfo: {
++    flex: 1,
++  },
++  avatarEditLabel: {
++    fontSize: 15,
++    fontWeight: '600',
++    color: theme.colors.textPrimary,
++  },
++  avatarEditSubtext: {
++    fontSize: 13,
++    color: theme.colors.textMuted,
++  },
++  editErrorText: {
++    fontSize: 13,
++    color: theme.colors.danger,
++    marginBottom: 8,
++  },
+   sheetOverlay: {
+     flex: 1,
+     backgroundColor: 'rgba(0,0,0,0.55)',
+@@ -814,6 +1136,33 @@ const styles = StyleSheet.create({
+     paddingHorizontal: 20,
+     paddingTop: 12,
+     paddingBottom: 8,
++    maxHeight: '85%',
++  },
++  sheetSectionLabel: {
++    fontSize: 11,
++    fontWeight: '700',
++    color: theme.colors.textMuted,
++    textTransform: 'uppercase',
++    letterSpacing: 0.8,
++    marginTop: 8,
++    marginBottom: 4,
++    paddingLeft: 4,
++  },
++  sheetSectionDivider: {
++    height: 1,
++    backgroundColor: theme.colors.borderLight,
++    marginVertical: 6,
++  },
++  sheetItemIcon: {
++    width: 32,
++    height: 32,
++    borderRadius: 10,
++    backgroundColor: 'rgba(255,255,255,0.04)',
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  sheetItemContent: {
++    flex: 1,
+   },
+   messageSheet: {
+     backgroundColor: theme.colors.bgCard,
+@@ -841,8 +1190,8 @@ const styles = StyleSheet.create({
+   sheetItem: {
+     flexDirection: 'row',
+     alignItems: 'center',
+-    paddingVertical: 14,
+-    gap: 14,
++    paddingVertical: 12,
++    gap: 12,
+   },
+   sheetItemText: {
+     flex: 1,
+@@ -854,11 +1203,32 @@ const styles = StyleSheet.create({
+     color: theme.colors.textMuted,
+     marginRight: 8,
+   },
++  toggleTrack: {
++    width: 44,
++    height: 24,
++    borderRadius: 12,
++    backgroundColor: theme.colors.bgInput,
++    justifyContent: 'center',
++    paddingHorizontal: 2,
++  },
++  toggleThumb: {
++    width: 20,
++    height: 20,
++    borderRadius: 10,
++    backgroundColor: theme.colors.textMuted,
++  },
++  toggleThumbOn: {
++    backgroundColor: theme.colors.accent,
++    alignSelf: 'flex-end',
++  },
++  toggleThumbLoading: {
++    opacity: 0.5,
++  },
+   sheetItemDanger: {
+     flexDirection: 'row',
+     alignItems: 'center',
+-    paddingVertical: 14,
+-    gap: 14,
++    paddingVertical: 12,
++    gap: 12,
+   },
+   sheetDivider: {
+     height: 1,
+diff --git a/mobile-app/src/screens/Reels.js b/mobile-app/src/screens/Reels.js
+index 139e9d2..60200ff 100644
+--- a/mobile-app/src/screens/Reels.js
++++ b/mobile-app/src/screens/Reels.js
+@@ -1,99 +1,1035 @@
+-import React, { useEffect, useRef } from 'react';
+-import { View, Text, StyleSheet, Animated } from 'react-native';
+-import { Film } from 'lucide-react-native';
++import React, { useState, useEffect, useRef, useCallback } from 'react';
++import {
++  View,
++  Text,
++  StyleSheet,
++  FlatList,
++  Dimensions,
++  TouchableOpacity,
++  ActivityIndicator,
++  Image,
++  Animated,
++  Modal,
++  TextInput,
++  Platform,
++  Alert,
++} from 'react-native';
+ import { useSafeAreaInsets } from 'react-native-safe-area-context';
++import { useFocusEffect } from '@react-navigation/native';
++import {
++  Play,
++  Pause,
++  Volume2,
++  VolumeX,
++  Heart,
++  MessageCircle,
++  User,
++  Verified,
++  Share2,
++  Repeat,
++  MoreHorizontal,
++  Flag,
++  Link,
++  X,
++  Send,
++  Globe,
++  Maximize2,
++  Minimize2,
++} from 'lucide-react-native';
++import { Video, ResizeMode } from 'expo-av';
++import { feedAPI, postAPI } from '../api/client';
++import * as haptics from '../utils/haptics';
++import { shareReel, copyLink } from '../utils/share';
+ import theme from '../theme';
+ 
+-const Reels = () => {
++const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
++const BATCH_SIZE = 6;
++const DOUBLE_TAP_MS = 300;
++
++const CommentItem = React.memo(({ comment, onReply, onLike }) => {
++  const [showReplies, setShowReplies] = useState(false);
++  const [replyText, setReplyText] = useState('');
++  const [replySubmitting, setReplySubmitting] = useState(false);
++  const [replying, setReplying] = useState(false);
++  const [liked, setLiked] = useState(false);
++  const replies = comment.replies || [];
++  const replyCount = comment.replyCount || replies.length;
++
++  const handleReply = async () => {
++    if (!replyText.trim()) return;
++    setReplySubmitting(true);
++    try {
++      await onReply(comment.id, replyText.trim());
++      setReplyText('');
++      setReplying(false);
++      setShowReplies(true);
++    } catch (err) {
++      Alert.alert('Error', 'Failed to add reply.');
++    } finally {
++      setReplySubmitting(false);
++    }
++  };
++
++  return (
++    <View style={cStyles.commentItem}>
++      <View style={cStyles.commentAvatarWrap}>
++        {comment.authorAvatar ? (
++          <Image source={{ uri: comment.authorAvatar }} style={cStyles.commentAvatarImg} />
++        ) : (
++          <View style={cStyles.commentAvatarPlaceholder}>
++            <User size={14} color={theme.colors.textMuted} />
++          </View>
++        )}
++      </View>
++      <View style={cStyles.commentContent}>
++        <View style={cStyles.commentHeaderRow}>
++          <View style={cStyles.commentNameRow}>
++            <Text style={cStyles.commentAuthor}>{comment.author || comment.authorKey || 'User'}</Text>
++            {comment.authorVerified && <Verified size={10} color={theme.colors.verified} fill={theme.colors.verified} />}
++          </View>
++          <Text style={cStyles.commentTime}>{formatDate(comment.createdAt)}</Text>
++        </View>
++        <Text style={cStyles.commentText}>{comment.text}</Text>
++        <View style={cStyles.commentActionsRow}>
++          <TouchableOpacity onPress={() => setReplying(!replying)} activeOpacity={0.6}>
++            <Text style={cStyles.replyBtnText}>Reply</Text>
++          </TouchableOpacity>
++        </View>
++
++        {replies.length > 0 && (
++          <TouchableOpacity
++            style={cStyles.viewRepliesBtn}
++            onPress={() => setShowReplies(!showReplies)}
++            activeOpacity={0.6}
++          >
++            <Text style={cStyles.viewRepliesText}>
++              {showReplies ? 'Hide' : 'View'} {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
++            </Text>
++          </TouchableOpacity>
++        )}
++
++        {showReplies && replies.map((reply) => (
++          <View key={reply.id || reply.text} style={cStyles.replyItem}>
++            <View style={cStyles.replyAvatarWrap}>
++              {reply.authorAvatar ? (
++                <Image source={{ uri: reply.authorAvatar }} style={cStyles.replyAvatarImg} />
++              ) : (
++                <View style={cStyles.replyAvatarPlaceholder}>
++                  <User size={8} color={theme.colors.textMuted} />
++                </View>
++              )}
++            </View>
++            <View style={cStyles.replyContent}>
++              <View style={cStyles.replyHeaderRow}>
++                <Text style={cStyles.replyAuthor}>{reply.author || 'User'}</Text>
++                <Text style={cStyles.replyTime}>{formatDate(reply.createdAt)}</Text>
++              </View>
++              <Text style={cStyles.replyText}>{reply.text}</Text>
++            </View>
++          </View>
++        ))}
++
++        {replying && (
++          <View style={cStyles.replyInputRow}>
++            <TextInput
++              style={cStyles.replyInput}
++              placeholder={`Reply to ${comment.author}...`}
++              placeholderTextColor={theme.colors.textMuted}
++              value={replyText}
++              onChangeText={setReplyText}
++              multiline
++              autoFocus
++              maxLength={500}
++            />
++            <TouchableOpacity
++              style={[cStyles.replySendBtn, (!replyText.trim() || replySubmitting) && cStyles.replySendBtnDisabled]}
++              onPress={handleReply}
++              disabled={!replyText.trim() || replySubmitting}
++              activeOpacity={0.7}
++            >
++              {replySubmitting ? (
++                <ActivityIndicator size="small" color="#fff" />
++              ) : (
++                <Send size={12} color="#fff" />
++              )}
++            </TouchableOpacity>
++          </View>
++        )}
++      </View>
++
++      <TouchableOpacity style={cStyles.commentLikeBtn} onPress={() => setLiked(!liked)} activeOpacity={0.6}>
++        <Heart size={12} color={liked ? theme.colors.danger : theme.colors.textMuted} fill={liked ? theme.colors.danger : 'transparent'} />
++        <Text style={[cStyles.commentLikeCount, liked && { color: theme.colors.danger }]}>{comment.likeCount || 0}</Text>
++      </TouchableOpacity>
++    </View>
++  );
++});
++
++function formatDate(dateString) {
++  if (!dateString) return '';
++  const date = new Date(dateString);
++  const now = new Date();
++  const diffMs = now - date;
++  const diffMin = Math.floor(diffMs / 60000);
++  const diffHr = Math.floor(diffMs / 3600000);
++  const diffDay = Math.floor(diffMs / 86400000);
++
++  if (diffMin < 1) return 'Now';
++  if (diffMin < 60) return `${diffMin}m`;
++  if (diffHr < 24) return `${diffHr}h`;
++  if (diffDay < 7) return `${diffDay}d`;
++  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
++}
++
++const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOpenComments, onRepost, onOpenShare, onMore, onDoubleTapVideo, onOpenProfile, onRegisterRef, onToggleMute, onToggleRate, onOpenLandscape }) => {
++  const videoRef = useRef(null);
++  const [videoReady, setVideoReady] = useState(false);
++  const [isPaused, setIsPaused] = useState(false);
++  const [showPauseIcon, setShowPauseIcon] = useState(false);
++  const heartAnim = useRef(new Animated.Value(0)).current;
++  const tapRef = useRef({ lastTap: 0, timer: null });
++
++  const videoUrl = getVideoUrl(item);
++  const reelId = item.id;
++  const media = item.media && item.media[0];
++  const thumbUrl = media && (media.thumbnailUrl || media.fullUrl || media.url);
++  const videoAspect = media && media.width && media.height ? media.width / media.height : null;
++  const isLandscape = videoAspect !== null && videoAspect > 1.15;
++  const resizeMode = isLandscape ? ResizeMode.CONTAIN : ResizeMode.COVER;
++
++  useEffect(() => {
++    if (onRegisterRef) {
++      onRegisterRef(videoRef.current);
++    }
++    return () => {
++      if (tapRef.current.timer) {
++        clearTimeout(tapRef.current.timer);
++      }
++    };
++  }, [onRegisterRef]);
++
++  useEffect(() => {
++    if (isActive && videoRef.current && videoReady) {
++      videoRef.current.playAsync().catch(() => {});
++      setIsPaused(false);
++    }
++    if (!isActive && videoRef.current) {
++      videoRef.current.pauseAsync().catch(() => {});
++      setIsPaused(false);
++    }
++  }, [isActive, videoReady]);
++
++  useEffect(() => {
++    if (videoRef.current && videoReady) {
++      videoRef.current.setRateAsync(playbackRate).catch(() => {});
++    }
++  }, [playbackRate, videoReady]);
++
++  const handleTap = useCallback(() => {
++    const now = Date.now();
++    const { lastTap, timer } = tapRef.current;
++
++    if (timer) {
++      clearTimeout(timer);
++      tapRef.current.timer = null;
++    }
++
++    if (lastTap > 0 && (now - lastTap) < DOUBLE_TAP_MS) {
++      haptics.medium();
++      onDoubleTapVideo(reelId);
++      tapRef.current.lastTap = 0;
++
++      heartAnim.setValue(0);
++      Animated.sequence([
++        Animated.timing(heartAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
++        Animated.timing(heartAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
++      ]).start();
++      return;
++    }
++
++    tapRef.current.lastTap = now;
++
++    tapRef.current.timer = setTimeout(() => {
++      tapRef.current.lastTap = 0;
++      tapRef.current.timer = null;
++      if (!videoRef.current) return;
++      videoRef.current.getStatusAsync().then((status) => {
++        if (status.isLoaded) {
++          if (status.isPlaying) {
++            videoRef.current.pauseAsync().catch(() => {});
++            setIsPaused(true);
++          } else {
++            videoRef.current.playAsync().catch(() => {});
++            setIsPaused(false);
++          }
++          setShowPauseIcon(true);
++          setTimeout(() => setShowPauseIcon(false), 400);
++        }
++      }).catch(() => {});
++    }, DOUBLE_TAP_MS);
++  }, [reelId, onDoubleTapVideo, heartAnim]);
++
++  const setRef = useCallback((ref) => {
++    videoRef.current = ref;
++    if (onRegisterRef) {
++      onRegisterRef(ref);
++    }
++  }, [onRegisterRef]);
++
++  return (
++    <View style={styles.reelContainer}>
++      {videoUrl ? (
++        <View style={styles.videoWrap}>
++          {isLandscape && thumbUrl && (
++            <Image
++              source={{ uri: thumbUrl }}
++              style={styles.bgThumb}
++              blurRadius={20}
++              resizeMode="cover"
++            />
++          )}
++          {isLandscape && <View style={styles.bgDarkOverlay} />}
++
++          <Video
++            ref={setRef}
++            source={{ uri: videoUrl }}
++            style={[styles.video, isLandscape && styles.videoLandscape]}
++            resizeMode={resizeMode}
++            shouldPlay={isActive && !isPaused}
++            isMuted={muted}
++            isLooping
++            useNativeControls={false}
++            onReadyForDisplay={() => setVideoReady(true)}
++          />
++
++          <View style={styles.bottomGradient} />
++          <View style={styles.topGradient} />
++
++          <TouchableOpacity
++            style={styles.tapLayer}
++            activeOpacity={1}
++            onPress={handleTap}
++          />
++
++          <Animated.View style={[styles.heartOverlay, { opacity: heartAnim }]}>
++            <Heart size={80} color="#fff" fill="#fff" />
++          </Animated.View>
++
++          {showPauseIcon && (
++            <View style={styles.pauseOverlay}>
++              {isPaused ? (
++                <Play size={48} color="rgba(255,255,255,0.7)" />
++              ) : (
++                <Pause size={48} color="rgba(255,255,255,0.7)" />
++              )}
++            </View>
++          )}
++
++          <View style={styles.topControls}>
++            <TouchableOpacity style={styles.topControlBtn} onPress={onToggleMute} activeOpacity={0.7}>
++              {muted ? <VolumeX size={18} color="#fff" /> : <Volume2 size={18} color="#fff" />}
++            </TouchableOpacity>
++            <TouchableOpacity style={[styles.topControlBtn, playbackRate >= 2 && styles.topControlBtnActive]} onPress={onToggleRate} activeOpacity={0.7}>
++              <Text style={[styles.topControlText, playbackRate >= 2 && styles.topControlTextActive]}>
++                {playbackRate >= 2 ? '2x' : '1x'}
++              </Text>
++            </TouchableOpacity>
++            {isLandscape && (
++              <TouchableOpacity style={styles.topControlBtn} onPress={onOpenLandscape} activeOpacity={0.7}>
++                <Maximize2 size={18} color="#fff" />
++              </TouchableOpacity>
++            )}
++          </View>
++
++          <View style={styles.rightActions}>
++            <TouchableOpacity style={styles.actionBtn} onPress={() => onLike(reelId)} activeOpacity={0.7}>
++              <View style={[styles.actionIconCircle, item.likedByMe && styles.actionIconCircleActive]}>
++                <Heart
++                  size={26}
++                  color={item.likedByMe ? theme.colors.danger : '#fff'}
++                  fill={item.likedByMe ? theme.colors.danger : 'transparent'}
++                />
++              </View>
++              <Text style={styles.actionText}>{item.likeCount || 0}</Text>
++            </TouchableOpacity>
++
++            <TouchableOpacity style={styles.actionBtn} onPress={() => onOpenComments(reelId)} activeOpacity={0.7}>
++              <View style={styles.actionIconCircle}>
++                <MessageCircle size={26} color="#fff" />
++              </View>
++              <Text style={styles.actionText}>{item.commentCount || 0}</Text>
++            </TouchableOpacity>
++
++            <TouchableOpacity style={styles.actionBtn} onPress={() => onRepost(reelId)} activeOpacity={0.7}>
++              <View style={[styles.actionIconCircle, item.repostedByMe && styles.actionIconCircleRepost]}>
++                <Repeat size={24} color={item.repostedByMe ? theme.colors.success : '#fff'} />
++              </View>
++              <Text style={styles.actionText}>{item.repostCount || 0}</Text>
++            </TouchableOpacity>
++
++            <TouchableOpacity style={styles.actionBtn} onPress={() => onOpenShare(item)} activeOpacity={0.7}>
++              <View style={styles.actionIconCircle}>
++                <Share2 size={24} color="#fff" />
++              </View>
++              <Text style={styles.actionText}>Share</Text>
++            </TouchableOpacity>
++
++            <TouchableOpacity style={styles.actionBtn} onPress={() => onMore(reelId)} activeOpacity={0.7}>
++              <View style={styles.actionIconCircle}>
++                <MoreHorizontal size={22} color="#fff" />
++              </View>
++            </TouchableOpacity>
++          </View>
++
++          <View style={styles.bottomInfo}>
++            <TouchableOpacity style={styles.authorRow} onPress={() => onOpenProfile(item)} activeOpacity={0.7}>
++              {item.authorAvatar ? (
++                <Image source={{ uri: item.authorAvatar }} style={styles.avatarImg} />
++              ) : (
++                <View style={styles.authorAvatar}>
++                  <User size={16} color="#fff" />
++                </View>
++              )}
++              <Text style={styles.authorName} numberOfLines={1}>
++                {item.author || item.authorKey || 'User'}
++              </Text>
++              {item.verified && (
++                <Verified size={14} color={theme.colors.verified} fill={theme.colors.verified} />
++              )}
++            </TouchableOpacity>
++            {item.text ? (
++              <Text style={styles.caption} numberOfLines={2}>
++                {item.text}
++              </Text>
++            ) : null}
++          </View>
++        </View>
++      ) : (
++        <View style={[styles.videoWrap, styles.emptyReel]}>
++          <Text style={styles.emptyText}>No video available</Text>
++        </View>
++      )}
++    </View>
++  );
++});
++
++function getVideoUrl(reel) {
++  const media = reel.media && reel.media[0];
++  return (media && (media.fullUrl || media.url)) || '';
++}
++
++const LandscapeViewer = ({ visible, videoUrl, onClose }) => {
++  const videoRef = useRef(null);
++
++  useEffect(() => {
++    if (visible && videoRef.current) {
++      videoRef.current.playAsync().catch(() => {});
++    }
++    return () => {
++      if (videoRef.current) {
++        videoRef.current.pauseAsync().catch(() => {});
++        videoRef.current.unloadAsync().catch(() => {});
++      }
++    };
++  }, [visible]);
++
++  if (!videoUrl) return null;
++
++  return (
++    <Modal visible={visible} transparent animationType="fade">
++      <View style={styles.landscapeBg}>
++        <TouchableOpacity style={styles.landscapeClose} onPress={onClose} activeOpacity={0.7}>
++          <X size={24} color="#fff" />
++        </TouchableOpacity>
++        <View style={styles.landscapeVideoWrap}>
++          <Video
++            ref={videoRef}
++            source={{ uri: videoUrl }}
++            style={styles.landscapeVideo}
++            resizeMode={ResizeMode.CONTAIN}
++            shouldPlay
++            isMuted={false}
++            isLooping
++            useNativeControls={false}
++          />
++        </View>
++      </View>
++    </Modal>
++  );
++};
++
++const Reels = ({ navigation }) => {
+   const insets = useSafeAreaInsets();
+-  const fadeAnim = useRef(new Animated.Value(0)).current;
+-  const slideAnim = useRef(new Animated.Value(30)).current;
++  const [reels, setReels] = useState([]);
++  const [loading, setLoading] = useState(true);
++  const [nextCursor, setNextCursor] = useState(null);
++  const [muted, setMuted] = useState(false);
++  const [playbackRate, setPlaybackRate] = useState(1);
++  const [activeIndex, setActiveIndex] = useState(0);
++  const [loadingMore, setLoadingMore] = useState(false);
++  const [commentsOpen, setCommentsOpen] = useState(false);
++  const [commentsReelId, setCommentsReelId] = useState(null);
++  const [commentsList, setCommentsList] = useState([]);
++  const [commentsLoading, setCommentsLoading] = useState(false);
++  const [commentText, setCommentText] = useState('');
++  const [commentSubmitting, setCommentSubmitting] = useState(false);
++  const [showMoreMenu, setShowMoreMenu] = useState(false);
++  const [shareSheetOpen, setShareSheetOpen] = useState(false);
++  const [shareReel, setShareReel] = useState(null);
++  const [landscapeOpen, setLandscapeOpen] = useState(false);
++  const [landscapeUrl, setLandscapeUrl] = useState(null);
++
++  const videoRefsArr = useRef([]);
+ 
+   useEffect(() => {
+-    Animated.parallel([
+-      Animated.timing(fadeAnim, {
+-        toValue: 1,
+-        duration: 600,
+-        useNativeDriver: true,
+-      }),
+-      Animated.spring(slideAnim, {
+-        toValue: 0,
+-        useNativeDriver: true,
+-        tension: 40,
+-        friction: 7,
+-      }),
+-    ]).start();
++    fetchReels();
++    return () => stopAllVideos();
++  }, []);
++
++  useFocusEffect(
++    useCallback(() => {
++      return () => stopAllVideos();
++    }, [])
++  );
++
++  const stopAllVideos = useCallback(() => {
++    videoRefsArr.current.forEach((ref) => {
++      if (ref) {
++        ref.pauseAsync().catch(() => {});
++        ref.unloadAsync().catch(() => {});
++      }
++    });
++  }, []);
++
++  const registerVideoRef = useCallback((ref, index) => {
++    videoRefsArr.current[index] = ref;
++  }, []);
++
++  const fetchReels = async () => {
++    try {
++      setLoading(true);
++      const response = await feedAPI.getReels(BATCH_SIZE);
++      if (response.data.ok) {
++        setReels(response.data.reels || []);
++        setNextCursor(response.data.nextCursor);
++      }
++    } catch (err) {
++      console.error('Reels fetch error:', err);
++    } finally {
++      setLoading(false);
++    }
++  };
++
++  const fetchMoreReels = async () => {
++    if (loadingMore || !nextCursor) return;
++    setLoadingMore(true);
++    try {
++      const response = await feedAPI.getReels(BATCH_SIZE, nextCursor);
++      if (response.data.ok && response.data.reels) {
++        setReels((prev) => {
++          const existingIds = new Set(prev.map((r) => r.id));
++          const newReels = response.data.reels.filter((r) => !existingIds.has(r.id));
++          return [...prev, ...newReels];
++        });
++        setNextCursor(response.data.nextCursor);
++      }
++    } catch (err) {
++      console.error('Reels pagination error:', err);
++    } finally {
++      setLoadingMore(false);
++    }
++  };
++
++  const onViewableItemsChanged = useRef(({ viewableItems }) => {
++    if (viewableItems.length > 0) {
++      const visibleItem = viewableItems[0];
++      if (typeof visibleItem.index === 'number') {
++        setActiveIndex(visibleItem.index);
++      }
++    }
++  });
++
++  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 });
++
++  const handleDoubleTapVideo = useCallback((reelId) => {
++    setReels((prev) =>
++      prev.map((r) =>
++        String(r.id) === String(reelId) && !r.likedByMe
++          ? { ...r, likeCount: (r.likeCount || 0) + 1, likedByMe: true }
++          : r
++      )
++    );
++    postAPI.likePost(reelId).catch(() => {});
++  }, []);
++
++  const handleLike = useCallback(async (reelId) => {
++    haptics.light();
++    setReels((prev) =>
++      prev.map((r) => {
++        if (String(r.id) !== String(reelId)) return r;
++        const toggled = !r.likedByMe;
++        return {
++          ...r,
++          likedByMe: toggled,
++          likeCount: toggled ? (r.likeCount || 0) + 1 : Math.max(0, (r.likeCount || 0) - 1),
++        };
++      })
++    );
++    try {
++      await postAPI.likePost(reelId);
++    } catch (err) {
++      console.error('Reel like error:', err);
++    }
++  }, []);
++
++  const openComments = useCallback((reelId) => {
++    setCommentsReelId(reelId);
++    setCommentsList([]);
++    setCommentsLoading(true);
++    setCommentsOpen(true);
++    fetchCommentsForReel(reelId);
++  }, []);
++
++  const fetchCommentsForReel = async (reelId) => {
++    try {
++      const response = await postAPI.getComments(reelId);
++      if (response.data.ok) {
++        setCommentsList(response.data.comments || []);
++      }
++    } catch (err) {
++      console.error('Comments fetch error:', err);
++    } finally {
++      setCommentsLoading(false);
++    }
++  };
++
++  const handleAddComment = useCallback(async () => {
++    if (!commentText.trim() || !commentsReelId) return;
++    setCommentSubmitting(true);
++    try {
++      const response = await postAPI.addComment(commentsReelId, commentText.trim());
++      if (response.data.ok) {
++        setCommentText('');
++        fetchCommentsForReel(commentsReelId);
++        setReels((prev) =>
++          prev.map((r) =>
++            String(r.id) === String(commentsReelId)
++              ? { ...r, commentCount: (r.commentCount || 0) + 1 }
++              : r
++          )
++        );
++      }
++    } catch (err) {
++      Alert.alert('Error', 'Failed to add comment.');
++    } finally {
++      setCommentSubmitting(false);
++    }
++  }, [commentText, commentsReelId]);
++
++  const handleCommentReply = useCallback(async (parentId, text) => {
++    if (!commentsReelId) return;
++    try {
++      await postAPI.addReply(commentsReelId, parentId, text);
++      fetchCommentsForReel(commentsReelId);
++    } catch (err) {
++      console.error('Reply error:', err);
++      throw err;
++    }
++  }, [commentsReelId]);
++
++  const handleRepost = useCallback(async (reelId) => {
++    haptics.light();
++    try {
++      await postAPI.repostPost(reelId);
++      setReels((prev) =>
++        prev.map((r) =>
++          String(r.id) === String(reelId)
++            ? { ...r, repostCount: (r.repostCount || 0) + 1, repostedByMe: true }
++            : r
++        )
++      );
++    } catch (err) {
++      Alert.alert('Coming soon', 'Reposting will be available soon.');
++    }
++  }, []);
++
++  const openShareSheet = useCallback((reel) => {
++    setShareReel(reel);
++    setShareSheetOpen(true);
++  }, []);
++
++  const handleExternalShare = useCallback(async () => {
++    if (!shareReel) return;
++    setShareSheetOpen(false);
++    await shareReel({
++      reelId: shareReel.id,
++      author: shareReel.authorKey || shareReel.author,
++    });
++  }, [shareReel]);
++
++  const handleCopyLink = useCallback(async () => {
++    if (!shareReel) return;
++    setShareSheetOpen(false);
++    const url = `https://hysa1.com/reel/${shareReel.id}`;
++    await copyLink(url, 'Reel link');
++  }, [shareReel]);
++
++  const openMoreMenu = useCallback((reelId) => {
++    setShareReel(reels.find((r) => String(r.id) === String(reelId)) || null);
++    setShowMoreMenu(true);
++  }, [reels]);
++
++  const handleReport = useCallback(() => {
++    setShowMoreMenu(false);
++    Alert.alert('Coming soon', 'Reporting will be available soon.');
++  }, []);
++
++  const handleOpenProfile = useCallback((item) => {
++    if (!item) return;
++    haptics.light();
++    navigation.navigate('UserProfile', { userKey: item.authorKey || item.authorId });
++  }, [navigation]);
++
++  const openLandscape = useCallback((url) => {
++    setLandscapeUrl(url);
++    setLandscapeOpen(true);
+   }, []);
+ 
++  const getItemLayout = useCallback((_, index) => ({
++    length: SCREEN_H,
++    offset: SCREEN_H * index,
++    index,
++  }), []);
++
++  const renderReel = useCallback(({ item, index }) => {
++    const isActive = index === activeIndex;
++    return (
++      <ReelItem
++        item={item}
++        isActive={isActive}
++        muted={muted}
++        playbackRate={playbackRate}
++        onLike={handleLike}
++        onOpenComments={openComments}
++        onRepost={handleRepost}
++        onOpenShare={openShareSheet}
++        onMore={openMoreMenu}
++        onDoubleTapVideo={handleDoubleTapVideo}
++        onOpenProfile={handleOpenProfile}
++        onRegisterRef={(ref) => registerVideoRef(ref, index)}
++        onToggleMute={() => setMuted((p) => !p)}
++        onToggleRate={() => setPlaybackRate((p) => (p >= 2 ? 1 : 2))}
++        onOpenLandscape={() => openLandscape(getVideoUrl(item))}
++      />
++    );
++  }, [activeIndex, muted, playbackRate, handleLike, openComments, handleRepost, openShareSheet, openMoreMenu, handleDoubleTapVideo, handleOpenProfile, registerVideoRef, openLandscape]);
++
++  const keyExtractor = useCallback((item) => `reel-${item.id}`, []);
++
++  if (loading) {
++    return (
++      <View style={styles.center}>
++        <ActivityIndicator size="large" color={theme.colors.accent} />
++      </View>
++    );
++  }
++
++  if (reels.length === 0) {
++    return (
++      <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
++        <View style={styles.emptyState}>
++          <Text style={styles.emptyTitle}>No reels yet</Text>
++          <Text style={styles.emptySubtext}>Video reels will appear here when available.</Text>
++        </View>
++      </View>
++    );
++  }
++
+   return (
+-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+-      <Animated.View
+-        style={[
+-          styles.content,
+-          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+-        ]}
+-      >
+-        <View style={styles.glassCard}>
+-          <View style={styles.iconCircle}>
+-            <Film size={48} color={theme.colors.accent} />
++    <View style={styles.container}>
++      <FlatList
++        data={reels}
++        renderItem={renderReel}
++        keyExtractor={keyExtractor}
++        getItemLayout={getItemLayout}
++        pagingEnabled
++        showsVerticalScrollIndicator={false}
++        onViewableItemsChanged={onViewableItemsChanged.current}
++        viewabilityConfig={viewabilityConfig.current}
++        snapToInterval={SCREEN_H}
++        decelerationRate="fast"
++        removeClippedSubviews
++        maxToRenderPerBatch={2}
++        windowSize={3}
++        onEndReached={fetchMoreReels}
++        onEndReachedThreshold={0.5}
++        ListFooterComponent={
++          loadingMore ? (
++            <View style={styles.footerLoader}>
++              <ActivityIndicator size="small" color={theme.colors.accent} />
++            </View>
++          ) : null
++        }
++      />
++
++      <Modal visible={commentsOpen} transparent animationType="slide" statusBarTranslucent onRequestClose={() => setCommentsOpen(false)}>
++        <View style={styles.commentsOverlay}>
++          <TouchableOpacity style={styles.commentsBackdrop} activeOpacity={1} onPress={() => setCommentsOpen(false)} />
++          <View style={styles.commentsSheet}>
++            <View style={styles.commentsHandleWrap}>
++              <View style={styles.commentsHandle} />
++            </View>
++            <View style={styles.commentsHeader}>
++              <Text style={styles.commentsTitle}>Comments</Text>
++              <TouchableOpacity onPress={() => setCommentsOpen(false)} activeOpacity={0.7} style={styles.commentsClose}>
++                <X size={18} color={theme.colors.textMuted} />
++              </TouchableOpacity>
++            </View>
++            {commentsLoading ? (
++              <View style={styles.commentsLoading}>
++                {[1, 2, 3].map((i) => (
++                  <View key={i} style={styles.commentSkeleton}>
++                    <View style={cStyles.commentAvatarPlaceholder} />
++                    <View style={styles.commentSkeletonContent}>
++                      <View style={styles.skeletonLineShort} />
++                      <View style={styles.skeletonLine} />
++                    </View>
++                  </View>
++                ))}
++              </View>
++            ) : (
++              <FlatList
++                data={commentsList}
++                renderItem={({ item }) => <CommentItem comment={item} onReply={handleCommentReply} />}
++                keyExtractor={(item) => String(item.id || item.text)}
++                style={styles.commentsList}
++                contentContainerStyle={commentsList.length === 0 ? styles.commentsListCenter : null}
++                keyboardShouldPersistTaps="handled"
++                ListEmptyComponent={<Text style={styles.noComments}>No comments yet. Be the first!</Text>}
++              />
++            )}
++            <View style={styles.commentInputBar}>
++              <TextInput
++                style={styles.commentInput}
++                placeholder="Add a comment..."
++                placeholderTextColor={theme.colors.textMuted}
++                value={commentText}
++                onChangeText={setCommentText}
++                multiline
++                maxLength={500}
++              />
++              <TouchableOpacity
++                style={[styles.commentSendBtn, (!commentText.trim() || commentSubmitting) && styles.commentSendBtnDisabled]}
++                onPress={handleAddComment}
++                disabled={!commentText.trim() || commentSubmitting}
++                activeOpacity={0.7}
++              >
++                {commentSubmitting ? (
++                  <ActivityIndicator size="small" color="#fff" />
++                ) : (
++                  <Send size={16} color="#fff" />
++                )}
++              </TouchableOpacity>
++            </View>
++            <View style={{ height: Math.max(insets.bottom, 8) }} />
+           </View>
+-          <Text style={styles.title}>Reels</Text>
+-          <Text style={styles.subtitle}>Coming soon</Text>
+-          <Text style={styles.description}>
+-            Short-form video content is on its way to HYSA.
+-          </Text>
+         </View>
+-      </Animated.View>
++      </Modal>
++
++      <Modal visible={shareSheetOpen} transparent animationType="slide" statusBarTranslucent onRequestClose={() => setShareSheetOpen(false)}>
++        <View style={styles.shareOverlay}>
++          <TouchableOpacity style={styles.shareBackdrop} activeOpacity={1} onPress={() => setShareSheetOpen(false)} />
++          <View style={styles.shareSheet}>
++            <View style={styles.shareHandleWrap}>
++              <View style={styles.shareHandle} />
++            </View>
++            <Text style={styles.shareTitle}>Share</Text>
++            {shareReel && (
++              <View style={styles.shareReelInfo}>
++                {shareReel.authorAvatar ? (
++                  <Image source={{ uri: shareReel.authorAvatar }} style={styles.shareReelAvatar} />
++                ) : (
++                  <View style={styles.shareReelAvatarPlaceholder}>
++                    <User size={14} color={theme.colors.textMuted} />
++                  </View>
++                )}
++                <Text style={styles.shareReelAuthor} numberOfLines={1}>
++                  {shareReel.author || shareReel.authorKey || 'User'}
++                </Text>
++              </View>
++            )}
++            <TouchableOpacity style={styles.shareSheetItem} onPress={handleExternalShare} activeOpacity={0.7}>
++              <View style={[styles.shareIconCircle, styles.shareIconCircleHighlight]}>
++                <Globe size={18} color={theme.colors.accent} />
++              </View>
++              <View style={styles.shareItemText}>
++                <Text style={styles.shareItemLabel}>External share</Text>
++                <Text style={styles.shareItemSub}>Share to other apps</Text>
++              </View>
++            </TouchableOpacity>
++            <View style={styles.shareDivider} />
++            <TouchableOpacity style={styles.shareSheetItem} onPress={handleCopyLink} activeOpacity={0.7}>
++              <View style={styles.shareIconCircle}>
++                <Link size={18} color={theme.colors.textSecondary} />
++              </View>
++              <Text style={styles.shareItemLabel}>Copy link</Text>
++            </TouchableOpacity>
++            <View style={styles.shareDivider} />
++            <TouchableOpacity style={styles.shareSheetItem} onPress={() => setShareSheetOpen(false)} activeOpacity={0.7}>
++              <Text style={styles.shareCancelText}>Cancel</Text>
++            </TouchableOpacity>
++            <View style={{ height: Math.max(insets.bottom, 12) }} />
++          </View>
++        </View>
++      </Modal>
++
++      <Modal visible={showMoreMenu} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setShowMoreMenu(false)}>
++        <TouchableOpacity style={styles.moreOverlay} activeOpacity={1} onPress={() => setShowMoreMenu(false)}>
++          <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.moreSheet}>
++            <TouchableOpacity style={styles.moreSheetItem} onPress={handleExternalShare} activeOpacity={0.7}>
++              <Globe size={18} color={theme.colors.textPrimary} />
++              <Text style={styles.moreSheetText}>External share</Text>
++            </TouchableOpacity>
++            <TouchableOpacity style={styles.moreSheetItem} onPress={handleCopyLink} activeOpacity={0.7}>
++              <Link size={18} color={theme.colors.textPrimary} />
++              <Text style={styles.moreSheetText}>Copy link</Text>
++            </TouchableOpacity>
++            <View style={styles.moreSheetDivider} />
++            <TouchableOpacity style={styles.moreSheetItem} onPress={handleReport} activeOpacity={0.7}>
++              <Flag size={18} color={theme.colors.danger} />
++              <Text style={[styles.moreSheetText, { color: theme.colors.danger }]}>Report</Text>
++            </TouchableOpacity>
++            <View style={styles.moreSheetDivider} />
++            <TouchableOpacity style={styles.moreSheetItem} onPress={() => setShowMoreMenu(false)} activeOpacity={0.7}>
++              <Text style={styles.moreSheetCloseText}>Cancel</Text>
++            </TouchableOpacity>
++            <View style={{ height: Math.max(insets.bottom, 12) }} />
++          </TouchableOpacity>
++        </TouchableOpacity>
++      </Modal>
++
++      <LandscapeViewer visible={landscapeOpen} videoUrl={landscapeUrl} onClose={() => setLandscapeOpen(false)} />
+     </View>
+   );
+ };
+ 
+ const styles = StyleSheet.create({
+-  container: {
+-    flex: 1,
+-    backgroundColor: theme.colors.bgPrimary,
+-  },
+-  content: {
+-    flex: 1,
+-    justifyContent: 'center',
+-    alignItems: 'center',
+-    padding: 40,
+-  },
+-  glassCard: {
+-    backgroundColor: theme.colors.bgCard,
+-    borderRadius: theme.radius.xl,
+-    padding: 32,
+-    alignItems: 'center',
+-    width: '100%',
+-    maxWidth: 320,
+-    borderWidth: 1,
+-    borderColor: theme.colors.borderLight,
+-  },
+-  iconCircle: {
+-    width: 96,
+-    height: 96,
+-    borderRadius: 48,
+-    backgroundColor: 'rgba(124, 58, 237, 0.14)',
+-    alignItems: 'center',
+-    justifyContent: 'center',
+-    marginBottom: 24,
+-  },
+-  title: {
+-    ...theme.typography.h2,
+-    color: theme.colors.textPrimary,
+-    marginBottom: 8,
+-  },
+-  subtitle: {
+-    ...theme.typography.body,
+-    color: theme.colors.accent,
+-    fontWeight: '600',
+-    marginBottom: 12,
+-  },
+-  description: {
+-    ...theme.typography.bodySm,
+-    color: theme.colors.textMuted,
+-    textAlign: 'center',
+-  },
++  container: { flex: 1, backgroundColor: '#000' },
++  center: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
++  reelContainer: { width: SCREEN_W, height: SCREEN_H, backgroundColor: '#000' },
++  videoWrap: { width: SCREEN_W, height: SCREEN_H, backgroundColor: '#000' },
++  bgThumb: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
++  bgDarkOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)' },
++  video: { width: SCREEN_W, height: SCREEN_H },
++  videoLandscape: { alignSelf: 'center' },
++  bottomGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 140, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 4, pointerEvents: 'none' },
++  topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 50, backgroundColor: 'rgba(0,0,0,0.15)', zIndex: 4, pointerEvents: 'none' },
++  tapLayer: { ...StyleSheet.absoluteFillObject, zIndex: 5 },
++  heartOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 6, pointerEvents: 'none' },
++  pauseOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 6, pointerEvents: 'none' },
++  topControls: { position: 'absolute', top: 50, right: 10, flexDirection: 'row', gap: 6, zIndex: 11 },
++  topControlBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center' },
++  topControlBtnActive: { backgroundColor: 'rgba(124,58,237,0.5)' },
++  topControlText: { fontSize: 12, fontWeight: '700', color: '#fff' },
++  topControlTextActive: { color: '#fff' },
++  rightActions: { position: 'absolute', right: 10, bottom: 120, alignItems: 'center', zIndex: 10 },
++  actionBtn: { alignItems: 'center', marginBottom: 12 },
++  actionIconCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.10)', alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
++  actionIconCircleActive: { backgroundColor: 'rgba(255,88,116,0.18)' },
++  actionIconCircleRepost: { backgroundColor: 'rgba(23,191,99,0.18)' },
++  actionText: { fontSize: 11, color: '#fff', fontWeight: '600' },
++  bottomInfo: { position: 'absolute', bottom: 40, left: 12, right: 70, zIndex: 10 },
++  authorRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
++  authorAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
++  avatarImg: { width: 32, height: 32, borderRadius: 16, marginRight: 8 },
++  authorName: { fontSize: 15, fontWeight: '700', color: '#fff', marginRight: 6, flex: 1 },
++  caption: { fontSize: 13, color: 'rgba(255,255,255,0.9)', lineHeight: 18 },
++  emptyReel: { justifyContent: 'center', alignItems: 'center' },
++  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
++  emptyTitle: { fontSize: 20, fontWeight: '700', color: theme.colors.textPrimary, marginBottom: 8 },
++  emptySubtext: { fontSize: 14, color: theme.colors.textMuted, textAlign: 'center' },
++  emptyText: { fontSize: 16, color: theme.colors.textMuted },
++  footerLoader: { paddingVertical: 16, alignItems: 'center' },
++  commentsOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
++  commentsBackdrop: { ...StyleSheet.absoluteFillObject },
++  commentsSheet: { backgroundColor: theme.colors.bgSecondary, borderTopLeftRadius: theme.radius.xl, borderTopRightRadius: theme.radius.xl, maxHeight: SCREEN_H * 0.7 },
++  commentsHandleWrap: { alignItems: 'center', paddingVertical: 8 },
++  commentsHandle: { width: 32, height: 3, borderRadius: 2, backgroundColor: theme.colors.border },
++  commentsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingBottom: 8 },
++  commentsTitle: { fontSize: 14, fontWeight: '600', color: theme.colors.textPrimary },
++  commentsClose: { padding: 4 },
++  commentsList: { maxHeight: SCREEN_H * 0.48 },
++  commentsListCenter: { justifyContent: 'center', alignItems: 'center', paddingVertical: 32 },
++  noComments: { fontSize: 13, color: theme.colors.textMuted, textAlign: 'center', paddingVertical: 20 },
++  commentsLoading: { paddingVertical: 8, paddingHorizontal: 12, maxHeight: SCREEN_H * 0.48 },
++  commentSkeleton: { flexDirection: 'row', paddingVertical: 10, gap: 10 },
++  commentSkeletonContent: { flex: 1 },
++  skeletonLine: { height: 10, backgroundColor: theme.colors.bgInput, borderRadius: 5, marginBottom: 6 },
++  skeletonLineShort: { height: 8, width: '40%', backgroundColor: theme.colors.bgInput, borderRadius: 4, marginBottom: 8 },
++  commentInputBar: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 10, paddingVertical: 8, backgroundColor: theme.colors.bgSecondary, gap: 8 },
++  commentInput: { flex: 1, backgroundColor: theme.colors.bgInput, borderRadius: theme.radius.full, paddingHorizontal: 14, paddingVertical: 8, fontSize: 14, color: theme.colors.textPrimary, maxHeight: 80 },
++  commentSendBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: theme.colors.accent, alignItems: 'center', justifyContent: 'center' },
++  commentSendBtnDisabled: { opacity: 0.4 },
++  shareOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
++  shareBackdrop: { ...StyleSheet.absoluteFillObject },
++  shareSheet: { backgroundColor: theme.colors.bgSecondary, borderTopLeftRadius: theme.radius.xl, borderTopRightRadius: theme.radius.xl, paddingBottom: 8 },
++  shareHandleWrap: { alignItems: 'center', paddingVertical: 8 },
++  shareHandle: { width: 32, height: 3, borderRadius: 2, backgroundColor: theme.colors.border },
++  shareTitle: { fontSize: 15, fontWeight: '600', color: theme.colors.textPrimary, textAlign: 'center', paddingVertical: 4, marginBottom: 4 },
++  shareReelInfo: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 6, gap: 8 },
++  shareReelAvatar: { width: 24, height: 24, borderRadius: 12 },
++  shareReelAvatarPlaceholder: { width: 24, height: 24, borderRadius: 12, backgroundColor: theme.colors.bgInput, alignItems: 'center', justifyContent: 'center' },
++  shareReelAuthor: { fontSize: 13, color: theme.colors.textSecondary, flex: 1 },
++  shareSheetItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 16, gap: 14 },
++  shareIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
++  shareIconCircleHighlight: { backgroundColor: 'rgba(124,58,237,0.12)', borderColor: 'rgba(124,58,237,0.2)', borderWidth: 1 },
++  shareItemText: { flex: 1 },
++  shareItemLabel: { fontSize: 15, fontWeight: '500', color: theme.colors.textPrimary },
++  shareItemSub: { fontSize: 11, color: theme.colors.textMuted, marginTop: 1 },
++  shareDivider: { height: 1, backgroundColor: theme.colors.borderLight, marginHorizontal: 16, marginVertical: 2 },
++  shareCancelText: { fontSize: 15, fontWeight: '600', color: theme.colors.textSecondary, textAlign: 'center', paddingVertical: 8 },
++  moreOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
++  moreSheet: { backgroundColor: theme.colors.bgCard, borderTopLeftRadius: theme.radius.xl, borderTopRightRadius: theme.radius.xl, paddingBottom: 8 },
++  moreSheetItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 20, gap: 14 },
++  moreSheetText: { fontSize: 16, color: theme.colors.textPrimary },
++  moreSheetDivider: { height: 1, backgroundColor: theme.colors.borderLight, marginVertical: 4 },
++  moreSheetCloseText: { fontSize: 16, fontWeight: '600', color: theme.colors.textSecondary, textAlign: 'center', paddingVertical: 10 },
++  landscapeBg: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
++  landscapeClose: { position: 'absolute', top: 50, left: 16, zIndex: 10, padding: 8 },
++  landscapeVideoWrap: { width: SCREEN_W, height: SCREEN_H, justifyContent: 'center', alignItems: 'center' },
++  landscapeVideo: { width: SCREEN_W, height: SCREEN_W * 0.5625 },
++});
++
++const cStyles = StyleSheet.create({
++  commentItem: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, gap: 10 },
++  commentAvatarWrap: { marginTop: 2, flexShrink: 0 },
++  commentAvatarImg: { width: 32, height: 32, borderRadius: 16 },
++  commentAvatarPlaceholder: { width: 32, height: 32, borderRadius: 16, backgroundColor: theme.colors.bgInput, alignItems: 'center', justifyContent: 'center' },
++  commentContent: { flex: 1, minWidth: 0 },
++  commentHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
++  commentNameRow: { flexDirection: 'row', alignItems: 'center', flex: 1 },
++  commentAuthor: { fontSize: 13, fontWeight: '600', color: theme.colors.textPrimary, marginRight: 5 },
++  commentTime: { fontSize: 11, color: theme.colors.textMuted },
++  commentText: { fontSize: 14, color: theme.colors.textSecondary, lineHeight: 18, marginBottom: 4 },
++  commentActionsRow: { flexDirection: 'row', alignItems: 'center' },
++  replyBtnText: { fontSize: 12, color: theme.colors.accent, fontWeight: '600' },
++  viewRepliesBtn: { paddingVertical: 4, paddingLeft: 2 },
++  viewRepliesText: { fontSize: 12, color: theme.colors.accent, fontWeight: '600' },
++  replyItem: { flexDirection: 'row', marginTop: 6, paddingTop: 6, paddingLeft: 2 },
++  replyAvatarWrap: { marginRight: 6, marginTop: 1, flexShrink: 0 },
++  replyAvatarImg: { width: 20, height: 20, borderRadius: 10 },
++  replyAvatarPlaceholder: { width: 20, height: 20, borderRadius: 10, backgroundColor: theme.colors.bgInput, alignItems: 'center', justifyContent: 'center' },
++  replyContent: { flex: 1, minWidth: 0 },
++  replyHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
++  replyAuthor: { fontSize: 12, fontWeight: '600', color: theme.colors.textPrimary, marginRight: 5 },
++  replyTime: { fontSize: 10, color: theme.colors.textMuted },
++  replyText: { fontSize: 13, color: theme.colors.textSecondary, lineHeight: 16, marginBottom: 2 },
++  replyInputRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: 6 },
++  replyInput: { flex: 1, backgroundColor: theme.colors.bgInput, borderRadius: theme.radius.full, paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, color: theme.colors.textPrimary, maxHeight: 60, marginRight: 6 },
++  replySendBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: theme.colors.accent, alignItems: 'center', justifyContent: 'center' },
++  replySendBtnDisabled: { opacity: 0.4 },
++  commentLikeBtn: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, marginTop: 2 },
++  commentLikeCount: { fontSize: 10, color: theme.colors.textMuted, marginTop: 2 },
+ });
+ 
+ export default Reels;
+diff --git a/mobile-app/src/screens/Search.js b/mobile-app/src/screens/Search.js
+index 18ada3d..16a814f 100644
+--- a/mobile-app/src/screens/Search.js
++++ b/mobile-app/src/screens/Search.js
+@@ -104,7 +104,7 @@ const Search = ({ navigation }) => {
+   };
+ 
+   const handleUserPress = (userKey) => {
+-    if (userKey) navigation.navigate('Profile', { userKey });
++    if (userKey) navigation.navigate('UserProfile', { userKey });
+   };
+ 
+   const handlePostPress = (postId) => {

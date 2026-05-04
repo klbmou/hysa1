@@ -11,6 +11,7 @@ import {
   Search as SearchIcon,
   Film,
   Plus,
+  MessageSquare,
 } from 'lucide-react-native';
 
 import { useAuth } from '../context/AuthContext';
@@ -18,8 +19,11 @@ import FeedScreen from '../screens/Feed';
 import SearchScreen from '../screens/Search';
 import NotificationsScreen from '../screens/Notifications';
 import ProfileScreen from '../screens/Profile';
+import UserProfileScreen from '../screens/UserProfile';
 import PostDetailScreen from '../screens/PostDetail';
 import ReelsScreen from '../screens/Reels';
+import DMThreadsScreen from '../screens/DMThreads';
+import ChatScreen from '../screens/Chat';
 import LoginScreen from '../screens/Login';
 import SignupScreen from '../screens/Signup';
 import theme from '../theme';
@@ -121,6 +125,9 @@ const AppStack = () => {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="MainTabs" component={MainTabs} />
       <Stack.Screen name="PostDetail" component={PostDetailScreen} />
+      <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+      <Stack.Screen name="DMThreads" component={DMThreadsScreen} />
+      <Stack.Screen name="Chat" component={ChatScreen} />
     </Stack.Navigator>
   );
 };

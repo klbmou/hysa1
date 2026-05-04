@@ -161,6 +161,9 @@ export const userAPI = {
   getUser: (key) => api.get(`/api/user/${key}`),
   followUser: (key) => api.post(`/api/follow/${key}`),
   updateProfile: (data) => api.post('/api/profile', data),
+  setPrivacy: (isPrivate) => api.patch('/api/users/privacy', { isPrivate }),
+  changePassword: (oldPassword, newPassword) =>
+    api.post('/api/auth/change-password', { oldPassword, newPassword }),
   getInsights: () => api.get('/api/insights'),
   getPostInsights: (id) => api.get(`/api/posts/${id}/insights`),
 };
@@ -188,6 +191,20 @@ export const notificationsAPI = {
 export const searchAPI = {
   search: (query, type = 'all') =>
     api.get(`/api/search?q=${encodeURIComponent(query)}&type=${type}`),
+};
+
+// Upload API
+export const uploadAPI = {
+  uploadMedia: (dataUrl) =>
+    api.post('/api/upload', { dataUrl }),
+};
+
+// DM / Chat API
+export const dmAPI = {
+  getThreads: () => api.get('/api/dm/threads'),
+  getConversation: (userKey) => api.get(`/api/dm/${userKey}`),
+  sendMessage: (userKey, text) =>
+    api.post(`/api/dm/${userKey}`, { text }),
 };
 
 export default api;

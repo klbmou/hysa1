@@ -168,8 +168,8 @@ const Notifications = ({ navigation }) => {
     const post = safePost(item);
     if (post.id) {
       navigation.navigate('PostDetail', { postId: post.id });
-    } else if (actor.username) {
-      navigation.navigate('Profile', { userKey: actor.username });
+    } else if (actor.key) {
+      navigation.navigate('UserProfile', { userKey: actor.key });
     }
   };
 

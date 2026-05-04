@@ -12,10 +12,12 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Share,
   Animated,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   User,
   Verified,
@@ -30,12 +32,19 @@ import {
   Bell,
   Shield,
   ChevronRight,
+  Camera,
+  Globe,
+  Info,
+  Moon,
+  Smartphone,
+  LifeBuoy,
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
-import { userAPI } from '../api/client';
+import { userAPI, uploadAPI } from '../api/client';
 import PostCard from '../components/PostCard';
 import AnimatedPressable from '../components/AnimatedPressable';
 import * as haptics from '../utils/haptics';
+import { shareProfile } from '../utils/share';
 import theme from '../theme';
 
 const Profile = ({ navigation, route }) => {
@@ -52,25 +61,51 @@ const Profile = ({ navigation, route }) => {
   const [editBio, setEditBio] = useState('');
   const [editSkills, setEditSkills] = useState('');
   const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editAvatarUri, setEditAvatarUri] = useState(null);
+  const [editAvatarUploading, setEditAvatarUploading] = useState(false);
+  const [editAvatarError, setEditAvatarError] = useState(null);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [messageSheetOpen, setMessageSheetOpen] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [privacyLoading, setPrivacyLoading] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordError, setPasswordError] = useState(null);
 
   const settingsAnim = useRef(new Animated.Value(0)).current;
   const messageAnim = useRef(new Animated.Value(0)).current;
 
   const targetUserKey = route.params?.userKey;
 
-  useEffect(() => {
-    fetchProfile();
-  }, [targetUserKey]);
+  const currentKey = currentUser && (currentUser.key || currentUser.userKey || '');
 
-  const fetchProfile = async () => {
+  useEffect(() => {
+    const isOwn = !targetUserKey || (currentKey && String(targetUserKey) === String(currentKey));
+    setIsViewingOwnProfile(isOwn);
+    fetchProfile(isOwn);
+  }, [targetUserKey, currentKey]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!targetUserKey && currentUser) {
+        setIsViewingOwnProfile(true);
+        setProfileUser(currentUser);
+        setLoading(false);
+      }
+    }, [targetUserKey, currentUser])
+  );
+
+  const fetchProfile = async (isOwn) => {
     setLoading(true);
 
-    if (!targetUserKey && currentUser) {
+    if (isOwn && currentUser) {
       setProfileUser(currentUser);
       setIsViewingOwnProfile(true);
+      setIsPrivate(!!currentUser.isPrivate);
+      setUserPosts([]);
       setLoading(false);
       return;
     }
@@ -124,12 +159,109 @@ const Profile = ({ navigation, route }) => {
     await logout();
   };
 
+  const handleTogglePrivacy = async () => {
+    setPrivacyLoading(true);
+    try {
+      const newValue = !isPrivate;
+      const response = await userAPI.setPrivacy(newValue);
+      if (response.data.ok) {
+        setIsPrivate(newValue);
+        setProfileUser((prev) => prev ? { ...prev, isPrivate: newValue } : prev);
+        haptics.success();
+      }
+    } catch (err) {
+      console.error('Privacy error:', err);
+      haptics.error();
+    } finally {
+      setPrivacyLoading(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!oldPassword.trim() || !newPassword.trim()) {
+      setPasswordError('Both fields are required.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPasswordError('Password must be at least 8 characters.');
+      return;
+    }
+    setPasswordLoading(true);
+    setPasswordError(null);
+    try {
+      const response = await userAPI.changePassword(oldPassword, newPassword);
+      if (response.data.ok) {
+        setOldPassword('');
+        setNewPassword('');
+        setChangePasswordOpen(false);
+        haptics.success();
+      } else {
+        setPasswordError(response.data.error || 'Failed to change password.');
+      }
+    } catch (err) {
+      console.error('Password change error:', err);
+      setPasswordError('Failed to change password.');
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
   const handleOpenEdit = () => {
     haptics.light();
     if (profileUser) {
       setEditBio(profileUser.bio || '');
       setEditSkills(Array.isArray(profileUser.skills) ? profileUser.skills.join(', ') : '');
+      setEditAvatarUri(null);
+      setEditAvatarUploading(false);
+      setEditAvatarError(null);
       setEditOpen(true);
+    }
+  };
+
+  const handleChangeAvatar = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        setEditAvatarError('Permission to access media library is required.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: false,
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setEditAvatarUploading(true);
+        setEditAvatarError(null);
+        try {
+          const asset = result.assets[0];
+          console.log('[avatar-upload] asset.uri:', asset.uri ? 'present' : 'missing');
+          const mime = asset.mimeType || asset.type || 'image/jpeg';
+          console.log('[avatar-upload] mime:', mime);
+          const b64 = await FileSystem.readAsStringAsync(asset.uri, {
+            encoding: 'base64',
+          });
+          const dataUrl = `data:${mime};base64,${b64}`;
+          console.log('[avatar-upload] dataUrl length:', dataUrl.length);
+
+          const uploadResponse = await uploadAPI.uploadMedia(dataUrl);
+          console.log('[avatar-upload] response keys:', Object.keys(uploadResponse.data || {}));
+          if (uploadResponse.data.ok) {
+            setEditAvatarUri(uploadResponse.data.media.fullUrl || uploadResponse.data.media.url);
+            setEditAvatarUploading(false);
+          } else {
+            setEditAvatarError(uploadResponse.data.error || 'Upload failed.');
+            setEditAvatarUploading(false);
+          }
+        } catch (err) {
+          console.error('Avatar upload error:', err);
+          setEditAvatarError('Failed to upload avatar.');
+          setEditAvatarUploading(false);
+        }
+      }
+    } catch (err) {
+      console.error('Avatar pick error:', err);
+      setEditAvatarError('Failed to pick image.');
     }
   };
 
@@ -141,14 +273,21 @@ const Profile = ({ navigation, route }) => {
         : [];
       const updates = { bio: editBio };
       if (skills.length > 0) updates.skills = skills;
+      if (editAvatarUri) {
+        updates.avatarUrl = editAvatarUri;
+      }
       const response = await userAPI.updateProfile(updates);
       if (response.data.ok) {
         haptics.success();
-        setProfileUser((prev) => ({
-          ...prev,
+        const updatedUser = {
+          ...profileUser,
           bio: editBio,
           skills,
-        }));
+        };
+        if (editAvatarUri) {
+          updatedUser.avatarUrl = editAvatarUri;
+        }
+        setProfileUser(updatedUser);
         setEditOpen(false);
       }
     } catch (err) {
@@ -162,14 +301,10 @@ const Profile = ({ navigation, route }) => {
   const handleShareProfile = async () => {
     haptics.light();
     if (!profileUser) return;
-    try {
-      await Share.share({
-        message: `Check out @${profileUser.username || profileUser.key} on HYSA1`,
-        title: `${profileUser.username || profileUser.key}'s Profile`,
-      });
-    } catch (err) {
-      console.error('Share error:', err);
-    }
+    await shareProfile({
+      username: profileUser.username,
+      userKey: profileUser.key,
+    });
   };
 
   const openMessageSheet = () => {
@@ -249,7 +384,7 @@ const Profile = ({ navigation, route }) => {
       onRepost={() => {}}
       onViewProfile={(userKey) => {
         if (userKey !== profileUser.key) {
-          navigation.navigate('Profile', { userKey });
+          navigation.navigate('UserProfile', { userKey });
         }
       }}
     />
@@ -415,6 +550,28 @@ const Profile = ({ navigation, route }) => {
               </TouchableOpacity>
             </View>
 
+            <TouchableOpacity style={styles.avatarEditRow} onPress={handleChangeAvatar} disabled={editAvatarUploading} activeOpacity={0.7}>
+              {editAvatarUri ? (
+                <Image source={{ uri: editAvatarUri }} style={styles.avatarEditPreview} />
+              ) : editAvatarUploading ? (
+                <View style={styles.avatarEditPlaceholder}>
+                  <ActivityIndicator size="small" color={theme.colors.accent} />
+                </View>
+              ) : (
+                <View style={styles.avatarEditPlaceholder}>
+                  <Camera size={24} color={theme.colors.accent} />
+                </View>
+              )}
+              <View style={styles.avatarEditInfo}>
+                <Text style={styles.avatarEditLabel}>Change avatar</Text>
+                <Text style={styles.avatarEditSubtext}>Tap to pick an image</Text>
+              </View>
+            </TouchableOpacity>
+
+            {editAvatarError && (
+              <Text style={styles.editErrorText}>{editAvatarError}</Text>
+            )}
+
             <Text style={styles.editLabel}>Bio</Text>
             <TextInput
               style={styles.editInput}
@@ -463,31 +620,106 @@ const Profile = ({ navigation, route }) => {
               <View style={styles.sheetHandle} />
               <Text style={styles.sheetTitle}>Settings</Text>
 
-              <View style={styles.sheetItem}>
-                <User size={20} color={theme.colors.textSecondary} />
-                <Text style={styles.sheetItemText}>Account</Text>
-                <Text style={styles.sheetItemSubtext}>Coming soon</Text>
+              <Text style={styles.sheetSectionLabel}>Account</Text>
+
+              <TouchableOpacity style={styles.sheetItem} onPress={() => { setSettingsOpen(false); navigation.navigate('DMThreads'); haptics.light(); }} activeOpacity={0.7}>
+                <View style={styles.sheetItemIcon}>
+                  <MessageSquare size={18} color={theme.colors.accent} />
+                </View>
+                <View style={styles.sheetItemContent}>
+                  <Text style={styles.sheetItemText}>Messages</Text>
+                  <Text style={styles.sheetItemSubtext}>Direct messages and threads</Text>
+                </View>
                 <ChevronRight size={16} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.sheetItem} onPress={handleOpenEdit} activeOpacity={0.7}>
+                <View style={styles.sheetItemIcon}>
+                  <Edit3 size={18} color={theme.colors.textSecondary} />
+                </View>
+                <View style={styles.sheetItemContent}>
+                  <Text style={styles.sheetItemText}>Edit Profile</Text>
+                  <Text style={styles.sheetItemSubtext}>Bio, skills, avatar</Text>
+                </View>
+                <ChevronRight size={16} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.sheetItem} onPress={() => { setChangePasswordOpen(true); setPasswordError(null); setOldPassword(''); setNewPassword(''); haptics.light(); }} activeOpacity={0.7}>
+                <View style={styles.sheetItemIcon}>
+                  <Shield size={18} color={theme.colors.textSecondary} />
+                </View>
+                <View style={styles.sheetItemContent}>
+                  <Text style={styles.sheetItemText}>Change Password</Text>
+                  <Text style={styles.sheetItemSubtext}>Update your security credentials</Text>
+                </View>
+                <ChevronRight size={16} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+
+              <View style={styles.sheetSectionDivider} />
+              <Text style={styles.sheetSectionLabel}>Preferences</Text>
+
+              <TouchableOpacity style={styles.sheetItem} onPress={handleTogglePrivacy} disabled={privacyLoading} activeOpacity={0.7}>
+                <View style={styles.sheetItemIcon}>
+                  <Shield size={18} color={isPrivate ? theme.colors.accent : theme.colors.textSecondary} />
+                </View>
+                <View style={styles.sheetItemContent}>
+                  <Text style={styles.sheetItemText}>Private Account</Text>
+                  <Text style={styles.sheetItemSubtext}>{isPrivate ? 'Only followers can see your posts' : 'Anyone can view your posts'}</Text>
+                </View>
+                <View style={styles.toggleTrack}>
+                  <View style={[styles.toggleThumb, isPrivate && styles.toggleThumbOn, privacyLoading && styles.toggleThumbLoading]} />
+                </View>
+              </TouchableOpacity>
+
+              <View style={[styles.sheetItem, { opacity: 0.45 }]}>
+                <View style={styles.sheetItemIcon}>
+                  <Globe size={18} color={theme.colors.textMuted} />
+                </View>
+                <View style={styles.sheetItemContent}>
+                  <Text style={styles.sheetItemText}>Language</Text>
+                  <Text style={styles.sheetItemSubtext}>Coming later</Text>
+                </View>
               </View>
 
-              <View style={styles.sheetItem}>
-                <Shield size={20} color={theme.colors.textSecondary} />
-                <Text style={styles.sheetItemText}>Privacy</Text>
-                <Text style={styles.sheetItemSubtext}>Coming soon</Text>
-                <ChevronRight size={16} color={theme.colors.textMuted} />
+              <View style={[styles.sheetItem, { opacity: 0.45 }]}>
+                <View style={styles.sheetItemIcon}>
+                  <Bell size={18} color={theme.colors.textMuted} />
+                </View>
+                <View style={styles.sheetItemContent}>
+                  <Text style={styles.sheetItemText}>Notifications</Text>
+                  <Text style={styles.sheetItemSubtext}>Coming later</Text>
+                </View>
               </View>
 
-              <View style={styles.sheetItem}>
-                <Bell size={20} color={theme.colors.textSecondary} />
-                <Text style={styles.sheetItemText}>Notifications</Text>
-                <Text style={styles.sheetItemSubtext}>Coming soon</Text>
-                <ChevronRight size={16} color={theme.colors.textMuted} />
+              <View style={styles.sheetSectionDivider} />
+              <Text style={styles.sheetSectionLabel}>Support</Text>
+
+              <View style={[styles.sheetItem, { opacity: 0.45 }]}>
+                <View style={styles.sheetItemIcon}>
+                  <LifeBuoy size={18} color={theme.colors.textMuted} />
+                </View>
+                <View style={styles.sheetItemContent}>
+                  <Text style={styles.sheetItemText}>Help & Support</Text>
+                  <Text style={styles.sheetItemSubtext}>Coming later</Text>
+                </View>
+              </View>
+
+              <View style={[styles.sheetItem, { opacity: 0.45 }]}>
+                <View style={styles.sheetItemIcon}>
+                  <Info size={18} color={theme.colors.textMuted} />
+                </View>
+                <View style={styles.sheetItemContent}>
+                  <Text style={styles.sheetItemText}>About HYSA</Text>
+                  <Text style={styles.sheetItemSubtext}>Version 1.0.0</Text>
+                </View>
               </View>
 
               <View style={styles.sheetDivider} />
 
               <TouchableOpacity style={styles.sheetItemDanger} onPress={handleLogout} activeOpacity={0.6}>
-                <LogOut size={20} color={theme.colors.danger} />
+                <View style={styles.sheetItemIcon}>
+                  <LogOut size={18} color={theme.colors.danger} />
+                </View>
                 <Text style={[styles.sheetItemText, { color: theme.colors.danger }]}>Logout</Text>
               </TouchableOpacity>
 
@@ -498,6 +730,59 @@ const Profile = ({ navigation, route }) => {
             </Animated.View>
           </TouchableOpacity>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Change Password Modal */}
+      <Modal visible={changePasswordOpen} transparent animationType="slide" statusBarTranslucent>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.editOverlay} keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}>
+          <View style={styles.editCard}>
+            <View style={styles.editHandle} />
+            <View style={styles.editHeader}>
+              <Text style={styles.editTitle}>Change Password</Text>
+              <TouchableOpacity onPress={() => setChangePasswordOpen(false)} activeOpacity={0.7}>
+                <X size={22} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.editLabel}>Current Password</Text>
+            <TextInput
+              style={styles.editInput}
+              placeholder="Enter current password"
+              placeholderTextColor={theme.colors.textMuted}
+              value={oldPassword}
+              onChangeText={setOldPassword}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+
+            <Text style={styles.editLabel}>New Password</Text>
+            <TextInput
+              style={styles.editInput}
+              placeholder="Enter new password (min 8 chars)"
+              placeholderTextColor={theme.colors.textMuted}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+
+            {passwordError && <Text style={styles.editErrorText}>{passwordError}</Text>}
+
+            <TouchableOpacity
+              style={[styles.editSubmit, passwordLoading && styles.editSubmitDisabled]}
+              onPress={handleChangePassword}
+              disabled={passwordLoading}
+              activeOpacity={0.7}
+            >
+              {passwordLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.editSubmitText}>Update Password</Text>
+              )}
+            </TouchableOpacity>
+            <View style={{ height: Math.max(insets.bottom, 12) }} />
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Message Sheet */}
@@ -802,6 +1087,43 @@ const styles = StyleSheet.create({
     ...theme.typography.button,
     color: '#fff',
   },
+  avatarEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginBottom: 8,
+    gap: 12,
+  },
+  avatarEditPreview: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  avatarEditPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(124, 58, 237, 0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarEditInfo: {
+    flex: 1,
+  },
+  avatarEditLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: theme.colors.textPrimary,
+  },
+  avatarEditSubtext: {
+    fontSize: 13,
+    color: theme.colors.textMuted,
+  },
+  editErrorText: {
+    fontSize: 13,
+    color: theme.colors.danger,
+    marginBottom: 8,
+  },
   sheetOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -814,6 +1136,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 8,
+    maxHeight: '85%',
+  },
+  sheetSectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: theme.colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingLeft: 4,
+  },
+  sheetSectionDivider: {
+    height: 1,
+    backgroundColor: theme.colors.borderLight,
+    marginVertical: 6,
+  },
+  sheetItemIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetItemContent: {
+    flex: 1,
   },
   messageSheet: {
     backgroundColor: theme.colors.bgCard,
@@ -841,8 +1190,8 @@ const styles = StyleSheet.create({
   sheetItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    gap: 14,
+    paddingVertical: 12,
+    gap: 12,
   },
   sheetItemText: {
     flex: 1,
@@ -854,11 +1203,32 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     marginRight: 8,
   },
+  toggleTrack: {
+    width: 44,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: theme.colors.bgInput,
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  toggleThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: theme.colors.textMuted,
+  },
+  toggleThumbOn: {
+    backgroundColor: theme.colors.accent,
+    alignSelf: 'flex-end',
+  },
+  toggleThumbLoading: {
+    opacity: 0.5,
+  },
   sheetItemDanger: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    gap: 14,
+    paddingVertical: 12,
+    gap: 12,
   },
   sheetDivider: {
     height: 1,

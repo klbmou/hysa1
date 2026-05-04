@@ -104,7 +104,7 @@ const Search = ({ navigation }) => {
   };
 
   const handleUserPress = (userKey) => {
-    if (userKey) navigation.navigate('Profile', { userKey });
+    if (userKey) navigation.navigate('UserProfile', { userKey });
   };
 
   const handlePostPress = (postId) => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,6 @@ import {
   Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Video, ResizeMode } from 'expo-av';
 import {
   ArrowLeft,
   Heart,
@@ -24,12 +23,170 @@ import {
   Verified,
   Send,
   Share2,
-  MoreHorizontal,
+  Play,
 } from 'lucide-react-native';
 import { postAPI } from '../api/client';
+import { useAuth } from '../context/AuthContext';
+import MediaViewer from '../components/MediaViewer';
+import * as haptics from '../utils/haptics';
+import { sharePost } from '../utils/share';
 import theme from '../theme';
 
+const CommentItem = ({ comment, depth = 0, onReply, replyingTo, setReplyingTo }) => {
+  const [showReplies, setShowReplies] = useState(false);
+  const [replyText, setReplyText] = useState('');
+  const [replySubmitting, setReplySubmitting] = useState(false);
+  const replies = comment.replies || [];
+  const isReplying = replyingTo && replyingTo.id === comment.id;
+  const hasReplies = replies.length > 0;
+  const isRoot = depth === 0;
+
+  const handleStartReply = () => {
+    haptics.light();
+    setReplyingTo({ id: comment.id, author: comment.author });
+  };
+
+  const handleReply = async () => {
+    if (!replyText.trim()) return;
+    setReplySubmitting(true);
+    try {
+      await onReply(comment.id, replyText.trim());
+      setReplyText('');
+      setReplyingTo(null);
+      if (hasReplies) setShowReplies(true);
+    } catch (err) {
+      Alert.alert('Error', 'Failed to add reply.');
+    } finally {
+      setReplySubmitting(false);
+    }
+  };
+
+  const avatarSize = isRoot ? 32 : Math.max(20, 28 - depth * 3);
+  const avatarRadius = avatarSize / 2;
+
+  return (
+    <View style={styles.commentWrapper}>
+      {isRoot && <View style={styles.commentItemRoot}>
+        <View style={[styles.commentAvatar, { width: avatarSize, height: avatarSize, borderRadius: avatarRadius }]}>
+          {comment.authorAvatar ? (
+            <Image source={{ uri: comment.authorAvatar }} style={{ width: avatarSize, height: avatarSize, borderRadius: avatarRadius }} />
+          ) : (
+            <View style={[styles.commentAvatarPlaceholder, { width: avatarSize, height: avatarSize, borderRadius: avatarRadius }]}>
+              <User size={avatarSize * 0.5} color={theme.colors.textMuted} />
+            </View>
+          )}
+        </View>
+        <View style={styles.commentContent}>
+          <View style={styles.commentHeader}>
+            <View style={styles.nameRow}>
+              <Text style={styles.commentAuthor}>{comment.author || comment.authorKey || 'User'}</Text>
+              {comment.authorVerified && <Verified size={12} color={theme.colors.verified} fill={theme.colors.verified} />}
+              {comment.authorRole === 'owner' && (
+                <Text style={styles.ownerBadge}>OP</Text>
+              )}
+            </View>
+            <Text style={styles.commentTime}>{formatDate(comment.createdAt)}</Text>
+          </View>
+          <Text style={styles.commentText}>{comment.text}</Text>
+          <View style={styles.commentActions}>
+            <Text style={styles.likeCountText}>{comment.likeCount || 0}</Text>
+            <TouchableOpacity style={styles.commentActionBtn} onPress={handleStartReply} activeOpacity={0.6}>
+              <Text style={styles.replyBtnText}>Reply</Text>
+            </TouchableOpacity>
+          </View>
+
+          {hasReplies && (
+            <TouchableOpacity
+              style={styles.viewRepliesBtn}
+              onPress={() => { setShowReplies(!showReplies); haptics.light(); }}
+              activeOpacity={0.6}
+            >
+              <Text style={styles.viewRepliesText}>
+                {showReplies ? 'Hide' : `View`} {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {showReplies && replies.map((reply) => (
+            <View key={reply.id || reply.text} style={styles.replyContainer}>
+              <View style={styles.replyAvatarWrap}>
+                {reply.authorAvatar ? (
+                  <Image source={{ uri: reply.authorAvatar }} style={styles.replyAvatar} />
+                ) : (
+                  <View style={styles.replyAvatarPlaceholder}>
+                    <User size={10} color={theme.colors.textMuted} />
+                  </View>
+                )}
+              </View>
+              <View style={styles.replyContent}>
+                <View style={styles.replyHeader}>
+                  <Text style={styles.replyAuthor}>{reply.author || 'User'}</Text>
+                  <Text style={styles.replyTime}>{formatDate(reply.createdAt)}</Text>
+                </View>
+                <Text style={styles.replyText}>{reply.text}</Text>
+                <View style={styles.replyActions}>
+                  <Text style={styles.replyLikeText}>{reply.likeCount || 0}</Text>
+                  <TouchableOpacity onPress={() => setReplyingTo({ id: comment.id, author: reply.author })} activeOpacity={0.6}>
+                    <Text style={styles.replyReplyBtn}>Reply</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          ))}
+
+          {isReplying && (
+            <View style={styles.replyInputRow}>
+              <TextInput
+                style={styles.replyInput}
+                placeholder={`Reply to @${comment.author}...`}
+                placeholderTextColor={theme.colors.textMuted}
+                value={replyText}
+                onChangeText={setReplyText}
+                multiline
+                autoFocus
+                maxLength={500}
+              />
+              <TouchableOpacity
+                style={[styles.replySendBtn, (!replyText.trim() || replySubmitting) && styles.replySendBtnDisabled]}
+                onPress={handleReply}
+                disabled={!replyText.trim() || replySubmitting}
+                activeOpacity={0.7}
+              >
+                {replySubmitting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Send size={14} color="#fff" />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.cancelReplyBtn} onPress={() => setReplyingTo(null)} activeOpacity={0.7}>
+                <Text style={styles.cancelReplyText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </View>}
+    </View>
+  );
+};
+
+function formatDate(dateString) {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHr = Math.floor(diffMs / 3600000);
+  const diffDay = Math.floor(diffMs / 86400000);
+
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m`;
+  if (diffHr < 24) return `${diffHr}h`;
+  if (diffDay < 7) return `${diffDay}d`;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 const PostDetail = ({ navigation, route }) => {
+  const { user: currentUser } = useAuth();
   const postId = route.params?.postId;
   const passedPost = route.params?.post;
   const insets = useSafeAreaInsets();
@@ -38,8 +195,11 @@ const PostDetail = ({ navigation, route }) => {
   const [loading, setLoading] = useState(!passedPost);
   const [error, setError] = useState(null);
   const [comments, setComments] = useState([]);
+  const [commentCount, setCommentCount] = useState(0);
   const [commentText, setCommentText] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [viewerMedia, setViewerMedia] = useState(null);
+  const [replyingTo, setReplyingTo] = useState(null);
 
   useEffect(() => {
     if (!postId && !passedPost) {
@@ -79,6 +239,7 @@ const PostDetail = ({ navigation, route }) => {
       const response = await postAPI.getComments(targetId);
       if (response.data.ok) {
         setComments(response.data.comments || []);
+        setCommentCount(response.data.commentCount || 0);
       }
     } catch (err) {
       console.error('Comments fetch error:', err);
@@ -102,41 +263,44 @@ const PostDetail = ({ navigation, route }) => {
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  const handleReply = useCallback(async (parentId, text) => {
+    if (!postId) return;
+    try {
+      const response = await postAPI.addReply(postId, parentId, text);
+      if (response.data.ok) {
+        fetchComments(postId);
+      }
+    } catch (err) {
+      console.error('Reply error:', err);
+      throw err;
+    }
+  }, [postId]);
 
   const renderMedia = () => {
     if (!post?.media || post.media.length === 0) return null;
     return post.media.map((media, index) => {
-      if (media.kind === 'video' && media.url) {
-        return (
-          <View key={index} style={styles.mediaContainer}>
-            <Video
-              source={{ uri: media.url }}
-              style={styles.media}
-              useNativeControls
-              resizeMode={ResizeMode.COVER}
-            />
-          </View>
-        );
-      }
-      if (media.url) {
-        return (
-          <View key={index} style={styles.mediaContainer}>
-            <Image source={{ uri: media.url }} style={styles.media} resizeMode="cover" />
-          </View>
-        );
-      }
-      return null;
+      const displayUrl = media.fullUrl || media.url;
+      const thumbUrl = media.thumbnailUrl || displayUrl;
+      if (!displayUrl) return null;
+      return (
+        <TouchableOpacity
+          key={index}
+          style={styles.mediaContainer}
+          onPress={() => { setViewerMedia(media); haptics.light(); }}
+          activeOpacity={0.8}
+        >
+          <Image
+            source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }}
+            style={styles.media}
+            resizeMode="cover"
+          />
+          {media.kind === 'video' && (
+            <View style={styles.mediaPlayOverlay}>
+              <Play size={32} color="#fff" fill="#fff" />
+            </View>
+          )}
+        </TouchableOpacity>
+      );
     });
   };
 
@@ -188,7 +352,12 @@ const PostDetail = ({ navigation, route }) => {
             style={styles.avatarContainer}
             onPress={() => {
               if (post.authorKey) {
-                navigation.navigate('Profile', { userKey: post.authorKey });
+                const myKey = currentUser && (currentUser.key || currentUser.userKey || '');
+                if (myKey && String(post.authorKey) === String(myKey)) {
+                  navigation.navigate('Profile');
+                } else {
+                  navigation.navigate('UserProfile', { userKey: post.authorKey });
+                }
               }
             }}
           >
@@ -233,7 +402,7 @@ const PostDetail = ({ navigation, route }) => {
             onPress={() => navigation.navigate('PostDetail', { postId: post.id })}
           >
             <MessageCircle size={20} color={theme.colors.textSecondary} />
-            <Text style={styles.actionText}>{post.commentCount || comments.length || 0}</Text>
+            <Text style={styles.actionText}>{post.commentCount || commentCount || 0}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.action}>
             <Repeat size={20} color={theme.colors.textSecondary} />
@@ -242,39 +411,43 @@ const PostDetail = ({ navigation, route }) => {
           <TouchableOpacity style={[styles.action, { marginLeft: 'auto' }]}>
             <Bookmark size={20} color={theme.colors.textSecondary} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.action}>
+          <TouchableOpacity style={styles.action} onPress={() => { haptics.light(); sharePost({ postId: post.id, username: post.authorKey || post.author, text: post.text }); }}>
             <Share2 size={18} color={theme.colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
         <View style={styles.commentsSection}>
           <Text style={styles.commentsTitle}>
-            Comments ({comments.length})
+            Comments ({commentCount})
           </Text>
           {comments.length === 0 ? (
             <Text style={styles.noComments}>No comments yet.</Text>
           ) : (
             comments.map((comment) => (
-              <View key={comment.id || comment.text} style={styles.commentItem}>
-                <View style={styles.commentAvatar}>
-                  <User size={16} color={theme.colors.textMuted} />
-                </View>
-                <View style={styles.commentContent}>
-                  <Text style={styles.commentAuthor}>
-                    {comment.author || comment.authorKey || 'User'}
-                  </Text>
-                  <Text style={styles.commentText}>{comment.text}</Text>
-                </View>
-              </View>
+              <CommentItem
+                key={comment.id || comment.text}
+                comment={comment}
+                onReply={handleReply}
+                replyingTo={replyingTo}
+                setReplyingTo={setReplyingTo}
+              />
             ))
           )}
         </View>
       </ScrollView>
 
       <View style={styles.commentInputRow}>
+        {replyingTo && (
+          <View style={styles.replyingIndicator}>
+            <Text style={styles.replyingText}>Replying to @{replyingTo.author}</Text>
+            <TouchableOpacity onPress={() => setReplyingTo(null)} activeOpacity={0.7}>
+              <Text style={styles.replyingCancel}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <TextInput
           style={styles.commentInput}
-          placeholder="Write a comment..."
+          placeholder={replyingTo ? `Reply to @${replyingTo.author}...` : 'Write a comment...'}
           placeholderTextColor={theme.colors.textMuted}
           value={commentText}
           onChangeText={setCommentText}
@@ -292,6 +465,11 @@ const PostDetail = ({ navigation, route }) => {
           )}
         </TouchableOpacity>
       </View>
+      <MediaViewer
+        visible={!!viewerMedia}
+        media={viewerMedia}
+        onClose={() => setViewerMedia(null)}
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -386,6 +564,16 @@ const styles = StyleSheet.create({
     height: 250,
     borderRadius: theme.radius.md,
   },
+  mediaPlayOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
   quotedPost: {
     marginHorizontal: 16,
     marginBottom: 12,
@@ -438,61 +626,260 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.colors.textMuted,
     textAlign: 'center',
-    paddingVertical: 20,
+    paddingVertical: 32,
   },
-  commentItem: {
+  commentWrapper: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderLight,
+  },
+  commentItemRoot: {
     flexDirection: 'row',
-    marginBottom: 12,
+    alignItems: 'flex-start',
   },
   commentAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: theme.colors.bgInput,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
+    marginRight: 10,
+    flexShrink: 0,
   },
   commentContent: {
     flex: 1,
+    paddingRight: 8,
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
   },
   commentAuthor: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     color: theme.colors.textPrimary,
-    marginBottom: 2,
+    marginRight: 6,
+  },
+  ownerBadge: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+    backgroundColor: theme.colors.accent,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 6,
+  },
+  commentTime: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    marginLeft: 'auto',
   },
   commentText: {
     fontSize: 14,
+    lineHeight: 20,
     color: theme.colors.textSecondary,
-    lineHeight: 18,
+    marginBottom: 6,
   },
-  commentInputRow: {
+  commentActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  commentActionBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: theme.radius.sm,
+    marginRight: 2,
+  },
+  likeCountText: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    marginRight: 14,
+  },
+  commentActionText: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+  },
+  replyBtnText: {
+    fontSize: 12,
+    color: theme.colors.accent,
+    fontWeight: '600',
+  },
+  viewRepliesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  viewRepliesText: {
+    fontSize: 13,
+    color: theme.colors.accent,
+    fontWeight: '600',
+  },
+  replyContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderLight,
+    paddingLeft: 8,
+  },
+  replyAvatarWrap: {
+    marginRight: 8,
+    flexShrink: 0,
+    marginTop: 1,
+  },
+  replyAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
+  replyAvatarPlaceholder: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: theme.colors.bgInput,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  replyContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  replyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 3,
+  },
+  replyAuthor: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.colors.textPrimary,
+    marginRight: 6,
+  },
+  replyTime: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    marginLeft: 6,
+  },
+  replyText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: theme.colors.textSecondary,
+    marginBottom: 4,
+  },
+  replyActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  replyLikeText: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    marginRight: 12,
+  },
+  replyReplyBtn: {
+    fontSize: 11,
+    color: theme.colors.accent,
+    fontWeight: '600',
+  },
+  replyInputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  replyInput: {
+    flex: 1,
+    backgroundColor: theme.colors.bgInput,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: theme.colors.textPrimary,
+    maxHeight: 80,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.borderLight,
+  },
+  replySendBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  replySendBtnDisabled: {
+    opacity: 0.4,
+  },
+  cancelReplyBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginLeft: 4,
+    flexShrink: 0,
+  },
+  cancelReplyText: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    fontWeight: '500',
+  },
+  commentInputRow: {
+    flexDirection: 'column',
     padding: 12,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
-    backgroundColor: theme.colors.bgCard,
+    backgroundColor: theme.colors.bgSecondary,
+  },
+  replyingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(124, 58, 237, 0.12)',
+    borderRadius: theme.radius.sm,
+  },
+  replyingText: {
+    fontSize: 12,
+    color: theme.colors.accent,
+    fontWeight: '600',
+  },
+  replyingCancel: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    fontWeight: '500',
   },
   commentInput: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: theme.colors.bgInput,
     borderRadius: theme.radius.full,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingVertical: 10,
     fontSize: 14,
     color: theme.colors.textPrimary,
     maxHeight: 100,
-    marginRight: 8,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.borderLight,
   },
   sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: theme.colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   sendButtonDisabled: {
     opacity: 0.5,

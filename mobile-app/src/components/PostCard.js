@@ -7,10 +7,8 @@ import {
   StyleSheet,
   Dimensions,
   Modal,
-  Share,
-  Clipboard,
+  Clipboard as RNClipboard,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
 import {
   Heart,
   MessageCircle,
@@ -24,10 +22,12 @@ import {
   Flag,
   Trash2,
   X,
-  AlertCircle,
+  Play,
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
+import MediaViewer from './MediaViewer';
 import * as haptics from '../utils/haptics';
+import { sharePost, copyLink } from '../utils/share';
 import theme from '../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -51,6 +51,7 @@ const PostCard = memo(({
   const [actionLoading, setActionLoading] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   const [actionFeedback, setActionFeedback] = useState(null);
+  const [viewerMedia, setViewerMedia] = useState(null);
 
   const isOwner = currentUser && (post.authorKey === currentUser.key || post.authorId === currentUser.id);
 
@@ -108,28 +109,21 @@ const PostCard = memo(({
   const handleShare = async () => {
     setMenuOpen(false);
     haptics.light();
-    try {
-      await Share.share({
-        message: post.text
-          ? `${post.author}: ${post.text}`
-          : `Post by @${post.authorKey || post.author}`,
-        title: 'Share Post',
-      });
-    } catch (err) {
-      if (err.message !== 'User did not share') {
-        console.error('Share error:', err);
-      }
-    }
+    await sharePost({
+      postId: post.id,
+      username: post.authorKey || post.author,
+      text: post.text,
+    });
   };
 
   const handleCopyText = async () => {
     setMenuOpen(false);
     haptics.light();
     try {
-      if (Clipboard.setString) {
-        Clipboard.setString(post.text || '');
+      if (RNClipboard.setString) {
+        RNClipboard.setString(post.text || '');
       } else {
-        await Clipboard.setStringAsync(post.text || '');
+        await RNClipboard.setStringAsync(post.text || '');
       }
       setActionFeedback({ icon: 'Copy', text: 'Copied to clipboard' });
       setTimeout(() => setActionFeedback(null), 1500);
@@ -172,57 +166,46 @@ const PostCard = memo(({
 
     if (mediaItems.length === 1) {
       const media = mediaItems[0];
-      if (media.kind === 'video' && media.url) {
-        return (
-          <View style={styles.mediaContainer}>
-            <Video
-              source={{ uri: media.url }}
-              style={styles.fullMedia}
-              useNativeControls
-              resizeMode={ResizeMode.COVER}
-              isLooping
-            />
-          </View>
-        );
-      } else if (media.url) {
-        return (
-          <View style={styles.mediaContainer}>
-            <Image
-              source={{ uri: media.url }}
-              style={styles.fullMedia}
-              resizeMode="cover"
-            />
-          </View>
-        );
-      }
+      const displayUrl = media.fullUrl || media.url;
+      const thumbUrl = media.thumbnailUrl || displayUrl;
+      if (!displayUrl) return null;
+      return (
+        <TouchableOpacity
+          style={styles.mediaContainer}
+          onPress={() => { setViewerMedia(media); haptics.light(); }}
+          activeOpacity={0.8}
+        >
+          <Image source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }} style={styles.fullMedia} resizeMode="cover" />
+          {media.kind === 'video' && (
+            <View style={styles.playOverlay}>
+              <Play size={32} color="#fff" fill="#fff" />
+            </View>
+          )}
+        </TouchableOpacity>
+      );
     }
 
     return (
       <View style={styles.mediaGrid}>
         {mediaItems.map((media, index) => {
-          if (media.kind === 'video' && media.url) {
-            return (
-              <View key={index} style={[styles.gridItem, mediaItems.length === 1 && styles.gridItemFull]}>
-                <Video
-                  source={{ uri: media.url }}
-                  style={styles.gridVideo}
-                  useNativeControls
-                  resizeMode={ResizeMode.COVER}
-                />
-              </View>
-            );
-          } else if (media.url) {
-            return (
-              <View key={index} style={[styles.gridItem, mediaItems.length === 1 && styles.gridItemFull]}>
-                <Image
-                  source={{ uri: media.url }}
-                  style={styles.gridImage}
-                  resizeMode="cover"
-                />
-              </View>
-            );
-          }
-          return null;
+          const displayUrl = media.fullUrl || media.url;
+          const thumbUrl = media.thumbnailUrl || displayUrl;
+          if (!displayUrl) return null;
+          return (
+            <TouchableOpacity
+              key={index}
+              style={[styles.gridItem, mediaItems.length === 1 && styles.gridItemFull]}
+              onPress={() => { setViewerMedia(media); haptics.light(); }}
+              activeOpacity={0.8}
+            >
+              <Image source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }} style={styles.gridImage} resizeMode="cover" />
+              {media.kind === 'video' && (
+                <View style={styles.gridPlayOverlay}>
+                  <Play size={20} color="#fff" fill="#fff" />
+                </View>
+              )}
+            </TouchableOpacity>
+          );
         })}
       </View>
     );
@@ -359,6 +342,12 @@ const PostCard = memo(({
           <Text style={styles.feedbackText}>{actionFeedback.text}</Text>
         </View>
       )}
+
+      <MediaViewer
+        visible={!!viewerMedia}
+        media={viewerMedia}
+        onClose={() => setViewerMedia(null)}
+      />
     </View>
   );
 });
@@ -432,6 +421,26 @@ const styles = StyleSheet.create({
     height: 250,
     borderRadius: theme.radius.sm,
   },
+  playOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  gridPlayOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
   mediaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -450,10 +459,6 @@ const styles = StyleSheet.create({
     aspectRatio: 16 / 9,
   },
   gridImage: {
-    width: '100%',
-    height: '100%',
-  },
-  gridVideo: {
     width: '100%',
     height: '100%',
   },
