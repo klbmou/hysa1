@@ -5512,6 +5512,7 @@ function start() {
   httpServer.listen(PORT, HOST, () => {
     console.log(`HYSA1 server listening on port ${PORT}`);
     console.log(`[server] listening on http://${HOST}:${PORT}`);
+    console.log(`[server] listening on ${HOST}:${PORT}`);
     console.log("[peerjs] signaling mounted at /peerjs");
     console.log("========================================");
     console.log("Server is ready!");
