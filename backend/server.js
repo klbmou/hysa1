@@ -29,7 +29,9 @@ try {
 }
 
 // Render/Production Config
-const PORT = Number(process.env.PORT || 10000);
+const PORT = process.env.PORT || 10000;
+
+start();
 const HOST = "0.0.0.0";
 const NODE_ENV = process.env.NODE_ENV || "development";
 
@@ -2521,7 +2523,7 @@ async function addNotification({ userKey, type, actorKey, postId = "", commentId
 
 const app = express();
 app.disable("x-powered-by");
-const httpServer = http.createServer(app);
+const server = http.createServer(app);
 
 function wrapAsyncRoute(handler) {
   if (typeof handler !== "function" || handler.length >= 4) return handler;
@@ -2623,7 +2625,7 @@ app.post(
 
 // PeerJS server with error handling
 try {
-  const peerServer = ExpressPeerServer(httpServer, { path: "/peerjs", proxied: true });
+  const peerServer = ExpressPeerServer(server, { path: "/peerjs", proxied: true });
   app.use("/peerjs", peerServer);
   console.log("[PeerJS] Server initialized successfully");
 } catch (err) {
@@ -5509,7 +5511,7 @@ function start() {
     console.error("[startup] path check failed:", err);
   }
 
-  httpServer.listen(PORT, HOST, () => {
+  server.listen(PORT, HOST, () => {
     console.log(`HYSA1 server listening on port ${PORT}`);
     console.log(`[server] listening on http://${HOST}:${PORT}`);
     console.log(`[server] listening on ${HOST}:${PORT}`);
@@ -5521,7 +5523,7 @@ function start() {
       console.error("[startup] background initialization failed:", err && err.message ? err.message : err);
     });
   });
-  httpServer.on("error", (err) => {
+  server.on("error", (err) => {
     console.error("[server] failed to start:", err);
     process.exit(1);
   });
