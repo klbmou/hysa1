@@ -31,7 +31,6 @@ try {
 // Render/Production Config
 const PORT = process.env.PORT || 10000;
 
-start();
 const HOST = "0.0.0.0";
 const NODE_ENV = process.env.NODE_ENV || "development";
 
@@ -5533,3 +5532,5 @@ process.on("unhandledRejection", (err) => console.error("[server] unhandledRejec
 process.on("uncaughtException", (err) => {
   console.error("[server] uncaughtException:", err);
 });
+
+start();
