@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HYSA — Privacy Policy</title>
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg-primary: #070711;
+      --bg-surface: rgba(255, 255, 255, 0.04);
+      --bg-surface-hover: rgba(255, 255, 255, 0.06);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(255, 255, 255, 0.12);
+      --accent: #FF3B8A;
+      --accent-dim: rgba(255, 59, 138, 0.15);
+      --text-primary: #FFFFFF;
+      --text-secondary: #B7B7C8;
+      --text-muted: #8A8A9A;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --max-width: 780px;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg-primary);
+      color: var(--text-secondary);
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* ── Background Glow Orbs ── */
+    body::before,
+    body::after {
+      content: '';
+      position: fixed;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 0;
+      filter: blur(120px);
+    }
+
+    body::before {
+      top: -200px;
+      right: -200px;
+      width: 600px;
+      height: 600px;
+      background: rgba(255, 59, 138, 0.06);
+    }
+
+    body::after {
+      bottom: -200px;
+      left: -200px;
+      width: 500px;
+      height: 500px;
+      background: rgba(124, 58, 237, 0.05);
+    }
+
+    /* ── Header / Navigation ── */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      background: rgba(7, 7, 17, 0.82);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header-inner {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo {
+      font-size: 22px;
+      font-weight: 900;
+      color: var(--text-primary);
+      letter-spacing: -0.5px;
+      text-decoration: none;
+    }
+
+    .logo span {
+      color: var(--accent);
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      background: var(--accent-dim);
+      border: 1px solid rgba(255, 59, 138, 0.2);
+      padding: 4px 12px;
+      border-radius: 20px;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+
+    /* ── Hero ── */
+    .hero {
+      position: relative;
+      z-index: 1;
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 64px 24px 48px;
+      text-align: center;
+    }
+
+    .hero-icon {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 24px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .hero-icon svg {
+      width: 26px;
+      height: 26px;
+      stroke: var(--accent);
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .hero h1 {
+      font-size: clamp(28px, 5vw, 40px);
+      font-weight: 900;
+      color: var(--text-primary);
+      letter-spacing: -0.5px;
+      margin-bottom: 12px;
+    }
+
+    .hero p {
+      font-size: 16px;
+      color: var(--text-muted);
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    .updated {
+      display: inline-block;
+      margin-top: 20px;
+      font-size: 13px;
+      color: var(--text-muted);
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      padding: 6px 16px;
+      border-radius: 20px;
+    }
+
+    /* ── Table of Contents ── */
+    .toc {
+      position: relative;
+      z-index: 1;
+      max-width: var(--max-width);
+      margin: 0 auto 48px;
+      padding: 0 24px;
+    }
+
+    .toc-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 28px 32px;
+    }
+
+    .toc-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 16px;
+    }
+
+    .toc-list {
+      list-style: none;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .toc-list a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 14px;
+      padding: 8px 12px;
+      border-radius: 10px;
+      transition: all 0.2s ease;
+      display: block;
+    }
+
+    .toc-list a:hover {
+      background: var(--bg-surface-hover);
+      color: var(--text-primary);
+    }
+
+    .toc-list a .num {
+      color: var(--accent);
+      font-weight: 700;
+      margin-right: 8px;
+    }
+
+    /* ── Content Sections ── */
+    .content {
+      position: relative;
+      z-index: 1;
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    .section {
+      margin-bottom: 48px;
+      scroll-margin-top: 100px;
+    }
+
+    .section:last-child {
+      margin-bottom: 0;
+    }
+
+    .section-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(255, 59, 138, 0.2);
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--accent);
+      margin-bottom: 16px;
+    }
+
+    .section h2 {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--text-primary);
+      margin-bottom: 16px;
+      letter-spacing: -0.3px;
+    }
+
+    .section h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 24px 0 10px;
+    }
+
+    .section p {
+      margin-bottom: 14px;
+      font-size: 15px;
+      color: var(--text-secondary);
+    }
+
+    .section ul {
+      list-style: none;
+      margin: 12px 0 16px;
+      padding: 0;
+    }
+
+    .section ul li {
+      position: relative;
+      padding: 8px 0 8px 24px;
+      font-size: 15px;
+      color: var(--text-secondary);
+    }
+
+    .section ul li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 16px;
+      width: 8px;
+      height: 8px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(255, 59, 138, 0.25);
+      border-radius: 3px;
+    }
+
+    .highlight-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 12px;
+      padding: 18px 22px;
+      margin: 18px 0;
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.65;
+    }
+
+    .highlight-box strong {
+      color: var(--text-primary);
+    }
+
+    /* ── Contact Card ── */
+    .contact-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px;
+      margin-top: 18px;
+    }
+
+    .contact-card p {
+      margin-bottom: 10px;
+    }
+
+    .contact-card a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+      transition: opacity 0.2s ease;
+    }
+
+    .contact-card a:hover {
+      opacity: 0.8;
+      text-decoration: underline;
+    }
+
+    .contact-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+    }
+
+    .contact-item svg {
+      width: 18px;
+      height: 18px;
+      stroke: var(--accent);
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex-shrink: 0;
+    }
+
+    .contact-item span {
+      font-size: 15px;
+    }
+
+    /* ── Divider ── */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 48px 0;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      position: relative;
+      z-index: 1;
+      border-top: 1px solid var(--border);
+      background: rgba(7, 7, 17, 0.6);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .footer-inner {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 32px 24px;
+      text-align: center;
+    }
+
+    .footer-logo {
+      font-size: 18px;
+      font-weight: 900;
+      color: var(--text-primary);
+      letter-spacing: -0.3px;
+      margin-bottom: 8px;
+    }
+
+    .footer-logo span {
+      color: var(--accent);
+    }
+
+    .footer p {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .footer-links {
+      margin-top: 16px;
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+    }
+
+    .footer-links a {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+
+    .footer-links a:hover {
+      color: var(--text-primary);
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      .toc-list {
+        grid-template-columns: 1fr;
+      }
+
+      .toc-card {
+        padding: 22px 20px;
+      }
+
+      .hero {
+        padding: 48px 20px 36px;
+      }
+
+      .header-inner {
+        padding: 14px 20px;
+      }
+
+      .contact-card {
+        padding: 24px 20px;
+      }
+
+      .section h2 {
+        font-size: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-inner">
+      <a href="#" class="logo">HYSA<span>1</span></a>
+      <span class="badge">Beta</span>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    </div>
+    <h1>Privacy Policy</h1>
+    <p>How HYSA collects, uses, and protects your information when you use our social platform.</p>
+    <span class="updated">Effective May 6, 2026</span>
+  </section>
+
+  <!-- Table of Contents -->
+  <nav class="toc">
+    <div class="toc-card">
+      <div class="toc-title">Table of Contents</div>
+      <ol class="toc-list">
+        <li><a href="#introduction"><span class="num">1</span>Introduction</a></li>
+        <li><a href="#information"><span class="num">2</span>Information We Collect</a></li>
+        <li><a href="#usage"><span class="num">3</span>How We Use Information</a></li>
+        <li><a href="#media"><span class="num">4</span>Media Uploads</a></li>
+        <li><a href="#messages"><span class="num">5</span>Messages & Social Features</a></li>
+        <li><a href="#cookies"><span class="num">6</span>Cookies & Analytics</a></li>
+        <li><a href="#security"><span class="num">7</span>Account Security</a></li>
+        <li><a href="#thirdparty"><span class="num">8</span>Third-Party Services</a></li>
+        <li><a href="#rights"><span class="num">9</span>User Rights</a></li>
+        <li><a href="#contact"><span class="num">10</span>Contact Information</a></li>
+      </ol>
+    </div>
+  </nav>
+
+  <!-- Content -->
+  <main class="content">
+
+    <!-- 1. Introduction -->
+    <section class="section" id="introduction">
+      <div class="section-number">1</div>
+      <h2>Introduction</h2>
+      <p>Welcome to HYSA, a social platform built for authentic connection and creative expression. This Privacy Policy explains how we collect, use, store, and protect your personal information when you use the HYSA mobile application, web platform, and related services (collectively, the "Service").</p>
+      <p>By accessing or using HYSA, you agree to the terms described in this policy. If you do not agree, please do not use our Service.</p>
+      <div class="highlight-box">
+        <strong>Beta Notice:</strong> HYSA is currently in closed beta testing. Features and data practices may evolve as we refine the platform. We will notify you of any material changes to this policy.
+      </div>
+    </section>
+
+    <!-- 2. Information We Collect -->
+    <section class="section" id="information">
+      <div class="section-number">2</div>
+      <h2>Information We Collect</h2>
+      <p>We collect information that you provide directly, as well as data generated through your use of the Service.</p>
+
+      <h3>Information You Provide</h3>
+      <ul>
+        <li>Account credentials (username and password)</li>
+        <li>Profile information such as display name, bio, profile picture, and avatar</li>
+        <li>Posts, comments, stories, reels, and other content you create</li>
+        <li>Direct messages sent to other users</li>
+        <li>Media files you upload including photos and videos</li>
+      </ul>
+
+      <h3>Information Collected Automatically</h3>
+      <ul>
+        <li>Device information (device type, operating system, unique device identifiers)</li>
+        <li>Usage data (features accessed, time spent, interactions with content)</li>
+        <li>Log data (IP address, timestamps, crash reports, diagnostic information)</li>
+        <li>Network information for optimizing content delivery</li>
+      </ul>
+
+      <div class="highlight-box">
+        <strong>Important:</strong> We do not sell your personal information. Data collected is used solely to operate, improve, and secure the Service.
+      </div>
+    </section>
+
+    <!-- 3. How We Use Information -->
+    <section class="section" id="usage">
+      <div class="section-number">3</div>
+      <h2>How We Use Information</h2>
+      <p>We use the information we collect for the following purposes:</p>
+      <ul>
+        <li><strong>Providing the Service:</strong> Creating your account, delivering your feed, enabling messaging, and rendering media content.</li>
+        <li><strong>Personalization:</strong> Curating your feed based on interactions, following relationships, and content preferences.</li>
+        <li><strong>Communication:</strong> Sending notifications about likes, comments, follows, messages, and platform updates.</li>
+        <li><strong>Safety & Moderation:</strong> Detecting spam, abuse, policy violations, and protecting the integrity of the platform.</li>
+        <li><strong>Analytics & Improvement:</strong> Understanding how the Service is used to improve performance, fix bugs, and develop new features.</li>
+        <li><strong>Legal Compliance:</strong> Responding to lawful requests and complying with applicable regulations.</li>
+      </ul>
+    </section>
+
+    <!-- 4. Media Uploads -->
+    <section class="section" id="media">
+      <div class="section-number">4</div>
+      <h2>Media Uploads</h2>
+      <p>HYSA allows you to upload photos and videos to your profile, feed posts, stories, and reels.</p>
+      <ul>
+        <li>Uploaded media is stored on secure cloud infrastructure and processed to generate thumbnails, apply filters, and optimize playback quality.</li>
+        <li>Content may be temporarily cached across our content delivery network (CDN) to ensure fast loading for viewers.</li>
+        <li>You retain ownership of the content you upload. However, by posting content on HYSA, you grant us a non-exclusive, worldwide license to host, display, and distribute that content within the Service.</li>
+        <li>Users are fully responsible for the content they upload. You confirm that you hold the necessary rights to any media you share.</li>
+      </ul>
+
+      <div class="highlight-box">
+        <strong>Moderation:</strong> Uploaded content may be reviewed by automated systems or human moderators to enforce community guidelines. Content that violates our policies may be removed, and repeat offenders may have their accounts restricted.
+      </div>
+    </section>
+
+    <!-- 5. Messages & Social Features -->
+    <section class="section" id="messages">
+      <div class="section-number">5</div>
+      <h2>Messages & Social Features</h2>
+      <p>HYSA includes direct messaging, comments, reposts, likes, and stories to facilitate social interaction.</p>
+      <ul>
+        <li><strong>Direct Messages:</strong> Private conversations between users are stored securely and are only visible to the participants. Messages are encrypted in transit.</li>
+        <li><strong>Comments & Replies:</strong> Comments are public by default and visible to anyone who can view the associated post.</li>
+        <li><strong>Stories:</strong> Stories are time-limited content visible to your followers or audience settings for 24 hours after posting.</li>
+        <li><strong>Reels:</strong> Short-form video content is publicly discoverable by default and may appear in feeds beyond your immediate followers.</li>
+      </ul>
+      <p>Please be mindful that anything you share publicly on HYSA can be viewed, screenshotted, or saved by others. We recommend exercising discretion when posting personal or sensitive content.</p>
+    </section>
+
+    <!-- 6. Cookies & Analytics -->
+    <section class="section" id="cookies">
+      <div class="section-number">6</div>
+      <h2>Cookies & Analytics</h2>
+      <p>HYSA uses authentication tokens stored securely on your device to maintain your session and keep you logged in. These tokens are essential for the Service to function.</p>
+      <p>We may also use analytics tools to understand aggregate usage patterns and improve the platform. Analytics data is collected in anonymized form and is not linked to individual identities.</p>
+      <p>We do not use third-party advertising cookies or tracking pixels for targeted advertising. Our focus is on building a privacy-respecting social platform.</p>
+    </section>
+
+    <!-- 7. Account Security -->
+    <section class="section" id="security">
+      <div class="section-number">7</div>
+      <h2>Account Security</h2>
+      <p>We take the security of your account seriously and employ multiple layers of protection:</p>
+      <ul>
+        <li>Authentication tokens are stored using device-level secure storage (Keychain on iOS, Keystore on Android)</li>
+        <li>All communication between the app and our servers is encrypted using HTTPS/TLS</li>
+        <li>CSRF protection is implemented on all state-changing requests</li>
+        <li>Passwords are hashed and salted on the server — we never store passwords in plain text</li>
+        <li>Sessions can be terminated through the logout function, which invalidates stored tokens</li>
+      </ul>
+      <div class="highlight-box">
+        <strong>Your Responsibility:</strong> You are responsible for keeping your login credentials secure. Do not share your password with anyone. If you suspect unauthorized access to your account, contact us immediately.
+      </div>
+    </section>
+
+    <!-- 8. Third-Party Services -->
+    <section class="section" id="thirdparty">
+      <div class="section-number">8</div>
+      <h2>Third-Party Services</h2>
+      <p>HYSA relies on the following third-party services to operate:</p>
+      <ul>
+        <li><strong>Cloud Infrastructure:</strong> Our backend is hosted on Render, a cloud application hosting platform. Server infrastructure is managed and secured by their team.</li>
+        <li><strong>Mobile Development:</strong> The app is built with Expo and React Native, and distributed via their build infrastructure.</li>
+        <li><strong>Push Notifications:</strong> Device notification services (Firebase Cloud Messaging on Android, APNs on iOS) may be used for delivering real-time alerts.</li>
+        <li><strong>Media Storage:</strong> Uploaded media is stored using cloud storage providers with industry-standard encryption at rest.</li>
+      </ul>
+      <p>These third-party providers have their own privacy policies and data handling practices. We select providers that meet our security and privacy standards, but we encourage you to review their policies independently.</p>
+    </section>
+
+    <!-- 9. User Rights -->
+    <section class="section" id="rights">
+      <div class="section-number">9</div>
+      <h2>User Rights</h2>
+      <p>Depending on your jurisdiction, you may have certain rights regarding your personal data:</p>
+      <ul>
+        <li><strong>Access:</strong> Request a copy of the personal data we hold about you.</li>
+        <li><strong>Correction:</strong> Request that inaccurate or incomplete data be corrected.</li>
+        <li><strong>Deletion:</strong> Request deletion of your account and associated data. Note that some data may be retained for legal or security purposes.</li>
+        <li><strong>Portability:</strong> Request your data in a structured, machine-readable format.</li>
+        <li><strong>Objection:</strong> Object to certain types of data processing where applicable.</li>
+      </ul>
+      <p>To exercise any of these rights, please contact us using the information below. We will respond within a reasonable timeframe.</p>
+    </section>
+
+    <!-- 10. Contact Information -->
+    <section class="section" id="contact">
+      <div class="section-number">10</div>
+      <h2>Contact Information</h2>
+      <p>If you have questions, concerns, or requests regarding this Privacy Policy or our data practices, please reach out to us:</p>
+
+      <div class="contact-card">
+        <div class="contact-item">
+          <svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          <span><a href="mailto:privacy@hysa.app">privacy@hysa.app</a></span>
+        </div>
+        <div class="contact-item">
+          <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          <span>HYSA Team — Remote</span>
+        </div>
+        <div class="contact-item">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>We aim to respond to all inquiries within 7 business days.</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <p style="text-align: center; font-size: 14px; color: var(--text-muted); padding: 20px 0;">
+      This Privacy Policy is effective as of <strong style="color: var(--text-secondary);">May 6, 2026</strong>.<br>
+      We may update this policy from time to time. Continued use of HYSA after changes constitutes acceptance of the updated policy.
+    </p>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-logo">HYSA<span>1</span></div>
+      <p>HYSA &copy; 2026. All rights reserved.</p>
+      <div class="footer-links">
+        <a href="#">Terms of Service</a>
+        <a href="#">Privacy Policy</a>
+        <a href="#">Community Guidelines</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
