@@ -32,14 +32,13 @@ import * as haptics from '../utils/haptics';
 import { sharePost } from '../utils/share';
 import theme from '../theme';
 
-const CommentItem = ({ comment, depth = 0, onReply, replyingTo, setReplyingTo }) => {
+const CommentItem = ({ comment, onReply, replyingTo, setReplyingTo }) => {
   const [showReplies, setShowReplies] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [replySubmitting, setReplySubmitting] = useState(false);
   const replies = comment.replies || [];
   const isReplying = replyingTo && replyingTo.id === comment.id;
   const hasReplies = replies.length > 0;
-  const isRoot = depth === 0;
 
   const handleStartReply = () => {
     haptics.light();
@@ -53,7 +52,6 @@ const CommentItem = ({ comment, depth = 0, onReply, replyingTo, setReplyingTo })
       await onReply(comment.id, replyText.trim());
       setReplyText('');
       setReplyingTo(null);
-      if (hasReplies) setShowReplies(true);
     } catch (err) {
       Alert.alert('Error', 'Failed to add reply.');
     } finally {
@@ -61,110 +59,110 @@ const CommentItem = ({ comment, depth = 0, onReply, replyingTo, setReplyingTo })
     }
   };
 
-  const avatarSize = isRoot ? 32 : Math.max(20, 28 - depth * 3);
-  const avatarRadius = avatarSize / 2;
+  const handleStartReplyToReply = (reply) => {
+    haptics.light();
+    setReplyingTo({ id: comment.id, author: reply.author, replyToId: reply.id || reply._id });
+  };
 
   return (
-    <View style={styles.commentWrapper}>
-      {isRoot && <View style={styles.commentItemRoot}>
-        <View style={[styles.commentAvatar, { width: avatarSize, height: avatarSize, borderRadius: avatarRadius }]}>
-          {comment.authorAvatar ? (
-            <Image source={{ uri: comment.authorAvatar }} style={{ width: avatarSize, height: avatarSize, borderRadius: avatarRadius }} />
-          ) : (
-            <View style={[styles.commentAvatarPlaceholder, { width: avatarSize, height: avatarSize, borderRadius: avatarRadius }]}>
-              <User size={avatarSize * 0.5} color={theme.colors.textMuted} />
-            </View>
-          )}
+    <View style={styles.commentItemRoot}>
+      <View style={styles.commentAvatar}>
+        {comment.authorAvatar ? (
+          <Image source={{ uri: comment.authorAvatar }} style={styles.commentAvatarImage} />
+        ) : (
+          <View style={styles.commentAvatarPlaceholder}>
+            <User size={16} color="#8A8A9A" />
+          </View>
+        )}
+      </View>
+      <View style={styles.commentContent}>
+        <View style={styles.commentHeader}>
+          <View style={styles.nameRow}>
+            <Text style={styles.commentAuthor}>{comment.author || comment.authorKey || 'User'}</Text>
+            {comment.authorVerified && <Verified size={12} color="#7C3AED" fill="#7C3AED" />}
+            {comment.authorRole === 'owner' && (
+              <Text style={styles.ownerBadge}>OP</Text>
+            )}
+          </View>
+          <Text style={styles.commentTime}>{formatDate(comment.createdAt)}</Text>
         </View>
-        <View style={styles.commentContent}>
-          <View style={styles.commentHeader}>
-            <View style={styles.nameRow}>
-              <Text style={styles.commentAuthor}>{comment.author || comment.authorKey || 'User'}</Text>
-              {comment.authorVerified && <Verified size={12} color={theme.colors.verified} fill={theme.colors.verified} />}
-              {comment.authorRole === 'owner' && (
-                <Text style={styles.ownerBadge}>OP</Text>
+        <Text style={styles.commentText}>{comment.text}</Text>
+        <View style={styles.commentActions}>
+          <Text style={styles.likeCountText}>{comment.likeCount || 0}</Text>
+          <TouchableOpacity style={styles.commentActionBtn} onPress={handleStartReply} activeOpacity={0.6}>
+            <Text style={styles.replyBtnText}>Reply</Text>
+          </TouchableOpacity>
+        </View>
+
+        {hasReplies && (
+          <TouchableOpacity
+            style={styles.viewRepliesBtn}
+            onPress={() => { setShowReplies(!showReplies); haptics.light(); }}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.viewRepliesText}>
+              {showReplies ? 'Hide' : 'View'} {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {showReplies && replies.map((reply) => (
+          <View key={reply.id || reply._id || reply.text} style={styles.replyContainer}>
+            <View style={styles.replyAvatarWrap}>
+              {reply.authorAvatar ? (
+                <Image source={{ uri: reply.authorAvatar }} style={styles.replyAvatar} />
+              ) : (
+                <View style={styles.replyAvatarPlaceholder}>
+                  <User size={10} color="#8A8A9A" />
+                </View>
               )}
             </View>
-            <Text style={styles.commentTime}>{formatDate(comment.createdAt)}</Text>
+            <View style={styles.replyContent}>
+              <View style={styles.replyHeader}>
+                <Text style={styles.replyAuthor}>{reply.author || 'User'}</Text>
+                <Text style={styles.replyTime}>{formatDate(reply.createdAt)}</Text>
+              </View>
+              <Text style={styles.replyText}>{reply.text}</Text>
+              <View style={styles.replyActions}>
+                <Text style={styles.replyLikeText}>{reply.likeCount || 0}</Text>
+                <TouchableOpacity onPress={() => handleStartReplyToReply(reply)} activeOpacity={0.6}>
+                  <Text style={styles.replyReplyBtn}>Reply</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
-          <Text style={styles.commentText}>{comment.text}</Text>
-          <View style={styles.commentActions}>
-            <Text style={styles.likeCountText}>{comment.likeCount || 0}</Text>
-            <TouchableOpacity style={styles.commentActionBtn} onPress={handleStartReply} activeOpacity={0.6}>
-              <Text style={styles.replyBtnText}>Reply</Text>
-            </TouchableOpacity>
-          </View>
+        ))}
 
-          {hasReplies && (
+        {isReplying && (
+          <View style={styles.replyInputRow}>
+            <TextInput
+              style={styles.replyInput}
+              placeholder={`Reply to @${replyingTo.author}...`}
+              placeholderTextColor="#8A8A9A"
+              value={replyText}
+              onChangeText={setReplyText}
+              multiline
+              autoFocus
+              maxLength={500}
+            />
             <TouchableOpacity
-              style={styles.viewRepliesBtn}
-              onPress={() => { setShowReplies(!showReplies); haptics.light(); }}
-              activeOpacity={0.6}
+              style={[styles.replySendBtn, (!replyText.trim() || replySubmitting) && styles.replySendBtnDisabled]}
+              onPress={handleReply}
+              disabled={!replyText.trim() || replySubmitting}
+              activeOpacity={0.7}
             >
-              <Text style={styles.viewRepliesText}>
-                {showReplies ? 'Hide' : `View`} {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
-              </Text>
+              {replySubmitting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Send size={14} color="#fff" />
+              )}
             </TouchableOpacity>
-          )}
-
-          {showReplies && replies.map((reply) => (
-            <View key={reply.id || reply.text} style={styles.replyContainer}>
-              <View style={styles.replyAvatarWrap}>
-                {reply.authorAvatar ? (
-                  <Image source={{ uri: reply.authorAvatar }} style={styles.replyAvatar} />
-                ) : (
-                  <View style={styles.replyAvatarPlaceholder}>
-                    <User size={10} color={theme.colors.textMuted} />
-                  </View>
-                )}
-              </View>
-              <View style={styles.replyContent}>
-                <View style={styles.replyHeader}>
-                  <Text style={styles.replyAuthor}>{reply.author || 'User'}</Text>
-                  <Text style={styles.replyTime}>{formatDate(reply.createdAt)}</Text>
-                </View>
-                <Text style={styles.replyText}>{reply.text}</Text>
-                <View style={styles.replyActions}>
-                  <Text style={styles.replyLikeText}>{reply.likeCount || 0}</Text>
-                  <TouchableOpacity onPress={() => setReplyingTo({ id: comment.id, author: reply.author })} activeOpacity={0.6}>
-                    <Text style={styles.replyReplyBtn}>Reply</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          ))}
-
-          {isReplying && (
-            <View style={styles.replyInputRow}>
-              <TextInput
-                style={styles.replyInput}
-                placeholder={`Reply to @${comment.author}...`}
-                placeholderTextColor={theme.colors.textMuted}
-                value={replyText}
-                onChangeText={setReplyText}
-                multiline
-                autoFocus
-                maxLength={500}
-              />
-              <TouchableOpacity
-                style={[styles.replySendBtn, (!replyText.trim() || replySubmitting) && styles.replySendBtnDisabled]}
-                onPress={handleReply}
-                disabled={!replyText.trim() || replySubmitting}
-                activeOpacity={0.7}
-              >
-                {replySubmitting ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Send size={14} color="#fff" />
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.cancelReplyBtn} onPress={() => setReplyingTo(null)} activeOpacity={0.7}>
-                <Text style={styles.cancelReplyText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      </View>}
+            <TouchableOpacity style={styles.cancelReplyBtn} onPress={() => setReplyingTo(null)} activeOpacity={0.7}>
+              <Text style={styles.cancelReplyText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     </View>
   );
 };
@@ -250,10 +248,20 @@ const PostDetail = ({ navigation, route }) => {
     if (!commentText.trim() || !postId) return;
     setSubmitting(true);
     try {
-      const response = await postAPI.addComment(postId, commentText.trim());
-      if (response.data.ok) {
-        setCommentText('');
-        fetchComments(postId);
+      if (replyingTo?.replyToId) {
+        const response = await postAPI.addReply(postId, replyingTo.replyToId, commentText.trim());
+        if (response.data.ok) {
+          setCommentText('');
+          setReplyingTo(null);
+          fetchComments(postId);
+        }
+      } else {
+        const response = await postAPI.addComment(postId, commentText.trim());
+        if (response.data.ok) {
+          setCommentText('');
+          setReplyingTo(null);
+          fetchComments(postId);
+        }
       }
     } catch (err) {
       console.error('Add comment error:', err);
@@ -263,10 +271,11 @@ const PostDetail = ({ navigation, route }) => {
     }
   };
 
-  const handleReply = useCallback(async (parentId, text) => {
+  const handleMainCommentReply = useCallback(async (parentId, text) => {
     if (!postId) return;
+    const targetParentId = replyingTo?.replyToId || parentId;
     try {
-      const response = await postAPI.addReply(postId, parentId, text);
+      const response = await postAPI.addReply(postId, targetParentId, text);
       if (response.data.ok) {
         fetchComments(postId);
       }
@@ -274,7 +283,7 @@ const PostDetail = ({ navigation, route }) => {
       console.error('Reply error:', err);
       throw err;
     }
-  }, [postId]);
+  }, [postId, replyingTo]);
 
   const renderMedia = () => {
     if (!post?.media || post.media.length === 0) return null;
@@ -397,10 +406,7 @@ const PostDetail = ({ navigation, route }) => {
             <Heart size={20} color={theme.colors.textSecondary} />
             <Text style={styles.actionText}>{post.likeCount || 0}</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.action}
-            onPress={() => navigation.navigate('PostDetail', { postId: post.id })}
-          >
+          <TouchableOpacity style={styles.action}>
             <MessageCircle size={20} color={theme.colors.textSecondary} />
             <Text style={styles.actionText}>{post.commentCount || commentCount || 0}</Text>
           </TouchableOpacity>
@@ -425,9 +431,9 @@ const PostDetail = ({ navigation, route }) => {
           ) : (
             comments.map((comment) => (
               <CommentItem
-                key={comment.id || comment.text}
+                key={comment.id || comment._id || comment.text}
                 comment={comment}
-                onReply={handleReply}
+                onReply={handleMainCommentReply}
                 replyingTo={replyingTo}
                 setReplyingTo={setReplyingTo}
               />
@@ -475,432 +481,78 @@ const PostDetail = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.bgPrimary,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-    backgroundColor: theme.colors.bgGlass,
-  },
-  backButton: {
-    padding: 4,
-    marginRight: 12,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
-  },
-  content: {
-    flex: 1,
-  },
-  authorSection: {
-    flexDirection: 'row',
-    padding: 16,
-  },
-  avatarContainer: {
-    marginRight: 12,
-  },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-  },
-  avatarPlaceholder: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: theme.colors.bgInput,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  authorInfo: {
-    flex: 1,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  authorName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
-  },
-  authorKey: {
-    fontSize: 13,
-    color: theme.colors.textMuted,
-    marginTop: 2,
-  },
-  timestamp: {
-    fontSize: 13,
-    color: theme.colors.textMuted,
-    marginTop: 4,
-  },
-  postText: {
-    fontSize: 16,
-    lineHeight: 22,
-    color: theme.colors.textPrimary,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  mediaContainer: {
-    marginHorizontal: 16,
-    marginBottom: 12,
-  },
-  media: {
-    width: '100%',
-    height: 250,
-    borderRadius: theme.radius.md,
-  },
-  mediaPlayOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.2)',
-  },
-  quotedPost: {
-    marginHorizontal: 16,
-    marginBottom: 12,
-    padding: 12,
-    backgroundColor: theme.colors.bgInput,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.borderLight,
-  },
-  quotedAuthor: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
-    marginBottom: 4,
-  },
-  quotedText: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-  },
-  actions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.borderLight,
-  },
-  action: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 24,
-    paddingVertical: 6,
-  },
-  actionText: {
-    fontSize: 13,
-    color: theme.colors.textSecondary,
-    marginLeft: 4,
-  },
-  commentsSection: {
-    padding: 16,
-  },
-  commentsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
-    marginBottom: 12,
-  },
-  noComments: {
-    fontSize: 14,
-    color: theme.colors.textMuted,
-    textAlign: 'center',
-    paddingVertical: 32,
-  },
-  commentWrapper: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 4,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.borderLight,
-  },
-  commentItemRoot: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  commentAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: theme.colors.bgInput,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-    flexShrink: 0,
-  },
-  commentContent: {
-    flex: 1,
-    paddingRight: 8,
-  },
-  commentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  commentAuthor: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
-    marginRight: 6,
-  },
-  ownerBadge: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
-    backgroundColor: theme.colors.accent,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginLeft: 6,
-  },
-  commentTime: {
-    fontSize: 11,
-    color: theme.colors.textMuted,
-    marginLeft: 'auto',
-  },
-  commentText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: theme.colors.textSecondary,
-    marginBottom: 6,
-  },
-  commentActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  commentActionBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: theme.radius.sm,
-    marginRight: 2,
-  },
-  likeCountText: {
-    fontSize: 12,
-    color: theme.colors.textMuted,
-    marginRight: 14,
-  },
-  commentActionText: {
-    fontSize: 12,
-    color: theme.colors.textMuted,
-  },
-  replyBtnText: {
-    fontSize: 12,
-    color: theme.colors.accent,
-    fontWeight: '600',
-  },
-  viewRepliesBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
-  },
-  viewRepliesText: {
-    fontSize: 13,
-    color: theme.colors.accent,
-    fontWeight: '600',
-  },
-  replyContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.borderLight,
-    paddingLeft: 8,
-  },
-  replyAvatarWrap: {
-    marginRight: 8,
-    flexShrink: 0,
-    marginTop: 1,
-  },
-  replyAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-  },
-  replyAvatarPlaceholder: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: theme.colors.bgInput,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  replyContent: {
-    flex: 1,
-    minWidth: 0,
-  },
-  replyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 3,
-  },
-  replyAuthor: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
-    marginRight: 6,
-  },
-  replyTime: {
-    fontSize: 11,
-    color: theme.colors.textMuted,
-    marginLeft: 6,
-  },
-  replyText: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: theme.colors.textSecondary,
-    marginBottom: 4,
-  },
-  replyActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  replyLikeText: {
-    fontSize: 11,
-    color: theme.colors.textMuted,
-    marginRight: 12,
-  },
-  replyReplyBtn: {
-    fontSize: 11,
-    color: theme.colors.accent,
-    fontWeight: '600',
-  },
-  replyInputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  replyInput: {
-    flex: 1,
-    backgroundColor: theme.colors.bgInput,
-    borderRadius: theme.radius.md,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 13,
-    color: theme.colors.textPrimary,
-    maxHeight: 80,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.borderLight,
-  },
-  replySendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  replySendBtnDisabled: {
-    opacity: 0.4,
-  },
-  cancelReplyBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginLeft: 4,
-    flexShrink: 0,
-  },
-  cancelReplyText: {
-    fontSize: 12,
-    color: theme.colors.textMuted,
-    fontWeight: '500',
-  },
-  commentInputRow: {
-    flexDirection: 'column',
-    padding: 12,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-    backgroundColor: theme.colors.bgSecondary,
-  },
-  replyingIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(124, 58, 237, 0.12)',
-    borderRadius: theme.radius.sm,
-  },
-  replyingText: {
-    fontSize: 12,
-    color: theme.colors.accent,
-    fontWeight: '600',
-  },
-  replyingCancel: {
-    fontSize: 12,
-    color: theme.colors.textMuted,
-    fontWeight: '500',
-  },
-  commentInput: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.bgInput,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: theme.colors.textPrimary,
-    maxHeight: 100,
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: theme.colors.borderLight,
-  },
-  sendButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: theme.colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  sendButtonDisabled: {
-    opacity: 0.5,
-  },
-  errorText: {
-    fontSize: 16,
-    color: theme.colors.danger,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  retryButton: {
-    backgroundColor: theme.colors.accent,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: theme.radius.sm,
-  },
-  retryText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  container: { flex: 1, backgroundColor: '#070711' },
+  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)', backgroundColor: 'rgba(7,7,17,0.92)' },
+  backButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
+  content: { flex: 1 },
+  authorSection: { flexDirection: 'row', padding: 16 },
+  avatarContainer: { marginRight: 12 },
+  avatar: { width: 48, height: 48, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  avatarPlaceholder: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+  authorInfo: { flex: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center' },
+  authorName: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+  authorKey: { fontSize: 13, color: '#8A8A9A', marginTop: 2 },
+  timestamp: { fontSize: 13, color: '#8A8A9A', marginTop: 4 },
+  postText: { fontSize: 15, lineHeight: 22, color: '#FFFFFF', paddingHorizontal: 16, paddingBottom: 12 },
+  mediaContainer: { marginHorizontal: 16, marginBottom: 12, borderRadius: 16, overflow: 'hidden' },
+  media: { width: '100%', height: 250, borderRadius: 16 },
+  mediaPlayOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
+  quotedPost: { marginHorizontal: 16, marginBottom: 12, padding: 12, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  quotedAuthor: { fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 },
+  quotedText: { fontSize: 14, color: '#D0D0DA' },
+  actions: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)' },
+  action: { flexDirection: 'row', alignItems: 'center', marginRight: 24, paddingVertical: 6 },
+  actionText: { fontSize: 13, color: '#8A8A9A', marginLeft: 4 },
+  commentsSection: { padding: 0 },
+  commentsTitle: { fontSize: 15, fontWeight: '700', color: '#FFFFFF', marginBottom: 4, paddingHorizontal: 16, paddingTop: 16 },
+  noComments: { fontSize: 14, color: '#8A8A9A', textAlign: 'center', paddingVertical: 32 },
+  commentItemRoot: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.03)' },
+  commentAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center', marginRight: 10, flexShrink: 0 },
+  commentAvatarImage: { width: 32, height: 32, borderRadius: 16 },
+  commentAvatarPlaceholder: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
+  commentContent: { flex: 1, paddingRight: 8 },
+  commentHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  commentAuthor: { fontSize: 14, fontWeight: '700', color: '#FFFFFF', marginRight: 6 },
+  ownerBadge: { fontSize: 10, fontWeight: '700', color: '#fff', backgroundColor: '#7C3AED', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, marginLeft: 6 },
+  commentTime: { fontSize: 11, color: '#8A8A9A', marginLeft: 'auto' },
+  commentText: { fontSize: 14, lineHeight: 20, color: '#D0D0DA', marginBottom: 6 },
+  commentActions: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  commentActionBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  likeCountText: { fontSize: 12, color: '#8A8A9A', marginRight: 14 },
+  replyBtnText: { fontSize: 12, color: '#A78BFA', fontWeight: '600' },
+  viewRepliesBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, marginBottom: 4 },
+  viewRepliesText: { fontSize: 13, color: '#A78BFA', fontWeight: '600' },
+  replyContainer: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 8, marginBottom: 4, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: 'rgba(255,255,255,0.06)' },
+  replyAvatarWrap: { marginRight: 8, flexShrink: 0, marginTop: 2 },
+  replyAvatar: { width: 24, height: 24, borderRadius: 12 },
+  replyAvatarPlaceholder: { width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
+  replyContent: { flex: 1, minWidth: 0 },
+  replyHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 3 },
+  replyAuthor: { fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginRight: 6 },
+  replyTime: { fontSize: 11, color: '#8A8A9A', marginLeft: 6 },
+  replyText: { fontSize: 13, lineHeight: 19, color: '#D0D0DA', marginBottom: 4 },
+  replyActions: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  replyLikeText: { fontSize: 11, color: '#8A8A9A', marginRight: 12 },
+  replyReplyBtn: { fontSize: 11, color: '#A78BFA', fontWeight: '600' },
+  replyInputRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: 8, marginBottom: 4 },
+  replyInput: { flex: 1, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, fontSize: 13, color: '#FFFFFF', maxHeight: 80, marginRight: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  replySendBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#FF3B8A', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  replySendBtnDisabled: { opacity: 0.4 },
+  cancelReplyBtn: { paddingHorizontal: 12, paddingVertical: 10, marginLeft: 4, flexShrink: 0 },
+  cancelReplyText: { fontSize: 12, color: '#8A8A9A', fontWeight: '500' },
+  commentInputRow: { flexDirection: 'row', alignItems: 'flex-end', padding: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.04)', backgroundColor: 'rgba(7,7,17,0.95)' },
+  replyingIndicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: 'rgba(124, 58, 237, 0.12)', borderRadius: 10, width: '100%' },
+  replyingText: { fontSize: 12, color: '#A78BFA', fontWeight: '600' },
+  replyingCancel: { fontSize: 12, color: '#8A8A9A', fontWeight: '500' },
+  commentInput: { flex: 1, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 22, paddingHorizontal: 18, paddingVertical: 10, fontSize: 14, color: '#FFFFFF', maxHeight: 100, marginRight: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  sendButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#FF3B8A', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  sendButtonDisabled: { opacity: 0.4 },
+  errorText: { fontSize: 16, color: '#FF3B8A', textAlign: 'center', marginBottom: 16 },
+  retryButton: { backgroundColor: '#7C3AED', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 },
+  retryText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });
 
 export default PostDetail;

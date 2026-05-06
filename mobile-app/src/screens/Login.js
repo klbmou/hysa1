@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   Alert,
   StatusBar,
-  LinearBackground,
   ImageBackground,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';

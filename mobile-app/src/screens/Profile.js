@@ -15,6 +15,7 @@ import {
   Animated,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -47,7 +48,10 @@ import * as haptics from '../utils/haptics';
 import { shareProfile } from '../utils/share';
 import theme from '../theme';
 
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 const Profile = ({ navigation, route }) => {
+
   const { user: currentUser, logout } = useAuth();
   const insets = useSafeAreaInsets();
   const [profileUser, setProfileUser] = useState(null);
@@ -100,27 +104,20 @@ const Profile = ({ navigation, route }) => {
 
   const fetchProfile = async (isOwn) => {
     setLoading(true);
-
-    if (isOwn && currentUser) {
-      setProfileUser(currentUser);
-      setIsViewingOwnProfile(true);
-      setIsPrivate(!!currentUser.isPrivate);
-      setUserPosts([]);
-      setLoading(false);
-      return;
-    }
-
     try {
-      const response = await userAPI.getUser(targetUserKey || currentUser?.key);
+      // Always fetch from API to get the posts, even for own profile
+      const userKey = targetUserKey || currentUser?.key || currentUser?.username;
+      const response = await userAPI.getUser(userKey);
       if (response.data.ok) {
         setProfileUser(response.data.profile);
         setUserPosts(response.data.posts || []);
         setIsFollowing(response.data.profile.isFollowing || false);
-        setIsViewingOwnProfile(false);
+        setIsViewingOwnProfile(isOwn);
+        setIsPrivate(!!response.data.profile.isPrivate);
       }
     } catch (err) {
       console.error('Profile error:', err);
-      if (currentUser) {
+      if (isOwn && currentUser) {
         setProfileUser(currentUser);
         setIsViewingOwnProfile(true);
       }
@@ -235,17 +232,13 @@ const Profile = ({ navigation, route }) => {
         setEditAvatarError(null);
         try {
           const asset = result.assets[0];
-          console.log('[avatar-upload] asset.uri:', asset.uri ? 'present' : 'missing');
           const mime = asset.mimeType || asset.type || 'image/jpeg';
-          console.log('[avatar-upload] mime:', mime);
           const b64 = await FileSystem.readAsStringAsync(asset.uri, {
             encoding: 'base64',
           });
           const dataUrl = `data:${mime};base64,${b64}`;
-          console.log('[avatar-upload] dataUrl length:', dataUrl.length);
 
           const uploadResponse = await uploadAPI.uploadMedia(dataUrl);
-          console.log('[avatar-upload] response keys:', Object.keys(uploadResponse.data || {}));
           if (uploadResponse.data.ok) {
             setEditAvatarUri(uploadResponse.data.media.fullUrl || uploadResponse.data.media.url);
             setEditAvatarUploading(false);
@@ -349,6 +342,15 @@ const Profile = ({ navigation, route }) => {
     navigation.navigate('PostDetail', { postId });
   };
 
+  const handleViewProfile = (userKey) => {
+    const myKey = currentUser && (currentUser.key || currentUser.userKey || '');
+    if (userKey && myKey && String(userKey) === String(myKey)) {
+      navigation.navigate('Profile');
+    } else if (userKey) {
+      navigation.navigate('UserProfile', { userKey });
+    }
+  };
+
   if (loading) {
     return (
       <View style={[styles.centerContainer, { paddingTop: insets.top + 60 }]}>
@@ -382,11 +384,7 @@ const Profile = ({ navigation, route }) => {
       onBookmark={() => {}}
       onComment={handlePostPress}
       onRepost={() => {}}
-      onViewProfile={(userKey) => {
-        if (userKey !== profileUser.key) {
-          navigation.navigate('UserProfile', { userKey });
-        }
-      }}
+      onViewProfile={handleViewProfile}
     />
   );
 
@@ -394,8 +392,8 @@ const Profile = ({ navigation, route }) => {
     transform: [
       {
         translateY: settingsAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [300, 0],
+          inputRange: [0, 1], // 0 means hidden (bottom), 1 means visible (top)
+          outputRange: [SCREEN_HEIGHT, 0], // Start from off-screen bottom, animate to 0 (visible)
         }),
       },
     ],
@@ -437,19 +435,18 @@ const Profile = ({ navigation, route }) => {
           <View style={styles.headerInfo}>
             <View style={styles.nameRow}>
               <Text style={styles.username}>{profileUser.username}</Text>
-              {profileUser.verified && (
-                <Verified size={16} color={theme.colors.verified} fill={theme.colors.verified} />
+              {profileUser.verified && ( // Changed size to 14 for consistency
+                <Verified size={14} color={theme.colors.verified} fill={theme.colors.verified} style={{ marginLeft: 4 }} />
               )}
             </View>
             <Text style={styles.displayName}>@{profileUser.key}</Text>
 
             <View style={styles.statsRow}>
-              <View style={styles.stat}>
+              <View style={styles.statCard}> 
                 <Text style={styles.statValue}>{profileUser.followingCount || 0}</Text>
                 <Text style={styles.statLabel}>Following</Text>
               </View>
-              <View style={styles.statDivider} />
-              <View style={styles.stat}>
+              <View style={styles.statCard}> 
                 <Text style={styles.statValue}>{profileUser.followerCount || 0}</Text>
                 <Text style={styles.statLabel}>Followers</Text>
               </View>
@@ -812,462 +809,105 @@ const Profile = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0f0f0f',
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    ...theme.typography.bodySm,
-    color: theme.colors.textMuted,
-    marginTop: 12,
-  },
-  errorText: {
-    fontSize: 16,
-    color: theme.colors.danger,
-  },
+  container: { flex: 1, backgroundColor: '#070711' },
+  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { fontSize: 14, color: '#8A8A9A', marginTop: 12 },
+  errorText: { fontSize: 16, color: '#FF3B8A' },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-    backgroundColor: theme.colors.bgGlass,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 12, paddingHorizontal: 16,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(7,7,17,0.92)',
   },
-  headerTitle: {
-    ...theme.typography.h3,
-    color: theme.colors.textPrimary,
-  },
-  backButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerIconBtn: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerSection: {
-    flexDirection: 'row',
-    padding: 16,
-  },
-  avatarContainer: {
-    marginRight: 16,
-  },
-  avatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-  },
-  avatarPlaceholder: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: theme.colors.bgInput,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerInfo: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  username: {
-    ...theme.typography.h3,
-    color: theme.colors.textPrimary,
-  },
-  displayName: {
-    fontSize: 14,
-    color: theme.colors.textMuted,
-    marginBottom: 10,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  stat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  statLabel: {
-    fontSize: 13,
-    color: '#aaaaaa',
-    marginLeft: 4,
-  },
-  statDivider: {
-    width: 1,
-    height: 16,
-    backgroundColor: theme.colors.border,
-    marginHorizontal: 12,
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    gap: 10,
-  },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
+  backButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  headerIconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.06)' },
+  headerSection: { flexDirection: 'row', padding: 20, alignItems: 'center' },
+  avatarContainer: { marginRight: 18 },
+  avatar: { width: 80, height: 80, borderRadius: 40, borderWidth: 2, borderColor: 'rgba(255,255,255,0.08)' },
+  avatarPlaceholder: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.06)', justifyContent: 'center' },
+  headerInfo: { flex: 1, justifyContent: 'center' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
+  username: { fontSize: 22, fontWeight: '900', color: '#FFFFFF' },
+  displayName: { fontSize: 14, color: '#8A8A9A', marginBottom: 12 },
+  statsRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  statCard: { alignItems: 'center' },
+  statValue: { fontSize: 18, fontWeight: '800', color: '#FFFFFF' },
+  statLabel: { fontSize: 12, color: '#8A8A9A', marginTop: 2 },
+  statDivider: { width: 1, height: 20, backgroundColor: 'rgba(255,255,255,0.08)', marginHorizontal: 8 },
+  actionsRow: { flexDirection: 'row', paddingHorizontal: 20, paddingBottom: 18, gap: 10 },
   actionBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(124, 58, 237, 0.10)',
-    paddingVertical: 10,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(168, 85, 247, 0.15)',
-    gap: 6,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)', paddingVertical: 10, borderRadius: 20,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', gap: 6,
   },
-  actionBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
+  actionBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
   iconBtn: {
-    width: 42,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.bgInput,
-    borderRadius: theme.radius.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.borderLight,
+    width: 42, height: 42, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 20,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
   },
-  followBtn: {
-    flex: 1,
-    backgroundColor: '#FF3B8A',
-    paddingVertical: 10,
-    borderRadius: 22,
-    alignItems: 'center',
-  },
-  followBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  followingBtn: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
-  followingBtnText: {
-    color: '#ffffff',
-  },
-  followLoadingBtn: {
-    opacity: 0.7,
-  },
-  section: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.borderLight,
-  },
-  sectionLabel: {
-    ...theme.typography.bodySm,
-    fontWeight: '700',
-    color: '#aaaaaa',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  bio: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#aaaaaa',
-  },
-  skillsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  skillTag: {
-    backgroundColor: 'rgba(124, 58, 237, 0.14)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: theme.radius.full,
-  },
-  skillText: {
-    fontSize: 13,
-    color: theme.colors.accent,
-    fontWeight: '600',
-  },
-  postsSection: {
-    flex: 1,
-    paddingBottom: 20,
-  },
-  emptyPosts: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-    color: theme.colors.textMuted,
-  },
-  editOverlay: {
-    flex: 1,
-    backgroundColor: theme.colors.bgOverlay,
-    justifyContent: 'flex-end',
-  },
-  editCard: {
-    backgroundColor: '#0f0f0f',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingTop: 8,
-    minHeight: 300,
-  },
-  editHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: theme.colors.border,
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
-  editHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  editTitle: {
-    ...theme.typography.h3,
-    color: '#ffffff',
-  },
-  editLabel: {
-    ...theme.typography.bodySm,
-    fontWeight: '600',
-    color: theme.colors.textSecondary,
-    marginBottom: 8,
-  },
+  followBtn: { flex: 1, backgroundColor: '#FF3B8A', paddingVertical: 10, borderRadius: 20, alignItems: 'center' },
+  followBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  followingBtn: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  followingBtnText: { color: '#ffffff' },
+  followLoadingBtn: { opacity: 0.7 },
+  section: { paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)' },
+  sectionLabel: { fontSize: 12, fontWeight: '700', color: '#8A8A9A', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
+  bio: { fontSize: 15, lineHeight: 22, color: '#D0D0DA' },
+  skillsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  skillTag: { backgroundColor: 'rgba(124, 58, 237, 0.12)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(124, 58, 237, 0.2)' },
+  skillText: { fontSize: 13, color: '#A78BFA', fontWeight: '600' },
+  postsSection: { paddingHorizontal: 0, paddingBottom: 120 },
+  emptyPosts: { padding: 60, alignItems: 'center' },
+  emptyText: { fontSize: 15, color: '#8A8A9A' },
+  editOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  editCard: { backgroundColor: '#0C0C1A', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingTop: 12, minHeight: 300, borderWidth: 1, borderTopWidth: 0, borderColor: 'rgba(255,255,255,0.06)' },
+  editHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.1)', alignSelf: 'center', marginBottom: 16 },
+  editHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  editTitle: { fontSize: 18, fontWeight: '800', color: '#ffffff' },
+  editLabel: { fontSize: 13, fontWeight: '600', color: '#8A8A9A', marginBottom: 8 },
   editInput: {
-    backgroundColor: theme.colors.bgInput,
-    borderRadius: theme.radius.md,
-    padding: 14,
-    fontSize: 15,
-    color: theme.colors.textPrimary,
-    minHeight: 80,
-    textAlignVertical: 'top',
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: theme.colors.borderLight,
+    backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 14, padding: 14, fontSize: 15,
+    color: '#FFFFFF', minHeight: 80, textAlignVertical: 'top', marginBottom: 14,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
   },
   editSubmit: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.accent,
-    borderRadius: theme.radius.md,
-    paddingVertical: 14,
-    marginTop: 8,
-    gap: 8,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FF3B8A', borderRadius: 20, paddingVertical: 14, marginTop: 8, gap: 8,
   },
-  editSubmitDisabled: {
-    opacity: 0.5,
-  },
-  editSubmitText: {
-    ...theme.typography.button,
-    color: '#fff',
-  },
-  avatarEditRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    marginBottom: 8,
-    gap: 12,
-  },
-  avatarEditPreview: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-  },
-  avatarEditPlaceholder: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(124, 58, 237, 0.14)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarEditInfo: {
-    flex: 1,
-  },
-  avatarEditLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: theme.colors.textPrimary,
-  },
-  avatarEditSubtext: {
-    fontSize: 13,
-    color: theme.colors.textMuted,
-  },
-  editErrorText: {
-    fontSize: 13,
-    color: theme.colors.danger,
-    marginBottom: 8,
-  },
-  sheetOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'flex-end',
-  },
-  settingsSheet: {
-    backgroundColor: '#0f0f0f',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8,
-    maxHeight: '85%',
-  },
-  sheetSectionLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: theme.colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginTop: 8,
-    marginBottom: 4,
-    paddingLeft: 4,
-  },
-  sheetSectionDivider: {
-    height: 1,
-    backgroundColor: theme.colors.borderLight,
-    marginVertical: 6,
-  },
-  sheetItemIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetItemContent: {
-    flex: 1,
-  },
-  messageSheet: {
-    backgroundColor: '#0f0f0f',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 24,
-    paddingTop: 12,
-    paddingBottom: 8,
-    alignItems: 'center',
-  },
-  sheetHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: theme.colors.border,
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
-  sheetTitle: {
-    ...theme.typography.h3,
-    color: theme.colors.textPrimary,
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  sheetItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    gap: 12,
-  },
-  sheetItemText: {
-    flex: 1,
-    fontSize: 16,
-    color: '#ffffff',
-  },
-  sheetItemSubtext: {
-    fontSize: 13,
-    color: theme.colors.textMuted,
-    marginRight: 8,
-  },
-  toggleTrack: {
-    width: 44,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: theme.colors.bgInput,
-    justifyContent: 'center',
-    paddingHorizontal: 2,
-  },
-  toggleThumb: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: theme.colors.textMuted,
-  },
-  toggleThumbOn: {
-    backgroundColor: theme.colors.accent,
-    alignSelf: 'flex-end',
-  },
-  toggleThumbLoading: {
-    opacity: 0.5,
-  },
-  sheetItemDanger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    gap: 12,
-  },
-  sheetDivider: {
-    height: 1,
-    backgroundColor: theme.colors.borderLight,
-    marginVertical: 8,
-  },
-  sheetCloseBtn: {
-    alignItems: 'center',
-    paddingVertical: 14,
-    marginTop: 4,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.borderLight,
-  },
-  sheetCloseText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.textSecondary,
-  },
-  messageSheetIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'rgba(255, 59, 92, 0.14)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  messageSheetTitle: {
-    ...theme.typography.h3,
-    color: '#ffffff',
-    marginBottom: 8,
-  },
-  messageSheetDesc: {
-    ...theme.typography.body,
-    color: '#aaaaaa',
-    textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 22,
-  },
+  editSubmitDisabled: { opacity: 0.5 },
+  editSubmitText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  avatarEditRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, marginBottom: 8, gap: 14, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 16, paddingHorizontal: 14 },
+  avatarEditPreview: { width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderColor: 'rgba(255,255,255,0.08)' },
+  avatarEditPlaceholder: { width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+  avatarEditInfo: { flex: 1 },
+  avatarEditLabel: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
+  avatarEditSubtext: { fontSize: 13, color: '#8A8A9A' },
+  editErrorText: { fontSize: 13, color: '#FF3B8A', marginBottom: 10 },
+  sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  settingsSheet: { backgroundColor: '#0C0C1A', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 18, paddingTop: 14, paddingBottom: 8, maxHeight: SCREEN_HEIGHT * 0.85, borderWidth: 1, borderTopWidth: 0, borderColor: 'rgba(255,255,255,0.06)' },
+  sheetSectionLabel: { fontSize: 11, fontWeight: '700', color: '#8A8A9A', textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 10, marginBottom: 6, paddingLeft: 4 },
+  sheetSectionDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 },
+  sheetItemIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
+  sheetItemContent: { flex: 1 },
+  messageSheet: { backgroundColor: '#0C0C1A', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 24, paddingTop: 14, paddingBottom: 8, alignItems: 'center', borderWidth: 1, borderTopWidth: 0, borderColor: 'rgba(255,255,255,0.06)' },
+  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.1)', alignSelf: 'center', marginBottom: 18 },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: '#FFFFFF', marginBottom: 20, textAlign: 'center' },
+  sheetItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 14 },
+  sheetItemText: { flex: 1, fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
+  sheetItemSubtext: { fontSize: 13, color: '#8A8A9A', marginTop: 2 },
+  toggleTrack: { width: 48, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', paddingHorizontal: 3 },
+  toggleThumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#8A8A9A' },
+  toggleThumbOn: { backgroundColor: '#FF3B8A', alignSelf: 'flex-end' },
+  toggleThumbLoading: { opacity: 0.5 },
+  sheetItemDanger: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 14 },
+  sheetDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 },
+  sheetCloseBtn: { alignItems: 'center', paddingVertical: 16, marginTop: 6, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' },
+  sheetCloseText: { fontSize: 15, fontWeight: '700', color: '#8A8A9A' },
+  messageSheetIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255, 59, 138, 0.12)', alignItems: 'center', justifyContent: 'center', marginBottom: 18, borderWidth: 1, borderColor: 'rgba(255, 59, 138, 0.2)' },
+  messageSheetTitle: { fontSize: 18, fontWeight: '800', color: '#ffffff', marginBottom: 8 },
+  messageSheetDesc: { fontSize: 15, color: '#D0D0DA', textAlign: 'center', marginBottom: 24, lineHeight: 22 },
 });
 
 export default Profile;

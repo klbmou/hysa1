@@ -20,16 +20,15 @@ import {
   Copy,
   Flag,
   Trash2,
-  X,
   Play,
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import MediaViewer from './MediaViewer';
 import * as haptics from '../utils/haptics';
-import { sharePost, copyLink } from '../utils/share';
+import { sharePost } from '../utils/share';
 import theme from '../theme';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const getCount = (...values) => {
   for (const value of values) {
@@ -38,7 +37,6 @@ const getCount = (...values) => {
   }
   return 0;
 };
-const MEDIA_MAX_WIDTH = SCREEN_WIDTH - 24;
 
 const PostCard = memo(({
   post,
@@ -53,7 +51,7 @@ const PostCard = memo(({
   const [liked, setLiked] = useState(post.likedByMe || false);
   const [bookmarked, setBookmarked] = useState(post.bookmarkedByMe || false);
   const [reposted, setReposted] = useState(post.repostedByMe || false);
-  const likeCount = getCount(post.likeCount, post.likesCount, post.likes, post.reactions?.likes, post.stats?.likes);
+  const [likeCount, setLikeCount] = useState(getCount(post.likeCount, post.likesCount, post.likes?.length, post.reactions?.likes, post.stats?.likes, 0));
   const commentCount = getCount(post.commentCount, post.commentsCount, post.comments, post.stats?.comments);
   const repostCount = getCount(post.repostCount, post.repostsCount, post.reposts, post.stats?.reposts);
   const [actionLoading, setActionLoading] = useState({});
@@ -240,7 +238,7 @@ const PostCard = memo(({
       ) : null}
 
       <View style={styles.authorRow}>
-        <TouchableOpacity
+        <TouchableOpacity 
           style={styles.avatarContainer}
           onPress={() => onViewProfile && onViewProfile(post.authorKey)}
         >
@@ -255,7 +253,7 @@ const PostCard = memo(({
         <View style={styles.headerInfo}>
           <View style={styles.authorNameRow}>
             <Text style={styles.authorName}>{post.author}</Text>
-            {post.verified && <Verified size={14} color="#7C3AED" fill="#7C3AED" />}
+            {post.verified && <Verified size={14} color="#7C3AED" fill="#7C3AED" style={{ marginLeft: 4 }} />}
           </View>
           <Text style={styles.timestamp}>{formatDate(post.createdAt)}</Text>
         </View>
@@ -283,7 +281,7 @@ const PostCard = memo(({
       )}
 
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionButton} onPress={handleLike} disabled={actionLoading.like}>
+        <TouchableOpacity style={styles.actionBtn} onPress={handleLike} disabled={actionLoading.like}>
             <Heart
               size={20}
               color={liked ? '#FF3B8A' : '#B7B7C8'}
@@ -294,14 +292,14 @@ const PostCard = memo(({
             </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionButton} onPress={() => onComment && onComment(post.id)}>
-            <MessageCircle size={20} color={'#aaaaaa'} />
+        <TouchableOpacity style={styles.actionBtn} onPress={() => onComment && onComment(post.id)}>
+            <MessageCircle size={20} color={'#B7B7C8'} />
             <Text style={styles.actionText}>{commentCount}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.actionButton}
-          onPress={handleRepost}
+          style={styles.actionBtn}
+          onPress={handleRepost} 
           disabled={actionLoading.repost}
         >
             <Repeat
@@ -316,7 +314,7 @@ const PostCard = memo(({
 
         <View style={styles.actionsRight}>
           <TouchableOpacity
-            style={styles.actionButton}
+            style={styles.actionBtn}
             onPress={handleBookmark}
             disabled={actionLoading.bookmark}
           >
@@ -380,233 +378,52 @@ const PostCard = memo(({
 
 const styles = StyleSheet.create({
   card: {
-    marginHorizontal: 12,
-    marginBottom: 16,
+    marginHorizontal: 0,
+    marginBottom: 6,
     padding: 14,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-    overflow: 'hidden',
-  },
-  repostRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
-  },
-  repostText: {
-    color: '#B7B7C8',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  authorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  avatarContainer: {
-    marginRight: 10,
-  },
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
-  avatarPlaceholder: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#A855F7',
-  },
-  authorNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    minWidth: 0,
-  },
-  authorName: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  timestamp: {
-    color: '#77778A',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  moreButton: {
-    padding: 8,
-    marginLeft: 4,
-  },
-  postText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  mediaWrap: {
-    marginTop: 12,
-    borderRadius: 20,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
-  media: {
-    width: '100%',
-    borderRadius: 20,
-  },
-  mediaGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 12,
-    marginBottom: 12,
-  },
-  gridItem: {
-    width: '48%',
-    aspectRatio: 1,
-    margin: '1%',
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  gridItemFull: {
-    width: '100%',
-    aspectRatio: 16 / 9,
-  },
-  gridImage: {
-    width: '100%',
-    height: '100%',
-  },
-  playOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.2)',
-  },
-  quotedPost: {
-    marginHorizontal: 12,
-    marginBottom: 12,
-    padding: 12,
-    backgroundColor: 'rgba(255,255,255,0.035)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
-  quotedHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  quotedAuthor: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  quotedText: {
-    fontSize: 14,
-    color: '#B7B7C8',
-  },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    marginTop: 12,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
-    gap: 20,
-  },
-  actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  actionText: {
-    color: '#B7B7C8',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  actionTextActive: {
-    color: '#FF3B8A',
-  },
-  actionTextRepost: {
-    color: '#A855F7',
-  },
-  menuOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-  },
-  menuCard: {
     backgroundColor: '#070711',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    width: '100%',
-    maxWidth: 400,
-    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
   },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    gap: 12,
-  },
-  menuItemText: {
-    fontSize: 16,
-    color: '#FFFFFF',
-  },
-  menuClose: {
-    alignItems: 'center',
-    paddingVertical: 14,
-    marginTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
-  },
-  menuCloseText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#B7B7C8',
-  },
-  feedbackToast: {
-    position: 'absolute',
-    bottom: 16,
-    left: 24,
-    right: 24,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-    zIndex: 100,
-  },
-  feedbackText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
+  repostRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  repostText: { color: '#8A8A9A', fontSize: 12, fontWeight: '600' },
+  authorRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  avatarContainer: { marginRight: 10 },
+  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.06)' },
+  avatarPlaceholder: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+  avatarDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#7C3AED' },
+  authorNameRow: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 },
+  authorName: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  headerInfo: { flex: 1 },
+  timestamp: { color: '#8A8A9A', fontSize: 12, marginTop: 2 },
+  moreButton: { padding: 8, marginLeft: 4 },
+  postText: { color: '#FFFFFF', fontSize: 15, lineHeight: 21, fontWeight: '400' },
+  mediaWrap: { marginTop: 12, borderRadius: 16, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.045)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  media: { width: '100%', aspectRatio: 4/3, borderRadius: 16 },
+  mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12, gap: 4 },
+  gridItem: { width: '49%', aspectRatio: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.045)' },
+  gridItemFull: { width: '100%', aspectRatio: 4/3, margin: 0, borderRadius: 14, overflow: 'hidden' },
+  gridImage: { width: '100%', height: '100%' },
+  playOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
+  gridPlayOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
+  quotedPost: { marginTop: 10, padding: 12, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  quotedHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  quotedAuthor: { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
+  quotedText: { fontSize: 14, color: '#B7B7C8', lineHeight: 19 },
+  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.04)' },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 6 },
+  actionsRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  actionText: { color: '#8A8A9A', fontSize: 13, fontWeight: '600' },
+  actionTextActive: { color: '#FF3B8A' },
+  actionTextRepost: { color: '#A855F7' },
+  menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end', alignItems: 'center' },
+  menuCard: { width: '85%', backgroundColor: '#0F0F1A', borderRadius: 20, padding: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  menuItem: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12, borderRadius: 12 },
+  menuItemText: { fontSize: 15, color: '#FFFFFF', fontWeight: '500' },
+  menuClose: { alignItems: 'center', padding: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)', marginTop: 4 },
+  menuCloseText: { fontSize: 15, fontWeight: '700', color: '#8A8A9A' },
+  feedbackToast: { position: 'absolute', bottom: 40, left: 20, right: 20, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 16, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  feedbackText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
 });
 
 PostCard.displayName = 'PostCard';

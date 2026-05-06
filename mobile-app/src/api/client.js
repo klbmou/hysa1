@@ -75,9 +75,6 @@ api.interceptors.request.use(
       console.error('Error retrieving auth headers:', error);
     }
 
-    // Log request for debugging (no sensitive data)
-    console.log(`API Request: ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
-
     return config;
   },
   (error) => {
@@ -91,7 +88,6 @@ api.interceptors.response.use(
   async (error) => {
     // Handle network errors with retry
     if (!error.response && (error.code === 'ECONNABORTED' || error.code === 'NETWORK_ERROR')) {
-      console.log('Network error, this may be due to Render server sleep. Retrying...');
       try {
         const originalRequest = error.config;
         if (!originalRequest._retry) {
@@ -171,7 +167,7 @@ export const userAPI = {
 // Stories API
 export const storiesAPI = {
   getStories: () => api.get('/api/stories'),
-  createStory: (media) => api.post('/api/stories', { media }),
+  createStory: (data) => api.post('/api/stories', data),
 };
 
 // Verification API

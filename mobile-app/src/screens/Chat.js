@@ -157,7 +157,7 @@ const Chat = ({ navigation, route }) => {
         currentDate = msgDate;
         items.push({ type: 'date', date: msg.createdAt, key: `date-${index}` });
       }
-      items.push({ type: 'message', item: msg, key: `msg-${msg.id}` });
+      items.push({ type: 'message', item: msg, key: `msg-${msg.id}`, msgIndex: index });
     });
 
     return (
@@ -166,11 +166,11 @@ const Chat = ({ navigation, route }) => {
         data={items}
         renderItem={({ item }) => item.type === 'date'
           ? renderDateSeparator(item.date)
-          : renderMessage({ item: item.item, index: messages.indexOf(item.item) })
+          : renderMessage({ item: item.item, index: item.msgIndex })
         }
         keyExtractor={(item) => item.key}
         contentContainerStyle={styles.msgList}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
       />
     );
   };
@@ -185,11 +185,11 @@ const Chat = ({ navigation, route }) => {
 
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { paddingTop: insets.top }]}
+      style={[styles.container]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
+      <Animated.View style={[styles.header, { opacity: fadeAnim, paddingTop: insets.top + 15 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
           <ArrowLeft size={22} color={theme.colors.textPrimary} />
         </TouchableOpacity>
@@ -225,7 +225,7 @@ const Chat = ({ navigation, route }) => {
             {avatar ? (
               <Image source={{ uri: avatar }} style={styles.emptyAvatarImg} />
             ) : (
-              <User size={32} color={theme.colors.textMuted} />
+              <User size={32} color="#8A8A9A" />
             )}
           </View>
           <Text style={styles.emptyName}>{username}</Text>
@@ -265,63 +265,67 @@ const Chat = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.bgPrimary },
+  container: { flex: 1, backgroundColor: '#070711' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.borderLight,
-    backgroundColor: theme.colors.bgGlass,
+    flexDirection: 'row', alignItems: 'center', paddingBottom: 14, paddingHorizontal: 16,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(7,7,17,0.92)',
   },
   backBtn: { padding: 6, marginRight: 12 },
   headerUser: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  headerAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: theme.colors.bgInput, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
-  headerAvatarImg: { width: 36, height: 36, borderRadius: 18, marginRight: 10 },
+  headerAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  headerAvatarImg: { width: 38, height: 38, borderRadius: 19, marginRight: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
   headerInfo: { justifyContent: 'center' },
-  headerTitle: { fontSize: 16, fontWeight: '600', color: theme.colors.textPrimary },
-  headerStatus: { fontSize: 12, color: theme.colors.success, marginTop: 1 },
-  headerActions: { flexDirection: 'row', gap: 8 },
-  headerActionBtn: { padding: 6 },
-  msgList: { paddingVertical: 12, paddingHorizontal: 12, flexGrow: 1 },
-  dateSeparator: { flexDirection: 'row', alignItems: 'center', marginVertical: 16 },
-  dateLine: { flex: 1, height: 1, backgroundColor: theme.colors.borderLight },
-  dateText: { fontSize: 12, color: theme.colors.textMuted, marginHorizontal: 10, fontWeight: '500' },
-  msgContainer: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 4 },
+  headerTitle: { fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
+  headerStatus: { fontSize: 12, color: '#34D399', marginTop: 1 },
+  headerActions: { flexDirection: 'row', gap: 6 },
+  headerActionBtn: { padding: 6, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)' },
+  msgList: { paddingVertical: 12, paddingHorizontal: 14, flexGrow: 1 },
+  dateSeparator: { flexDirection: 'row', alignItems: 'center', marginVertical: 18 },
+  dateLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.06)' },
+  dateText: { fontSize: 12, color: '#8A8A9A', marginHorizontal: 12, fontWeight: '600' },
+  msgContainer: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 3 },
   msgContinuation: { marginTop: 2, marginBottom: 0 },
   msgAvatarWrap: { marginRight: 8, marginBottom: 18 },
   msgAvatarHidden: { opacity: 0 },
   msgAvatar: { width: 28, height: 28, borderRadius: 14 },
-  msgAvatarPlaceholder: { width: 28, height: 28, borderRadius: 14, backgroundColor: theme.colors.bgInput, alignItems: 'center', justifyContent: 'center' },
-  msgBubbleWrap: { maxWidth: '75%', alignItems: 'flex-end' },
+  msgAvatarPlaceholder: { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
+  msgBubbleWrap: { maxWidth: '78%', alignItems: 'flex-end' },
   msgBubbleRight: { alignItems: 'flex-end' },
   msgBubbleLeft: { alignItems: 'flex-start' },
-  msgBubbleRightCont: { marginTop: 2 },
-  msgBubbleLeftCont: { marginTop: 2, marginLeft: 36 },
-  msgBubble: { paddingHorizontal: 12, paddingVertical: 8 },
-  msgBubbleMine: { backgroundColor: theme.colors.accent },
-  msgBubbleTheir: { backgroundColor: theme.colors.bgCard },
-  msgBubbleMineFirst: { borderTopRightRadius: 18, borderRadius: 18 },
-  msgBubbleTheirFirst: { borderTopLeftRadius: 18, borderRadius: 18 },
-  msgBubbleMineCont: { borderRadius: 18, borderTopRightRadius: 6 },
-  msgBubbleTheirCont: { borderRadius: 18, borderTopLeftRadius: 6 },
-  msgText: { fontSize: 15, lineHeight: 20, color: theme.colors.textPrimary },
+  msgBubbleRightCont: { marginTop: 2, borderTopRightRadius: 6 },
+  msgBubbleLeftCont: { marginTop: 2, marginLeft: 36, borderTopLeftRadius: 6 },
+  msgBubble: { paddingHorizontal: 14, paddingVertical: 9 },
+  msgBubbleMine: { backgroundColor: '#FF3B8A', borderRadius: 20, borderTopRightRadius: 20 },
+  msgBubbleTheir: { backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 20, borderTopLeftRadius: 20 },
+  msgBubbleMineFirst: { borderTopRightRadius: 20, borderRadius: 20 },
+  msgBubbleTheirFirst: { borderTopLeftRadius: 20, borderRadius: 20 },
+  msgBubbleMineCont: { borderRadius: 20, borderTopRightRadius: 6 },
+  msgBubbleTheirCont: { borderRadius: 20, borderTopLeftRadius: 6 },
+  msgText: { fontSize: 15, lineHeight: 21, color: '#FFFFFF' },
   msgTextMine: { color: '#fff' },
   msgTime: { fontSize: 10, marginTop: 4, marginHorizontal: 4 },
-  msgTimeMine: { color: 'rgba(255,255,255,0.6)', alignSelf: 'flex-end' },
-  msgTimeTheir: { color: theme.colors.textMuted, alignSelf: 'flex-start' },
+  msgTimeMine: { color: 'rgba(255,255,255,0.5)', alignSelf: 'flex-end' },
+  msgTimeTheir: { color: '#8A8A9A', alignSelf: 'flex-start' },
   msgTimeHidden: { opacity: 0 },
-  emptyChat: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
-  emptyAvatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: theme.colors.bgInput, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  emptyAvatarImg: { width: 64, height: 64, borderRadius: 32 },
-  emptyName: { fontSize: 18, fontWeight: '600', color: theme.colors.textPrimary, marginBottom: 8 },
-  emptyText: { fontSize: 14, color: theme.colors.textMuted, textAlign: 'center' },
-  inputBar: { flexDirection: 'row', alignItems: 'flex-end', padding: 12, borderTopWidth: 1, borderTopColor: theme.colors.borderLight, backgroundColor: theme.colors.bgCard },
-  input: { flex: 1, backgroundColor: theme.colors.bgInput, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, fontSize: 15, color: theme.colors.textPrimary, maxHeight: 100, marginRight: 10, borderWidth: 1, borderColor: theme.colors.borderLight },
-  sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.accent, alignItems: 'center', justifyContent: 'center' },
-  sendBtnDisabled: { opacity: 0.5 },
+  emptyChat: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, paddingBottom: 120 },
+  emptyAvatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center', marginBottom: 18, borderWidth: 2, borderColor: 'rgba(255,255,255,0.06)' },
+  emptyAvatarImg: { width: 72, height: 72, borderRadius: 36 },
+  emptyName: { fontSize: 18, fontWeight: '800', color: '#FFFFFF', marginBottom: 8 },
+  emptyText: { fontSize: 14, color: '#8A8A9A', textAlign: 'center' },
+  inputBar: {
+    flexDirection: 'row', alignItems: 'flex-end', padding: 12,
+    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(7,7,17,0.95)',
+  },
+  input: {
+    flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 22,
+    paddingHorizontal: 18, paddingVertical: 10, fontSize: 15, color: '#FFFFFF',
+    maxHeight: 100, marginRight: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+  },
+  sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FF3B8A', alignItems: 'center', justifyContent: 'center' },
+  sendBtnDisabled: { opacity: 0.4 },
 });
 
 export default Chat;

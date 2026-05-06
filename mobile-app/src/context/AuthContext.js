@@ -44,7 +44,6 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (username, password) => {
     try {
-      console.log('Attempting login for user:', username);
       const response = await authAPI.login(username, password);
       const { csrfToken, user: newUser } = normalizeAuthResponse(response);
 
@@ -68,10 +67,6 @@ export const AuthProvider = ({ children }) => {
 
       return { ok: true };
     } catch (error) {
-      console.log('API Error:', error.response?.data?.error || error.message);
-      if (error.response) {
-        console.log('Error status:', error.response.status);
-      }
       const errorMessage = error.response?.data?.error || 'LOGIN_FAILED';
       return { ok: false, error: errorMessage };
     }
@@ -79,7 +74,6 @@ export const AuthProvider = ({ children }) => {
 
   const signup = async (username, password) => {
     try {
-      console.log('Attempting signup for user:', username);
       const response = await authAPI.signup(username, password);
       const { csrfToken, user: newUser } = normalizeAuthResponse(response);
 
@@ -103,10 +97,6 @@ export const AuthProvider = ({ children }) => {
 
       return { ok: true };
     } catch (error) {
-      console.log('API Error:', error.response?.data?.error || error.message);
-      if (error.response) {
-        console.log('Error status:', error.response.status);
-      }
       const errorMessage = error.response?.data?.error || 'SIGNUP_FAILED';
       return { ok: false, error: errorMessage };
     }
@@ -117,7 +107,6 @@ export const AuthProvider = ({ children }) => {
       await authAPI.logout();
     } catch (error) {
       // Logout may fail (403) if CSRF/auth is already invalid — still clear local state
-      console.log('Logout request failed (expected if session expired):', error.message);
     }
 
     await SecureStore.deleteItemAsync('authCookie');

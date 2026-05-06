@@ -17,6 +17,7 @@ import {
   MessageSquare,
   Share2,
 } from 'lucide-react-native';
+import { useAuth } from '../context/AuthContext';
 import { userAPI } from '../api/client';
 import PostCard from '../components/PostCard';
 import * as haptics from '../utils/haptics';
@@ -24,6 +25,7 @@ import { shareProfile } from '../utils/share';
 import theme from '../theme';
 
 const UserProfile = ({ navigation, route }) => {
+  const { user: currentUser } = useAuth();
   const targetUserKey = route.params?.userKey;
   const insets = useSafeAreaInsets();
   const [profileUser, setProfileUser] = useState(null);
@@ -33,6 +35,11 @@ const UserProfile = ({ navigation, route }) => {
   const [followLoading, setFollowLoading] = useState(false);
 
   useEffect(() => {
+    const myKey = currentUser && (currentUser.key || currentUser.userKey || '');
+    if (targetUserKey && myKey && String(targetUserKey) === String(myKey)) {
+      navigation.replace('Profile');
+      return;
+    }
     fetchProfile();
   }, [targetUserKey]);
 
@@ -83,6 +90,15 @@ const UserProfile = ({ navigation, route }) => {
     navigation.navigate('PostDetail', { postId });
   };
 
+  const handleViewProfile = (userKey) => {
+    const myKey = currentUser && (currentUser.key || currentUser.userKey || '');
+    if (userKey && myKey && String(userKey) === String(myKey)) {
+      navigation.navigate('Profile');
+    } else if (userKey && userKey !== profileUser?.key) {
+      navigation.navigate('UserProfile', { userKey });
+    }
+  };
+
   if (loading) {
     return (
       <View style={[styles.centerContainer, { paddingTop: insets.top + 60 }]}>
@@ -116,11 +132,7 @@ const UserProfile = ({ navigation, route }) => {
       onBookmark={() => {}}
       onComment={handlePostPress}
       onRepost={() => {}}
-      onViewProfile={(userKey) => {
-        if (userKey !== profileUser.key) {
-          navigation.navigate('UserProfile', { userKey });
-        }
-      }}
+      onViewProfile={handleViewProfile}
     />
   );
 
@@ -134,7 +146,7 @@ const UserProfile = ({ navigation, route }) => {
         <View style={{ width: 22 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 80 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         <View style={styles.headerSection}>
           <View style={styles.avatarContainer}>
             {profileUser.avatarUrl ? (
@@ -242,42 +254,42 @@ const UserProfile = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#070711' },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
-  loadingText: { fontSize: 14, color: theme.colors.textMuted, marginTop: 12 },
-  errorText: { fontSize: 16, color: theme.colors.danger, textAlign: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: theme.colors.border, backgroundColor: theme.colors.bgGlass },
-  backButton: { padding: 4, marginRight: 12 },
-  headerTitle: { fontSize: 17, fontWeight: '600', color: theme.colors.textPrimary },
-  headerSection: { flexDirection: 'row', padding: 16 },
-  avatarContainer: { marginRight: 16 },
-  avatar: { width: 72, height: 72, borderRadius: 36 },
-  avatarPlaceholder: { width: 72, height: 72, borderRadius: 36, backgroundColor: theme.colors.bgInput, alignItems: 'center', justifyContent: 'center' },
+  loadingText: { fontSize: 14, color: '#8A8A9A', marginTop: 12 },
+  errorText: { fontSize: 16, color: '#FF3B8A', textAlign: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)', backgroundColor: 'rgba(7,7,17,0.92)' },
+  backButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
+  headerSection: { flexDirection: 'row', padding: 20, alignItems: 'center' },
+  avatarContainer: { marginRight: 18 },
+  avatar: { width: 80, height: 80, borderRadius: 40, borderWidth: 2, borderColor: 'rgba(255,255,255,0.08)' },
+  avatarPlaceholder: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.06)' },
   headerInfo: { flex: 1, justifyContent: 'center' },
-  nameRow: { flexDirection: 'row', alignItems: 'center' },
-  username: { fontSize: 20, fontWeight: '700', color: '#FFFFFF' },
-  displayName: { fontSize: 14, color: theme.colors.textMuted, marginTop: 2 },
-  statsRow: { flexDirection: 'row', marginTop: 12 },
-  stat: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
-  statLabel: { fontSize: 12, color: '#B7B7C8', marginTop: 2 },
-  statDivider: { width: 1, backgroundColor: 'rgba(168, 85, 247, 0.2)' },
-  actionsRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8 },
-  followBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 22, backgroundColor: '#FF3B8A' },
-  followingBtn: { backgroundColor: 'rgba(124, 58, 237, 0.10)', borderWidth: 1, borderColor: 'rgba(168, 85, 247, 0.15)' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
+  username: { fontSize: 22, fontWeight: '900', color: '#FFFFFF' },
+  displayName: { fontSize: 14, color: '#8A8A9A', marginBottom: 12 },
+  statsRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  stat: { alignItems: 'center' },
+  statValue: { fontSize: 18, fontWeight: '800', color: '#FFFFFF' },
+  statLabel: { fontSize: 12, color: '#8A8A9A', marginTop: 2 },
+  statDivider: { width: 1, height: 20, backgroundColor: 'rgba(255,255,255,0.08)' },
+  actionsRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 10 },
+  followBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 20, backgroundColor: '#FF3B8A' },
+  followingBtn: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   followLoadingBtn: { opacity: 0.7 },
-  followBtnText: { fontSize: 14, fontWeight: '600', color: '#fff' },
+  followBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
   followingBtnText: { color: '#FFFFFF' },
-  iconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(124, 58, 237, 0.10)', alignItems: 'center', justifyContent: 'center', marginLeft: 8, borderWidth: 1, borderColor: 'rgba(168, 85, 247, 0.15)' },
-  privateSection: { padding: 24, alignItems: 'center' },
-  privateText: { fontSize: 15, color: theme.colors.textMuted },
-  section: { paddingHorizontal: 16, paddingVertical: 12 },
-  bio: { fontSize: 14, color: '#B7B7C8', lineHeight: 20 },
-  sectionLabel: { fontSize: 15, fontWeight: '600', color: '#FFFFFF', marginBottom: 8 },
-  skillsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  skillTag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: 'rgba(124, 58, 237, 0.12)' },
-  skillText: { fontSize: 13, color: '#A855F7' },
-  postsSection: { paddingHorizontal: 16, paddingTop: 8 },
-  emptyPosts: { paddingVertical: 32, alignItems: 'center' },
-  emptyText: { fontSize: 14, color: theme.colors.textMuted },
+  iconBtn: { width: 42, height: 42, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  privateSection: { padding: 40, alignItems: 'center' },
+  privateText: { fontSize: 15, color: '#8A8A9A' },
+  section: { paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)' },
+  bio: { fontSize: 15, color: '#D0D0DA', lineHeight: 22 },
+  sectionLabel: { fontSize: 12, fontWeight: '700', color: '#8A8A9A', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
+  skillsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  skillTag: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: 'rgba(124, 58, 237, 0.12)', borderWidth: 1, borderColor: 'rgba(124, 58, 237, 0.2)' },
+  skillText: { fontSize: 13, color: '#A78BFA', fontWeight: '600' },
+  postsSection: { paddingHorizontal: 0, paddingTop: 8, paddingBottom: 120 },
+  emptyPosts: { paddingVertical: 40, alignItems: 'center' },
+  emptyText: { fontSize: 15, color: '#8A8A9A' },
 });
 
 export default UserProfile;
