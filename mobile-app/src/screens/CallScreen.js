@@ -34,22 +34,33 @@ const CallScreen = ({ navigation, route }) => {
 
   useEffect(() => {
     try {
-      Animated.loop(
+      const loopAnim = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.15, duration: 1500, useNativeDriver: true }),
           Animated.timing(pulseAnim, { toValue: 0.85, duration: 1500, useNativeDriver: true }),
         ])
-      ).start();
+      );
+      loopAnim.start();
 
       const timer = setTimeout(() => {
-        if (isMounted.current) {
+        if (isMounted.current && !callStatus) {
           setCallStatus('connected');
-          Haptics?.notificationAsync?.(Haptics?.NotificationFeedbackType?.Success);
+          try {
+            if (Haptics && Haptics.notificationAsync) {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType?.Success || 'success');
+            }
+          } catch (e) {
+            console.log('Haptics not available');
+          }
         }
       }, 4000);
 
       return () => {
+        isMounted.current = false;
         clearTimeout(timer);
+        try {
+          loopAnim.stop();
+        } catch (e) {}
         if (ringRef.current) clearInterval(ringRef.current);
       };
     } catch (e) {
@@ -85,22 +96,42 @@ const CallScreen = ({ navigation, route }) => {
   }, []);
 
   const handleEndCall = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    navigation.goBack();
+    try {
+      if (Haptics && Haptics.impactAsync) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle?.Medium || 'medium');
+      }
+    } catch (e) {
+      console.log('Haptics not available');
+    }
+    if (navigation && navigation.goBack) {
+      navigation.goBack();
+    }
   };
 
   const handleToggleMute = () => {
-    Haptics.selectionAsync();
+    try {
+      if (Haptics && Haptics.selectionAsync) {
+        Haptics.selectionAsync();
+      }
+    } catch (e) {}
     setIsMuted(prev => !prev);
   };
 
   const handleToggleSpeaker = () => {
-    Haptics.selectionAsync();
+    try {
+      if (Haptics && Haptics.selectionAsync) {
+        Haptics.selectionAsync();
+      }
+    } catch (e) {}
     setIsSpeakerOn(prev => !prev);
   };
 
   const handleToggleVideo = () => {
-    Haptics.selectionAsync();
+    try {
+      if (Haptics && Haptics.selectionAsync) {
+        Haptics.selectionAsync();
+      }
+    } catch (e) {}
     setIsVideoEnabled(prev => !prev);
   };
 

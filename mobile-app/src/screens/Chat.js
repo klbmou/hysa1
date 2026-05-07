@@ -922,7 +922,7 @@ const styles = StyleSheet.create({
   msgBubbleWrapTheir: { alignItems: 'flex-start' },
   msgBubble: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20 },
   msgBubbleMine: { borderBottomRightRadius: 6 },
-  msgBubbleTheir: { backgroundColor: 'rgba(255,255,255,0.08)' },
+  msgBubbleTheir: { backgroundColor: 'rgba(255,255,255,0.14)' },
   msgBubbleMineCont: { borderRadius: 20, borderTopRightRadius: 6, borderBottomRightRadius: 6 },
   msgBubbleTheirCont: { borderRadius: 20, borderTopLeftRadius: 6 },
   msgBubbleMedia: { padding: 0, overflow: 'hidden' },
