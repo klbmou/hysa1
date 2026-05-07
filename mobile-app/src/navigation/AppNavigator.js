@@ -24,6 +24,9 @@ import PostDetailScreen from '../screens/PostDetail';
 import ReelsScreen from '../screens/Reels';
 import DMThreadsScreen from '../screens/DMThreads';
 import ChatScreen from '../screens/Chat';
+import StoryComposerScreen from '../screens/StoryComposer';
+import CallScreen from '../screens/CallScreen';
+import CreateGroupScreen from '../screens/CreateGroup';
 import LoginScreen from '../screens/Login';
 import SignupScreen from '../screens/Signup';
 import theme from '../theme';
@@ -128,6 +131,9 @@ const AppStack = () => {
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />
       <Stack.Screen name="DMThreads" component={DMThreadsScreen} />
       <Stack.Screen name="Chat" component={ChatScreen} />
+      <Stack.Screen name="StoryComposer" component={StoryComposerScreen} />
+      <Stack.Screen name="CallScreen" component={CallScreen} />
+      <Stack.Screen name="CreateGroup" component={CreateGroupScreen} />
     </Stack.Navigator>
   );
 };

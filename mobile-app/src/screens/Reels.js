@@ -45,7 +45,7 @@ import { shareReel, copyLink } from '../utils/share';
 import theme from '../theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const BATCH_SIZE = 3;
+const BATCH_SIZE = 10;
 const DOUBLE_TAP_MS = 300;
 
 const CommentItem = React.memo(({ comment, onReply }) => {
@@ -624,7 +624,6 @@ const Reels = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [nextCursor, setNextCursor] = useState(null);
   const [totalLoaded, setTotalLoaded] = useState(0);
-  const MAX_REELS = 15; // Hard limit to prevent unbounded bandwidth usage
   const [muted, setMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -696,7 +695,7 @@ const Reels = ({ navigation }) => {
       setLoading(true);
       const response = await feedAPI.getReels(BATCH_SIZE);
       if (response.data.ok) {
-        const fetchedReels = (response.data.reels || []).slice(0, MAX_REELS);
+        const fetchedReels = response.data.reels || [];
         setReels(fetchedReels);
         setTotalLoaded(fetchedReels.length);
         setNextCursor(response.data.nextCursor);
@@ -712,10 +711,6 @@ const Reels = ({ navigation }) => {
   const fetchMoreReels = useCallback(async () => {
     const now = Date.now();
     if (loadingMore || !nextCursor || fetchingRef.current || (now - lastFetchAt.current < 10000)) return;
-    if (totalLoaded >= MAX_REELS) {
-      setNextCursor(null);
-      return;
-    }
     fetchingRef.current = true;
     lastFetchAt.current = now;
     setLoadingMore(true);
@@ -724,8 +719,8 @@ const Reels = ({ navigation }) => {
       if (response.data.ok && response.data.reels && response.data.reels.length > 0) {
         const newReels = response.data.reels.filter((r) => !reels.some((existing) => existing.id === r.id));
         if (newReels.length > 0) {
-          setReels((prev) => [...prev, ...newReels.slice(0, MAX_REELS - prev.length)]);
-          setTotalLoaded((prev) => Math.min(prev + newReels.length, MAX_REELS));
+          setReels((prev) => [...prev, ...newReels]);
+          setTotalLoaded((prev) => prev + newReels.length);
         }
         setNextCursor(response.data.nextCursor || null);
       } else {

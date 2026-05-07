@@ -185,7 +185,7 @@ const PostCard = memo(({
             <Image source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }} style={styles.media} resizeMode="cover" />
           </TouchableOpacity>
           {media.kind === 'video' && (
-            <View style={styles.playOverlay}>
+            <View style={styles.playOverlay} pointerEvents="none">
               <Play size={32} color="#fff" fill="#fff" />
             </View>
           )}
@@ -209,7 +209,7 @@ const PostCard = memo(({
                 <Image source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }} style={styles.gridImage} resizeMode="cover" />
               </TouchableOpacity>
               {media.kind === 'video' && (
-                <View style={styles.gridPlayOverlay}>
+                <View style={styles.gridPlayOverlay} pointerEvents="none">
                   <Play size={20} color="#fff" fill="#fff" />
                 </View>
               )}

@@ -400,7 +400,24 @@ const Feed = ({ navigation, route }) => {
   const storyProgressAnim = useRef(new Animated.Value(0)).current;
   const storyProgressTimerRef = useRef(null);
 
-  const currentStory = stories[viewingStoryUserIndex];
+  // Group stories by user
+  const groupedStories = (() => {
+    const groups = [];
+    const userMap = new Map();
+    stories.forEach((s) => {
+      const key = s?.authorKey || s?.authorId || s?.author || 'unknown';
+      if (!userMap.has(key)) {
+        userMap.set(key, { userKey: key, username: s?.author || 'User', avatar: s?.authorAvatar || null, stories: [] });
+      }
+      userMap.get(key).stories.push(s);
+    });
+    userMap.forEach((group) => groups.push(group));
+    return groups;
+  })();
+
+  const currentGroup = groupedStories[viewingStoryUserIndex];
+  const currentStoryList = currentGroup?.stories || [];
+  const currentStory = currentStoryList[viewingStoryMediaIndex];
   const currentStoryData = normalizeStory(currentStory);
   const currentStoryMedia = currentStoryData.media;
   const currentStoryMediaUrl = currentStoryMedia?.url || null;
@@ -435,24 +452,32 @@ const Feed = ({ navigation, route }) => {
   const handleNextStory = useCallback(() => {
     storyProgressAnim.setValue(0);
     if (storyProgressTimerRef.current) clearTimeout(storyProgressTimerRef.current);
-    if (viewingStoryUserIndex < stories.length - 1) {
+    const currentStories = groupedStories[viewingStoryUserIndex]?.stories || [];
+    if (viewingStoryMediaIndex < currentStories.length - 1) {
+      setViewingStoryMediaIndex(prev => prev + 1);
+    } else if (viewingStoryUserIndex < groupedStories.length - 1) {
       setViewingStoryUserIndex(prev => prev + 1);
       setViewingStoryMediaIndex(0);
     } else {
       closeStoryViewer();
     }
-  }, [viewingStoryUserIndex, stories.length, closeStoryViewer, storyProgressAnim]);
+  }, [viewingStoryUserIndex, viewingStoryMediaIndex, groupedStories, closeStoryViewer, storyProgressAnim]);
 
   const handlePrevStory = useCallback(() => {
     storyProgressAnim.setValue(0);
     if (storyProgressTimerRef.current) clearTimeout(storyProgressTimerRef.current);
-    if (viewingStoryUserIndex > 0) {
-      setViewingStoryUserIndex(prev => prev - 1);
-      setViewingStoryMediaIndex(0);
+    if (viewingStoryMediaIndex > 0) {
+      setViewingStoryMediaIndex(prev => prev - 1);
+    } else if (viewingStoryUserIndex > 0) {
+      const prevUserIdx = viewingStoryUserIndex - 1;
+      const prevGroup = groupedStories[prevUserIdx];
+      const prevMediaLen = prevGroup?.stories?.length || 1;
+      setViewingStoryUserIndex(prevUserIdx);
+      setViewingStoryMediaIndex(prevMediaLen - 1);
     } else {
       startStoryProgress(0);
     }
-  }, [viewingStoryUserIndex, storyProgressAnim, startStoryProgress]);
+  }, [viewingStoryUserIndex, viewingStoryMediaIndex, groupedStories, storyProgressAnim, startStoryProgress]);
 
   const openStoryViewer = useCallback((userIndex) => {
     setViewingStoryUserIndex(userIndex);
@@ -483,7 +508,7 @@ const Feed = ({ navigation, route }) => {
       storyProgressAnim.stopAnimation();
       if (storyProgressTimerRef.current) clearTimeout(storyProgressTimerRef.current);
     };
-  }, [isStoryViewerVisible, hasCurrentStory, viewingStoryUserIndex, storyIsPaused, startStoryProgress, storyProgressAnim]);
+  }, [isStoryViewerVisible, hasCurrentStory, viewingStoryUserIndex, viewingStoryMediaIndex, storyIsPaused, startStoryProgress, storyProgressAnim]);
 
   useEffect(() => {
     if (isStoryViewerVisible && hasCurrentStory) {
@@ -494,7 +519,7 @@ const Feed = ({ navigation, route }) => {
   const renderStories = () => (
     <View style={styles.storiesWrap}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <TouchableOpacity style={styles.storyItem} onPress={() => openStoryPicker(false)} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.storyItem} onPress={() => navigation.navigate('StoryComposer')} activeOpacity={0.7}>
           <View style={styles.storyRing}>
             {currentUser?.avatarUrl ? (
               <Image source={{ uri: currentUser.avatarUrl }} style={styles.storyAvatar} />
@@ -510,11 +535,15 @@ const Feed = ({ navigation, route }) => {
           <Text style={styles.storyLabel} numberOfLines={1}>Your Story</Text>
         </TouchableOpacity>
 
-        {stories.map((storyUser, index) => {
-          const { story, username, avatar, thumbnail, isVideo } = normalizeStory(storyUser);
+        {groupedStories.map((group, groupIdx) => {
+          const { username, avatar, stories: userStories } = group;
+          const firstStory = userStories[0];
+          const firstMedia = firstStory?.media || {};
+          const thumbnail = firstMedia?.thumbnailUrl || firstMedia?.previewUrl || firstMedia?.url || null;
+          const isVideo = firstMedia?.kind === 'video';
           
           return (
-          <TouchableOpacity key={story?.id || story?._id || story?.createdAt || index} style={styles.storyItem} activeOpacity={0.7} onPress={() => openStoryViewer(index)}>
+          <TouchableOpacity key={group.userKey} style={styles.storyItem} activeOpacity={0.7} onPress={() => openStoryViewer(groupIdx)}>
             <View style={styles.storyRing}>
               {avatar ? (
                 <Image source={{ uri: avatar }} style={styles.storyAvatar} />
@@ -791,34 +820,40 @@ const Feed = ({ navigation, route }) => {
           <View style={styles.storyViewerContainer}>
             {/* Progress Bars */}
             <View style={styles.storyViewerProgressContainer}>
-              {stories.map((_, idx) => (
-                <View key={idx} style={styles.storyViewerProgressBarTrack}>
-                  <Animated.View
-                    style={[
-                      styles.storyViewerProgressBarFill,
-                      {
-                        width: viewingStoryUserIndex === idx ? storyProgressAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: ['0%', '100%'],
-                        }) : (viewingStoryUserIndex > idx ? '100%' : '0%'),
-                      },
-                    ]}
-                  />
-                </View>
-              ))}
+              {groupedStories.map((group, groupIdx) => {
+                const isActive = groupIdx === viewingStoryUserIndex;
+                const isComplete = groupIdx < viewingStoryUserIndex;
+                const groupProgress = isActive ? storyProgressAnim : (isComplete ? 1 : 0);
+                return (
+                  <View key={group.userKey} style={styles.storyViewerProgressBarTrack}>
+                    <Animated.View
+                      style={[
+                        styles.storyViewerProgressBarFill,
+                        {
+                          width: isActive
+                            ? groupProgress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] })
+                            : isComplete
+                            ? '100%'
+                            : '0%',
+                        },
+                      ]}
+                    />
+                  </View>
+                );
+              })}
             </View>
 
             {/* Header (Avatar, Username, Time, Close) */}
             <View style={styles.storyViewerHeader}>
-              <TouchableOpacity onPress={() => handleViewProfile(currentStory?.authorKey)} style={styles.storyViewerAvatarBtn}>
-                {currentStoryData.avatar ? (
-                  <Image source={{ uri: currentStoryData.avatar }} style={styles.storyViewerAvatar} />
+              <TouchableOpacity onPress={() => handleViewProfile(currentGroup?.userKey)} style={styles.storyViewerAvatarBtn}>
+                {currentGroup?.avatar ? (
+                  <Image source={{ uri: currentGroup.avatar }} style={styles.storyViewerAvatar} />
                 ) : (
                   <View style={styles.storyViewerAvatarPlaceholder}>
                     <User size={16} color="#fff" />
                   </View>
                 )}
-                <Text style={styles.storyViewerUsername}>{currentStoryData.username}</Text>
+                <Text style={styles.storyViewerUsername}>{currentGroup?.username || 'User'}</Text>
               </TouchableOpacity>
               <Text style={styles.storyViewerTime}>{formatStoryDate(currentStory?.createdAt)}</Text>
               <TouchableOpacity onPress={closeStoryViewer} style={styles.storyViewerCloseBtn}>

@@ -9,7 +9,7 @@ import {
   Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, User, Verified, MessageSquare } from 'lucide-react-native';
+import { ArrowLeft, User, Verified, MessageSquare, UsersPlus } from 'lucide-react-native';
 import { dmAPI } from '../api/client';
 import * as haptics from '../utils/haptics';
 import theme from '../theme';
@@ -99,7 +99,9 @@ const DMThreads = ({ navigation }) => {
           <ArrowLeft size={22} color={theme.colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Messages</Text>
-        <View style={{ width: 22 }} />
+        <TouchableOpacity style={styles.groupBtn} onPress={() => navigation.navigate('CreateGroup')} activeOpacity={0.7}>
+          <UsersPlus size={20} color={theme.colors.accent} />
+        </TouchableOpacity>
       </View>
 
       {threads.length === 0 ? (
@@ -126,6 +128,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: theme.colors.border, backgroundColor: theme.colors.bgGlass },
   backBtn: { padding: 4, marginRight: 12 },
   headerTitle: { fontSize: 18, fontWeight: '600', color: theme.colors.textPrimary },
+  groupBtn: { padding: 4, marginLeft: 8 },
   threadItem: { flexDirection: 'row', padding: 14, borderBottomWidth: 1, borderBottomColor: theme.colors.borderLight },
   avatarWrap: { position: 'relative', marginRight: 12 },
   avatar: { width: 48, height: 48, borderRadius: 24 },
