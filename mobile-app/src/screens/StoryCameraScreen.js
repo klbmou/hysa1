@@ -324,7 +324,12 @@ const StoryCameraScreen = ({ navigation, route }) => {
         </View>
       )}
 
-      <View style={styles.filterRail}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRail}
+        style={{ position: 'absolute', bottom: 160, left: 0, right: 0, zIndex: 12 }}
+      >
         {FILTERS.map((f) => (
           <TouchableOpacity
             key={f.name}
@@ -336,7 +341,7 @@ const StoryCameraScreen = ({ navigation, route }) => {
             <Text style={[styles.filterChipLabel, filter.name === f.name && styles.filterChipLabelActive]}>{f.name}</Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
       <View style={[styles.bottomControls, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <View style={styles.modeToggle}>

@@ -640,7 +640,7 @@ const Chat = ({ navigation, route }) => {
     <LinearGradient colors={currentTheme.gradient} style={styles.container}>
       <KeyboardAvoidingView
         style={styles.flex1}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <Animated.View style={[styles.header, { opacity: fadeAnim, paddingTop: insets.top + 12, backgroundColor: currentTheme.inputBg }]}>

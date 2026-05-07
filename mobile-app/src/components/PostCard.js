@@ -183,8 +183,11 @@ const PostCard = memo(({
       const displayUrl = media.fullUrl || media.url;
       const thumbUrl = media.thumbnailUrl || displayUrl;
       if (!displayUrl) return null;
+
+      const aspectRatio = media.width && media.height ? media.width / media.height : null;
+
       return (
-        <View style={styles.mediaWrap}>
+        <View style={[styles.mediaWrap, { backgroundColor: '#000' }]}>
           <TouchableOpacity
             style={{ flex: 1 }}
             onPress={() => { setViewerMedia(media); haptics.light(); }}
@@ -192,8 +195,12 @@ const PostCard = memo(({
           >
             <Image
               source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }}
-              style={styles.media}
-              resizeMode="cover"
+              style={[
+                styles.media,
+                aspectRatio ? { aspectRatio } : { height: 300 },
+                { resizeMode: 'contain' }
+              ]}
+              resizeMode="contain"
               onError={() => setMediaError(true)}
             />
           </TouchableOpacity>
@@ -212,8 +219,9 @@ const PostCard = memo(({
           const displayUrl = media.fullUrl || media.url;
           const thumbUrl = media.thumbnailUrl || displayUrl;
           if (!displayUrl) return null;
+          const aspectRatio = media.width && media.height ? media.width / media.height : 1;
           return (
-            <View key={index} style={[styles.gridItem, mediaItems.length === 1 && styles.gridItemFull]}>
+            <View key={index} style={[styles.gridItem, mediaItems.length === 1 && styles.gridItemFull, { backgroundColor: '#000' }]}>
               <TouchableOpacity
                 style={{ flex: 1 }}
                 onPress={() => { setViewerMedia(media); haptics.light(); }}
@@ -221,8 +229,8 @@ const PostCard = memo(({
               >
                 <Image
                   source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }}
-                  style={styles.gridImage}
-                  resizeMode="cover"
+                  style={[styles.gridImage, { aspectRatio, resizeMode: 'contain' }]}
+                  resizeMode="contain"
                   onError={() => setMediaError(true)}
                 />
               </TouchableOpacity>
@@ -416,14 +424,14 @@ const styles = StyleSheet.create({
   timestamp: { color: '#8A8A9A', fontSize: 12, marginTop: 2 },
   moreButton: { padding: 8, marginLeft: 4 },
   postText: { color: '#FFFFFF', fontSize: 15, lineHeight: 21, fontWeight: '400' },
-  mediaWrap: { marginTop: 12, borderRadius: 16, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.045)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
-  media: { width: '100%', aspectRatio: 4/3, borderRadius: 16 },
+  mediaWrap: { marginTop: 12, borderRadius: 16, overflow: 'hidden', backgroundColor: '#000', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  media: { width: '100%', minHeight: 200, maxHeight: 500, borderRadius: 16 },
   mediaErrorWrap: { marginTop: 12, borderRadius: 16, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', height: 160, alignItems: 'center', justifyContent: 'center' },
   mediaErrorText: { fontSize: 13, color: '#555', fontWeight: '600' },
   mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12, gap: 4 },
   gridItem: { width: '49%', aspectRatio: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.045)' },
   gridItemFull: { width: '100%', aspectRatio: 4/3, margin: 0, borderRadius: 14, overflow: 'hidden' },
-  gridImage: { width: '100%', height: '100%' },
+  gridImage: { width: '100%', height: '100%', borderRadius: 8 },
   playOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
   gridPlayOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
   quotedPost: { marginTop: 10, padding: 12, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },

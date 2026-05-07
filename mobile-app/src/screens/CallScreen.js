@@ -60,6 +60,14 @@ const CallScreen = ({ navigation, route }) => {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  useEffect(() => {
+    Alert.alert(
+      'Beta Preview',
+      'Real-time calls are coming soon! This is a preview of the call interface.',
+      [{ text: 'OK', style: 'default' }]
+    );
+  }, []);
+
   const handleEndCall = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     navigation.goBack();
