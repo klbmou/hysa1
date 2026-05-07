@@ -86,6 +86,10 @@ const CallScreen = ({ navigation, route }) => {
 
   return (
     <View style={[styles.container, callType === 'video' && styles.videoBg]}>
+      <View style={[styles.betaBadge, { top: insets.top + 12 }]}>
+        <Text style={styles.betaBadgeText}>BETA PREVIEW</Text>
+      </View>
+
       <View style={styles.avatarContainer}>
         <Animated.View style={[styles.avatarRing, { transform: [{ scale: pulseAnim }] }]}>
           {avatar ? (
@@ -99,10 +103,13 @@ const CallScreen = ({ navigation, route }) => {
       </View>
 
       <Text style={styles.username}>{username}</Text>
-      <Text style={styles.status}>{callStatusLabel}</Text>
+      <Text style={styles.status}>
+        {callStatusLabel}
+        {callStatus === 'calling' && ' (Beta)'}
+      </Text>
       {callStatus === 'connected' && (
         <Text style={styles.callMode}>
-          {callType === 'video' ? 'Video call' : 'Voice call'}
+          {callType === 'video' ? 'Video call' : 'Voice call'} — Beta preview
         </Text>
       )}
 
@@ -140,8 +147,8 @@ const CallScreen = ({ navigation, route }) => {
       <View style={styles.hintContainer}>
         <Text style={styles.hintText}>
           {callType === 'voice'
-            ? 'Voice call — WebRTC integration ready'
-            : 'Video call — WebRTC integration ready'}
+            ? 'Beta: Voice calls are a preview feature'
+            : 'Beta: Video calls are a preview feature'}
         </Text>
       </View>
     </View>
@@ -151,6 +158,8 @@ const CallScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#070711', alignItems: 'center', justifyContent: 'center' },
   videoBg: { backgroundColor: '#0a0a14' },
+  betaBadge: { position: 'absolute', left: 16, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: 'rgba(255,59,138,0.15)', borderWidth: 1, borderColor: 'rgba(255,59,138,0.3)' },
+  betaBadgeText: { fontSize: 10, color: '#FF3B8A', fontWeight: '800', letterSpacing: 0.5 },
   avatarContainer: { marginBottom: 28 },
   avatarRing: {
     width: 130,

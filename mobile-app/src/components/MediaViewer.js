@@ -34,6 +34,7 @@ const MediaViewer = ({ visible, media, onClose }) => {
   const [speedIdx, setSpeedIdx] = useState(0);
   const [zoomScale, setZoomScale] = useState(1);
   const [savedScale, setSavedScale] = useState(1);
+  const [mediaError, setMediaError] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const panY = useRef(new Animated.Value(0)).current;
@@ -53,6 +54,7 @@ const MediaViewer = ({ visible, media, onClose }) => {
       setSpeedIdx(0);
       setZoomScale(1);
       setSavedScale(1);
+      setMediaError(false);
       fadeAnim.setValue(1);
       panY.setValue(0);
     }
@@ -196,7 +198,11 @@ const MediaViewer = ({ visible, media, onClose }) => {
 
   const mediaContent = (
     <Animated.View style={[styles.zoomContainer, { transform: [{ scale: zoomScale }] }]}>
-      {kind === 'video' ? (
+      {mediaError ? (
+        <View style={styles.mediaErrorContainer}>
+          <Text style={styles.mediaErrorText}>Media unavailable</Text>
+        </View>
+      ) : kind === 'video' ? (
         <Video
           ref={videoRef}
           source={{ uri: displayUrl }}
@@ -204,6 +210,7 @@ const MediaViewer = ({ visible, media, onClose }) => {
           resizeMode={ResizeMode.CONTAIN}
           shouldPlay={isPlaying}
           isMuted={isMuted}
+          onError={() => setMediaError(true)}
           onPlaybackStatusUpdate={(status) => {
             if (status.isLoaded) {
               setPosition(status.positionMillis || 0);
@@ -219,6 +226,7 @@ const MediaViewer = ({ visible, media, onClose }) => {
           source={{ uri: displayUrl }}
           style={styles.image}
           resizeMode="contain"
+          onError={() => setMediaError(true)}
         />
       )}
     </Animated.View>
@@ -299,6 +307,18 @@ const styles = StyleSheet.create({
   image: {
     width: SCREEN_W,
     height: SCREEN_H,
+  },
+  mediaErrorContainer: {
+    width: SCREEN_W,
+    height: SCREEN_H,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0a0a0f',
+  },
+  mediaErrorText: {
+    fontSize: 15,
+    color: '#555',
+    fontWeight: '600',
   },
   controlsOverlay: {
     ...StyleSheet.absoluteFillObject,

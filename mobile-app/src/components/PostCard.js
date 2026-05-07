@@ -58,6 +58,7 @@ const PostCard = memo(({
   const [menuOpen, setMenuOpen] = useState(false);
   const [actionFeedback, setActionFeedback] = useState(null);
   const [viewerMedia, setViewerMedia] = useState(null);
+  const [mediaError, setMediaError] = useState(false);
 
   const isOwner = currentUser && (post.authorKey === currentUser.key || post.authorId === currentUser.id);
 
@@ -167,6 +168,13 @@ const PostCard = memo(({
 
   const renderMedia = () => {
     if (!post.media || post.media.length === 0) return null;
+    if (mediaError) {
+      return (
+        <View style={styles.mediaErrorWrap}>
+          <Text style={styles.mediaErrorText}>Media unavailable</Text>
+        </View>
+      );
+    }
 
     const mediaItems = post.media.slice(0, 4);
 
@@ -182,7 +190,12 @@ const PostCard = memo(({
             onPress={() => { setViewerMedia(media); haptics.light(); }}
             activeOpacity={0.8}
           >
-            <Image source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }} style={styles.media} resizeMode="cover" />
+            <Image
+              source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }}
+              style={styles.media}
+              resizeMode="cover"
+              onError={() => setMediaError(true)}
+            />
           </TouchableOpacity>
           {media.kind === 'video' && (
             <View style={styles.playOverlay} pointerEvents="none">
@@ -206,7 +219,12 @@ const PostCard = memo(({
                 onPress={() => { setViewerMedia(media); haptics.light(); }}
                 activeOpacity={0.8}
               >
-                <Image source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }} style={styles.gridImage} resizeMode="cover" />
+                <Image
+                  source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }}
+                  style={styles.gridImage}
+                  resizeMode="cover"
+                  onError={() => setMediaError(true)}
+                />
               </TouchableOpacity>
               {media.kind === 'video' && (
                 <View style={styles.gridPlayOverlay} pointerEvents="none">
@@ -400,6 +418,8 @@ const styles = StyleSheet.create({
   postText: { color: '#FFFFFF', fontSize: 15, lineHeight: 21, fontWeight: '400' },
   mediaWrap: { marginTop: 12, borderRadius: 16, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.045)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
   media: { width: '100%', aspectRatio: 4/3, borderRadius: 16 },
+  mediaErrorWrap: { marginTop: 12, borderRadius: 16, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', height: 160, alignItems: 'center', justifyContent: 'center' },
+  mediaErrorText: { fontSize: 13, color: '#555', fontWeight: '600' },
   mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12, gap: 4 },
   gridItem: { width: '49%', aspectRatio: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.045)' },
   gridItemFull: { width: '100%', aspectRatio: 4/3, margin: 0, borderRadius: 14, overflow: 'hidden' },

@@ -2,7 +2,7 @@
   "expo": {
     "name": "HYSA1",
     "slug": "hysa1",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -20,6 +20,8 @@
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.INTERNET"
@@ -33,7 +35,16 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-file-system"
+      "expo-file-system",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow HYSA to access your camera for stories.",
+          "microphonePermission": "Allow HYSA to record audio for video stories and voice messages.",
+          "recordAudioAndroid": true
+        }
+      ],
+      "expo-av"
     ],
     "extra": {
       "eas": {

@@ -45,6 +45,10 @@ const StoryComposer = ({ navigation, route }) => {
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+    if (route.params?.openGallery) {
+      pickFromGallery();
+      navigation.setParams({ openGallery: undefined });
+    }
   }, []);
 
   const isCanceled = (result) => result.canceled || result.cancelled;
@@ -98,26 +102,8 @@ const StoryComposer = ({ navigation, route }) => {
     }
   };
 
-  const pickFromCamera = async () => {
-    try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Camera access is needed to create stories.');
-        return;
-      }
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.All,
-        quality: 0.85,
-        videoMaxDuration: 60,
-      });
-      if (!isCanceled(result) && result.assets?.length && result.assets[0]?.uri) {
-        await uploadMedia(result.assets[0]);
-      }
-    } catch (err) {
-      console.error('Camera pick error:', err);
-      setError('Failed to capture media.');
-      setUploading(false);
-    }
+  const pickFromCamera = () => {
+    navigation.navigate('StoryCamera');
   };
 
   const handleSubmit = async () => {

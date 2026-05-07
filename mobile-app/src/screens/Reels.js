@@ -886,7 +886,7 @@ const Reels = ({ navigation }) => {
         )
       );
     } catch (err) {
-      Alert.alert('Coming soon', 'Reposting will be available soon.');
+      Alert.alert('Beta feature', 'Reposting is being tested.');
     }
   }, []);
 
@@ -918,7 +918,7 @@ const Reels = ({ navigation }) => {
 
   const handleReport = useCallback(() => {
     setShowMoreMenu(false);
-    Alert.alert('Coming soon', 'Reporting will be available soon.');
+    Alert.alert('Beta feature', 'Reporting is being tested.');
   }, []);
 
   const handleOpenProfile = useCallback((item) => {

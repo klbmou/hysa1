@@ -199,8 +199,8 @@ export const uploadAPI = {
 export const dmAPI = {
   getThreads: () => api.get('/api/dm/threads'),
   getConversation: (userKey) => api.get(`/api/dm/${userKey}`),
-  sendMessage: (userKey, text) =>
-    api.post(`/api/dm/${userKey}`, { text }),
+  sendMessage: (userKey, text, options = {}) =>
+    api.post(`/api/dm/${userKey}`, { text, ...options }),
 };
 
 export default api;

@@ -67,7 +67,7 @@ const CreateGroup = ({ navigation, route }) => {
       Alert.alert('Need more members', 'Add at least 2 members to create a group.');
       return;
     }
-    Alert.alert('Coming soon', 'Group chat creation will be available in the next update.');
+    Alert.alert('Beta feature', 'Group chat creation is being tested.');
   };
 
   const isFormValid = groupName.trim().length > 0 && selectedMembers.length >= 2;
@@ -159,7 +159,7 @@ const CreateGroup = ({ navigation, route }) => {
             Group chat member selection will be available in the next update. You can add friends once the feature launches.
           </Text>
           <View style={styles.comingSoonBadge}>
-            <Text style={styles.comingSoonBadgeText}>Coming Soon</Text>
+            <Text style={styles.comingSoonBadgeText}>Beta</Text>
           </View>
         </View>
       </View>

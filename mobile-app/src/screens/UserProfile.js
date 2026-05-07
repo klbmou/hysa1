@@ -22,6 +22,7 @@ import { userAPI } from '../api/client';
 import PostCard from '../components/PostCard';
 import * as haptics from '../utils/haptics';
 import { shareProfile } from '../utils/share';
+import { sanitizeBio } from '../utils/safety';
 import theme from '../theme';
 
 const UserProfile = ({ navigation, route }) => {
@@ -149,21 +150,27 @@ const UserProfile = ({ navigation, route }) => {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         <View style={styles.headerSection}>
           <View style={styles.avatarContainer}>
-            {profileUser.avatarUrl ? (
-              <Image source={{ uri: profileUser.avatarUrl }} style={styles.avatar} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <User size={40} color={theme.colors.textMuted} />
+            <View style={styles.avatarRingOuter}>
+              <View style={styles.avatarRingInner}>
+                {profileUser.avatarUrl ? (
+                  <Image source={{ uri: profileUser.avatarUrl }} style={styles.avatar} />
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                    <User size={40} color={theme.colors.textMuted} />
+                  </View>
+                )}
+              </View>
+            </View>
+            {profileUser.verified && (
+              <View style={styles.verifiedBadge}>
+                <Verified size={14} color="#fff" fill="#fff" />
               </View>
             )}
           </View>
 
           <View style={styles.headerInfo}>
             <View style={styles.nameRow}>
-              <Text style={styles.username}>{profileUser.username}</Text>
-              {profileUser.verified && (
-                <Verified size={16} color={theme.colors.verified} fill={theme.colors.verified} />
-              )}
+              <Text style={styles.username} numberOfLines={1}>{profileUser.username}</Text>
             </View>
             <Text style={styles.displayName}>@{profileUser.key}</Text>
 
@@ -212,7 +219,7 @@ const UserProfile = ({ navigation, route }) => {
           <>
             {profileUser.bio ? (
               <View style={styles.section}>
-                <Text style={styles.bio}>{profileUser.bio}</Text>
+                <Text style={styles.bio}>{sanitizeBio(profileUser.bio)}</Text>
               </View>
             ) : null}
 
@@ -260,12 +267,15 @@ const styles = StyleSheet.create({
   backButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
   headerSection: { flexDirection: 'row', padding: 20, alignItems: 'center' },
-  avatarContainer: { marginRight: 18 },
-  avatar: { width: 80, height: 80, borderRadius: 40, borderWidth: 2, borderColor: 'rgba(255,255,255,0.08)' },
-  avatarPlaceholder: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.06)' },
+  avatarContainer: { marginRight: 18, position: 'relative' },
+  avatarRingOuter: { width: 88, height: 88, borderRadius: 44, backgroundColor: 'rgba(255,59,138,0.08)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,59,138,0.15)' },
+  avatarRingInner: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#070711', alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 74, height: 74, borderRadius: 37 },
+  avatarPlaceholder: { width: 74, height: 74, borderRadius: 37, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+  verifiedBadge: { position: 'absolute', bottom: -2, right: 12, width: 22, height: 22, borderRadius: 11, backgroundColor: '#FF3B8A', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#070711' },
   headerInfo: { flex: 1, justifyContent: 'center' },
   nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
-  username: { fontSize: 22, fontWeight: '900', color: '#FFFFFF' },
+  username: { fontSize: 22, fontWeight: '900', color: '#FFFFFF', flex: 1 },
   displayName: { fontSize: 14, color: '#8A8A9A', marginBottom: 12 },
   statsRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   stat: { alignItems: 'center' },

@@ -25,6 +25,7 @@ import ReelsScreen from '../screens/Reels';
 import DMThreadsScreen from '../screens/DMThreads';
 import ChatScreen from '../screens/Chat';
 import StoryComposerScreen from '../screens/StoryComposer';
+import StoryCameraScreen from '../screens/StoryCameraScreen';
 import CallScreen from '../screens/CallScreen';
 import CreateGroupScreen from '../screens/CreateGroup';
 import LoginScreen from '../screens/Login';
@@ -132,6 +133,7 @@ const AppStack = () => {
       <Stack.Screen name="DMThreads" component={DMThreadsScreen} />
       <Stack.Screen name="Chat" component={ChatScreen} />
       <Stack.Screen name="StoryComposer" component={StoryComposerScreen} />
+      <Stack.Screen name="StoryCamera" component={StoryCameraScreen} />
       <Stack.Screen name="CallScreen" component={CallScreen} />
       <Stack.Screen name="CreateGroup" component={CreateGroupScreen} />
     </Stack.Navigator>
