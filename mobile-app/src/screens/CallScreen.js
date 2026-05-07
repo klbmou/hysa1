@@ -14,10 +14,10 @@ import theme from '../theme';
 
 const CallScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
-  const params = route.params || {};
-  const username = params.username || 'User';
-  const avatar = params.avatar || null;
-  const callType = params.callType || 'voice';
+  const params = route?.params || {};
+  const username = params?.username || 'User';
+  const avatar = params?.avatar || null;
+  const callType = params?.callType || 'voice';
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(false);
   const [isVideoEnabled, setIsVideoEnabled] = useState(callType === 'video');
@@ -25,33 +25,45 @@ const CallScreen = ({ navigation, route }) => {
   const [callDuration, setCallDuration] = useState(0);
   const pulseAnim = useRef(new Animated.Value(0.8)).current;
   const ringRef = useRef(null);
+  const isMounted = useRef(true);
 
   useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.15, duration: 1500, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 0.85, duration: 1500, useNativeDriver: true }),
-      ])
-    ).start();
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
 
-    const timer = setTimeout(() => {
-      setCallStatus('connected');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }, 4000);
+  useEffect(() => {
+    try {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.15, duration: 1500, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 0.85, duration: 1500, useNativeDriver: true }),
+        ])
+      ).start();
 
-    return () => {
-      clearTimeout(timer);
-      ringRef.current && clearInterval(ringRef.current);
-    };
+      const timer = setTimeout(() => {
+        if (isMounted.current) {
+          setCallStatus('connected');
+          Haptics?.notificationAsync?.(Haptics?.NotificationFeedbackType?.Success);
+        }
+      }, 4000);
+
+      return () => {
+        clearTimeout(timer);
+        if (ringRef.current) clearInterval(ringRef.current);
+      };
+    } catch (e) {
+      console.error('CallScreen effect error:', e);
+    }
   }, []);
 
   useEffect(() => {
     if (callStatus === 'connected') {
       ringRef.current = setInterval(() => {
-        setCallDuration(prev => prev + 1);
+        if (isMounted.current) setCallDuration(prev => prev + 1);
       }, 1000);
     }
-    return () => ringRef.current && clearInterval(ringRef.current);
+    return () => { if (ringRef.current) clearInterval(ringRef.current); };
   }, [callStatus]);
 
   const formatDuration = (seconds) => {
@@ -61,11 +73,15 @@ const CallScreen = ({ navigation, route }) => {
   };
 
   useEffect(() => {
-    Alert.alert(
-      'Beta Preview',
-      'Real-time calls are coming soon! This is a preview of the call interface.',
-      [{ text: 'OK', style: 'default' }]
-    );
+    try {
+      Alert.alert(
+        'Beta Preview',
+        'Real-time calls are coming soon! This is a preview of the call interface.',
+        [{ text: 'OK', style: 'default' }]
+      );
+    } catch (e) {
+      console.error('Alert error:', e);
+    }
   }, []);
 
   const handleEndCall = () => {

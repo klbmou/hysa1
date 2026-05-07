@@ -640,16 +640,29 @@ const Feed = ({ navigation, route }) => {
     );
   };
 
+  const [cropMedia, setCropMedia] = useState(null);
+
   const renderMediaPreview = () => {
     if (composeMedia.length === 0) return null;
     const media = composeMedia[0];
-    const displayUrl = media.fullUrl || media.url;
+    const displayUrl = media?.fullUrl || media?.url;
+    if (!displayUrl) return null;
+
     return (
       <View style={styles.mediaPreviewContainer}>
         {media.kind === 'video' ? (
           <Image source={{ uri: media.thumbnailUrl || displayUrl }} style={styles.mediaPreview} />
         ) : (
-          <Image source={{ uri: displayUrl }} style={styles.mediaPreview} />
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            onPress={() => setCropMedia(media)}
+            activeOpacity={0.8}
+          >
+            <Image source={{ uri: displayUrl }} style={styles.mediaPreview} />
+            <View style={styles.cropHint}>
+              <Text style={styles.cropHintText}>Tap to adjust</Text>
+            </View>
+          </TouchableOpacity>
         )}
         <TouchableOpacity style={styles.removeMediaBtn} onPress={removeMedia} activeOpacity={0.7}>
           <Trash2 size={16} color="#fff" />

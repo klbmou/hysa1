@@ -35,7 +35,7 @@ import theme from '../theme';
 const CHAT_BG_KEY = 'chat_bg_';
 
 const CHAT_THEMES = [
-  { id: 'default', label: 'Dark', gradient: ['#070711', '#0c0c18', '#070711'], bubbleMine: '#FF3B8A', bubbleTheir: 'rgba(255,255,255,0.08)', inputBg: 'rgba(7,7,17,0.97)' },
+  { id: 'default', label: 'Dark', gradient: ['#070711', '#0c0c18', '#070711'], bubbleMine: '#FF3B8A', bubbleTheir: 'rgba(255,255,255,0.14)', inputBg: 'rgba(7,7,17,0.97)' },
   { id: 'pink', label: 'Pink', gradient: ['#1a0a14', '#240a1a', '#070711'], bubbleMine: '#FF3B8A', bubbleTheir: 'rgba(255,59,138,0.12)', inputBg: 'rgba(26,10,20,0.97)' },
   { id: 'blue', label: 'Ocean', gradient: ['#0a1628', '#0a1e38', '#070711'], bubbleMine: '#1DA1F2', bubbleTheir: 'rgba(29,161,242,0.12)', inputBg: 'rgba(10,22,40,0.97)' },
   { id: 'glass', label: 'Glass', gradient: ['#0f0f1a', '#141424', '#0a0a16'], bubbleMine: 'rgba(255,255,255,0.15)', bubbleTheir: 'rgba(255,255,255,0.08)', inputBg: 'rgba(15,15,26,0.97)' },
@@ -947,7 +947,7 @@ const styles = StyleSheet.create({
   recordingCancelText: { fontSize: 13, color: '#8A8A9A', fontWeight: '600' },
   recordingSend: { paddingVertical: 8, paddingHorizontal: 18, borderRadius: 20, backgroundColor: '#FF3B8A' },
   recordingSendText: { fontSize: 13, color: '#fff', fontWeight: '700' },
-  msgText: { fontSize: 15, lineHeight: 20, flexWrap: 'wrap' },
+  msgText: { fontSize: 15, lineHeight: 20, flexWrap: 'wrap', color: '#FFFFFF' },
   msgTextMine: { color: '#fff' },
   msgTime: { fontSize: 10, marginTop: 3, marginHorizontal: 6 },
   msgTimeMine: { color: 'rgba(255,255,255,0.4)', textAlign: 'right' },
