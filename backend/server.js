@@ -2538,7 +2538,7 @@ for (const method of ["get", "post", "put", "patch", "delete"]) {
 
 // JSON/Body parsing middleware - MUST be first for Base64 data handling
 app.use(express.json({ limit: JSON_LIMIT }));
-app.use(express.urlencoded({ limit: JSON_LIMIT, extended: true }));
+app.use(express.urlencoded({ limit: "2mb", extended: false }));
 
 app.use((req, res, next) => {
   res.locals.cspNonce = crypto.randomBytes(16).toString("base64url");
@@ -2571,6 +2571,31 @@ app.use((req, res, next) => {
   };
   next();
 });
+
+// Trust proxy for rate limiting behind CDN/proxy
+app.set("trust proxy", 1);
+
+// Input validation helper
+function validateStringInput(value, fieldName, maxLength = 1000) {
+  if (typeof value !== 'string') return { valid: false, error: `${fieldName} must be a string` };
+  const trimmed = value.trim();
+  if (trimmed.length > maxLength) return { valid: false, error: `${fieldName} exceeds max length of ${maxLength}` };
+  if (trimmed.includes('\0')) return { valid: false, error: `${fieldName} contains invalid characters` };
+  return { valid: true, value: trimmed };
+}
+
+function validateArrayInput(value, fieldName, maxItems = 100) {
+  if (!Array.isArray(value)) return { valid: false, error: `${fieldName} must be an array` };
+  if (value.length > maxItems) return { valid: false, error: `${fieldName} exceeds max items of ${maxItems}` };
+  return { valid: true, value: value };
+}
+
+function validateId(value, fieldName) {
+  if (typeof value !== 'string' && typeof value !== 'number') return { valid: false, error: `${fieldName} must be a string or number` };
+  const str = String(value).trim();
+  if (str.length > 100 || /[<>"'%;()&+|]/.test(str)) return { valid: false, error: `${fieldName} contains invalid characters` };
+  return { valid: true, value: str };
+}
 
 // (Optional) CORS for debugging / split deployments.
 app.use((req, res, next) => {
@@ -4931,12 +4956,12 @@ app.patch("/api/users/privacy", async (req, res) => {
 // FEATURE 4 — SECURITY CENTER
 // =============================================
 
-app.post("/api/auth/change-password", async (req, res) => {
+app.post("/api/auth/change-password", rateLimit("auth"), async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
   const oldPassword = String(req.body && req.body.oldPassword || "");
   const newPassword = String(req.body && req.body.newPassword || "");
-
+  if (newPassword.length > 128) return res.status(400).json({ ok: false, error: "PASSWORD_TOO_LONG" });
   if (!oldPassword || !newPassword) return res.status(400).json({ ok: false, error: "MISSING_FIELDS" });
   if (newPassword.length < 8) return res.status(400).json({ ok: false, error: "PASSWORD_TOO_SHORT" });
 
