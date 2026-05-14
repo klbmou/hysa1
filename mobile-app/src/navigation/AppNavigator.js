@@ -4,6 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   Home,
   Bell,
@@ -54,26 +55,45 @@ const MainTabs = () => {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarStyle: [styles.tabBar, { paddingBottom: Math.max(insets.bottom, 4) }],
-        tabBarActiveTintColor: '#FF3B8A',
-        tabBarInactiveTintColor: theme.colors.textMuted,
+        tabBarStyle: [styles.tabBar, { paddingBottom: Math.max(insets.bottom, 6) }],
+        tabBarBackground: () => (
+          <LinearGradient
+            colors={['rgba(255,255,255,0.17)', 'rgba(255,255,255,0.075)', 'rgba(255,59,138,0.08)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        ),
+        tabBarActiveTintColor: theme.colors.accent,
+        tabBarInactiveTintColor: 'rgba(255,255,255,0.58)',
         tabBarLabelStyle: styles.tabBarLabel,
         tabBarItemStyle: styles.tabBarItem,
         tabBarIcon: ({ focused, color, size }) => {
+          let Icon = Home;
           switch (route.name) {
             case 'Home':
-              return <Home size={22} color={color} />;
+              Icon = Home;
+              break;
             case 'Explore':
-              return <SearchIcon size={22} color={color} />;
+              Icon = SearchIcon;
+              break;
             case 'Reels':
-              return <Film size={22} color={color} />;
+              Icon = Film;
+              break;
             case 'Notifications':
-              return <Bell size={22} color={color} />;
+              Icon = Bell;
+              break;
             case 'Profile':
-              return <User size={22} color={color} />;
+              Icon = User;
+              break;
             default:
-              return <Home size={22} color={color} />;
+              Icon = Home;
           }
+          return (
+            <View style={[styles.tabIconWrap, focused && styles.tabIconWrapActive]}>
+              <Icon size={focused ? 23 : 21} color={focused ? '#FFFFFF' : color} />
+            </View>
+          );
         },
       })}
     >
@@ -160,36 +180,54 @@ const AppNavigator = () => {
 const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#070711' },
   tabBar: {
-    backgroundColor: 'rgba(12,12,26,0.92)',
+    backgroundColor: 'rgba(20,20,34,0.34)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    height: 64,
-    borderRadius: 32,
+    borderTopWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    height: 68,
+    borderRadius: 34,
     position: 'absolute',
-    bottom: 16,
+    bottom: 14,
     marginHorizontal: 16,
-    elevation: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    paddingTop: 6,
+    overflow: 'hidden',
+    elevation: 18,
+    shadowColor: '#FF3B8A',
+    shadowOpacity: 0.22,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 10 },
+    paddingTop: 7,
     paddingBottom: 2,
-    paddingHorizontal: 4,
+    paddingHorizontal: 8,
   },
-  tabBarLabel: { fontSize: 10, fontWeight: '600', marginTop: 2 },
-  tabBarItem: { paddingTop: 2 },
+  tabBarLabel: { fontSize: 10, fontWeight: '800', marginTop: 1 },
+  tabBarItem: { paddingTop: 2, borderRadius: 24 },
+  tabIconWrap: {
+    width: 38,
+    height: 30,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabIconWrapActive: {
+    backgroundColor: '#FF3B8A',
+    shadowColor: '#FF3B8A',
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 7,
+  },
   centerButton: {
     width: 50, height: 50, borderRadius: 25,
-    backgroundColor: '#FF3B8A',
     alignItems: 'center', justifyContent: 'center',
-    top: -10,
+    top: -12,
     shadowColor: '#FF3B8A',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 8,
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    elevation: 10,
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(255,255,255,0.22)',
+    overflow: 'hidden',
+    backgroundColor: '#FF3B8A',
   },
 });
 

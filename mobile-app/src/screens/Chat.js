@@ -28,20 +28,23 @@ import { dmAPI, uploadAPI } from '../api/client';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Audio } from 'expo-av';
+import { Audio, InterruptionModeAndroid } from 'expo-av';
 import * as haptics from '../utils/haptics';
 import theme from '../theme';
 
 const CHAT_BG_KEY = 'chat_bg_';
 
 const CHAT_THEMES = [
-  { id: 'default', label: 'Dark', gradient: ['#070711', '#0c0c18', '#070711'], bubbleMine: '#FF3B8A', bubbleTheir: 'rgba(255,255,255,0.14)', inputBg: 'rgba(7,7,17,0.97)' },
-  { id: 'pink', label: 'Pink', gradient: ['#1a0a14', '#240a1a', '#070711'], bubbleMine: '#FF3B8A', bubbleTheir: 'rgba(255,59,138,0.12)', inputBg: 'rgba(26,10,20,0.97)' },
-  { id: 'blue', label: 'Ocean', gradient: ['#0a1628', '#0a1e38', '#070711'], bubbleMine: '#1DA1F2', bubbleTheir: 'rgba(29,161,242,0.12)', inputBg: 'rgba(10,22,40,0.97)' },
-  { id: 'glass', label: 'Glass', gradient: ['#0f0f1a', '#141424', '#0a0a16'], bubbleMine: 'rgba(255,255,255,0.15)', bubbleTheir: 'rgba(255,255,255,0.08)', inputBg: 'rgba(15,15,26,0.97)' },
-  { id: 'purple', label: 'Aurora', gradient: ['#140a24', '#1e0a34', '#070711'], bubbleMine: '#7c3aed', bubbleTheir: 'rgba(124,58,237,0.12)', inputBg: 'rgba(20,10,36,0.97)' },
-  { id: 'neon', label: 'Neon', gradient: ['#0a0a14', '#0a1a0a', '#070711'], bubbleMine: '#17BF63', bubbleTheir: 'rgba(23,191,99,0.12)', inputBg: 'rgba(10,10,20,0.97)' },
-  { id: 'love', label: 'Love', gradient: ['#1a0a14', '#2a0a20', '#140a24'], bubbleMine: '#ff4f76', bubbleTheir: 'rgba(255,79,118,0.1)', inputBg: 'rgba(26,10,20,0.97)' },
+  { id: 'default', label: 'HYSA Default', gradient: ['#070711', '#120f24', '#070711'], bubbleMine: '#FF3B8A', bubbleTheir: 'rgba(255,255,255,0.15)', inputBg: 'rgba(7,7,17,0.94)', textMine: '#FFFFFF', textTheir: '#FFFFFF' },
+  { id: 'pink', label: 'Neon Pink', gradient: ['#190814', '#310a25', '#070711'], bubbleMine: '#FF2F92', bubbleTheir: 'rgba(255,47,146,0.16)', inputBg: 'rgba(25,8,20,0.94)', textMine: '#FFFFFF', textTheir: '#FFFFFF' },
+  { id: 'purple', label: 'Midnight Purple', gradient: ['#0b0715', '#21113f', '#070711'], bubbleMine: '#8B5CF6', bubbleTheir: 'rgba(139,92,246,0.17)', inputBg: 'rgba(13,9,24,0.94)', textMine: '#FFFFFF', textTheir: '#F7F2FF' },
+  { id: 'blue', label: 'Ocean Blue', gradient: ['#061322', '#062f47', '#07101b'], bubbleMine: '#16A7E8', bubbleTheir: 'rgba(22,167,232,0.16)', inputBg: 'rgba(6,19,34,0.94)', textMine: '#FFFFFF', textTheir: '#EAF8FF' },
+  { id: 'emerald', label: 'Emerald', gradient: ['#041411', '#063729', '#06100d'], bubbleMine: '#10B981', bubbleTheir: 'rgba(16,185,129,0.16)', inputBg: 'rgba(4,20,17,0.94)', textMine: '#FFFFFF', textTheir: '#E9FFF7' },
+  { id: 'sunset', label: 'Sunset', gradient: ['#1b0a16', '#3a1515', '#241006'], bubbleMine: '#FF6B4A', bubbleTheir: 'rgba(255,186,73,0.16)', inputBg: 'rgba(27,10,22,0.94)', textMine: '#FFFFFF', textTheir: '#FFF2E7' },
+  { id: 'algeria', label: 'Algeria Green', gradient: ['#04130d', '#06351f', '#120b0b'], bubbleMine: '#0EA765', bubbleTheir: 'rgba(255,255,255,0.14)', inputBg: 'rgba(4,19,13,0.94)', textMine: '#FFFFFF', textTheir: '#FFFFFF' },
+  { id: 'glass', label: 'Glass Black', gradient: ['#050509', '#14141d', '#070711'], bubbleMine: 'rgba(255,255,255,0.24)', bubbleTheir: 'rgba(255,255,255,0.1)', inputBg: 'rgba(7,7,12,0.9)', textMine: '#FFFFFF', textTheir: '#FFFFFF' },
+  { id: 'love', label: 'Love', gradient: ['#1b0712', '#361025', '#160913'], bubbleMine: '#FF4F76', bubbleTheir: 'rgba(255,79,118,0.16)', inputBg: 'rgba(27,7,18,0.94)', textMine: '#FFFFFF', textTheir: '#FFEFF3' },
+  { id: 'gold', label: 'Gold', gradient: ['#161006', '#3b2708', '#100c06'], bubbleMine: '#C8912B', bubbleTheir: 'rgba(255,213,122,0.16)', inputBg: 'rgba(22,16,6,0.94)', textMine: '#FFFFFF', textTheir: '#FFF7E5' },
 ];
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -69,6 +72,7 @@ const Chat = ({ navigation, route }) => {
   const recordingRef = useRef(null);
   const recordTimerRef = useRef(null);
   const soundRef = useRef(null);
+  const playbackRequestRef = useRef(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const sheetAnim = useRef(new Animated.Value(400)).current;
   const micAnim = useRef(new Animated.Value(1)).current;
@@ -110,6 +114,37 @@ const Chat = ({ navigation, route }) => {
       }
     };
   }, []);
+
+  const resetRecordingState = () => {
+    if (recordTimerRef.current) {
+      clearInterval(recordTimerRef.current);
+      recordTimerRef.current = null;
+    }
+    if (micLoopRef.current) {
+      micLoopRef.current.stop();
+      micLoopRef.current = null;
+    }
+    recordingRef.current = null;
+    setRecording(false);
+    setRecordDuration(0);
+    micAnim.setValue(1);
+  };
+
+  const stopActiveSound = async () => {
+    const sound = soundRef.current;
+    soundRef.current = null;
+    playbackRequestRef.current = false;
+    setPlayingAudio(null);
+    if (sound) {
+      sound.setOnPlaybackStatusUpdate(null);
+      try {
+        await sound.stopAsync();
+      } catch (e) {}
+      try {
+        await sound.unloadAsync();
+      } catch (e) {}
+    }
+  };
 
   const isCanceled = (result) => result.canceled || result.cancelled;
 
@@ -166,20 +201,29 @@ const Chat = ({ navigation, route }) => {
   };
 
   const startRecording = async () => {
+    if (recording || recordingRef.current) return;
     try {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Microphone access is needed for voice messages.');
+      await stopActiveSound();
+      const currentPermission = await Audio.getPermissionsAsync();
+      const permission = currentPermission.status === 'granted'
+        ? currentPermission
+        : await Audio.requestPermissionsAsync();
+      if (permission.status !== 'granted') {
+        resetRecordingState();
+        Alert.alert('Microphone permission needed', 'Enable microphone access for HYSA in Android settings to send voice messages.');
         return;
       }
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
       });
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY);
-      await recording.startAsync();
-      recordingRef.current = recording;
+      const options = Audio.RecordingOptionsPresets?.HIGH_QUALITY || Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY;
+      const { recording: newRecording } = await Audio.Recording.createAsync(options);
+      recordingRef.current = newRecording;
       setRecording(true);
       setRecordDuration(0);
       recordTimerRef.current = setInterval(() => {
@@ -200,7 +244,17 @@ const Chat = ({ navigation, route }) => {
       micLoopRef.current.start();
     } catch (err) {
       console.error('Start recording error:', err);
-      Alert.alert('Error', 'Could not start recording.');
+      const failedRecording = recordingRef.current;
+      resetRecordingState();
+      if (failedRecording) {
+        try {
+          await failedRecording.stopAndUnloadRecordingAsync();
+        } catch (e) {}
+      }
+      try {
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false });
+      } catch (e) {}
+      Alert.alert('Recording unavailable', 'Could not start voice recording. Check microphone permission and try again.');
     }
   };
 
@@ -215,17 +269,20 @@ const Chat = ({ navigation, route }) => {
       }
       const recording = recordingRef.current;
       recordingRef.current = null;
+      const finalStatus = await recording.getStatusAsync().catch(() => null);
       await recording.stopAndUnloadRecordingAsync();
       const uri = recording.getURI();
+      const finalDuration = Math.max(recordDuration, Math.ceil((finalStatus?.durationMillis || 0) / 1000));
       setRecording(false);
       micAnim.setValue(1);
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false }).catch(() => {});
       if (uri) {
-        setMediaPreview({ uri, type: 'audio', duration: recordDuration });
+        setMediaPreview({ uri, type: 'audio', duration: finalDuration, mimeType: 'audio/mp4' });
       }
     } catch (err) {
       console.error('Stop recording error:', err);
-      setRecording(false);
-      micAnim.setValue(1);
+      resetRecordingState();
+      Alert.alert('Recording error', 'Could not finish the voice message. Please try again.');
     }
   };
 
@@ -243,6 +300,7 @@ const Chat = ({ navigation, route }) => {
     setRecording(false);
     setRecordDuration(0);
     micAnim.setValue(1);
+    Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false }).catch(() => {});
   };
 
   const sendVoiceMessage = async () => {
@@ -250,7 +308,7 @@ const Chat = ({ navigation, route }) => {
     setMediaUploading(true);
     try {
       const b64 = await FileSystem.readAsStringAsync(mediaPreview.uri, { encoding: 'base64' });
-      const dataUrl = `data:audio/mp4;base64,${b64}`;
+      const dataUrl = `data:${mediaPreview.mimeType || 'audio/mp4'};base64,${b64}`;
       const response = await uploadAPI.uploadMedia(dataUrl);
       if (response.data.ok) {
         await dmAPI.sendMessage(userKey, '', { media: [response.data.media], type: 'voice' });
@@ -268,28 +326,34 @@ const Chat = ({ navigation, route }) => {
   };
 
   const playAudio = async (uri, msgId) => {
+    if (!uri || playbackRequestRef.current) return;
+    playbackRequestRef.current = true;
     try {
       if (playingAudio === msgId) {
-        await soundRef.current?.stopAsync();
-        await soundRef.current?.unloadAsync();
-        soundRef.current = null;
-        setPlayingAudio(null);
+        await stopActiveSound();
         return;
       }
-      if (soundRef.current) {
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
-      const { sound } = await Audio.Sound.createAsync({ uri });
+      await stopActiveSound();
+      playbackRequestRef.current = true;
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+      const { sound } = await Audio.Sound.createAsync(
+        { uri },
+        { shouldPlay: false, progressUpdateIntervalMillis: 180 }
+      );
       soundRef.current = sound;
       setPlayingAudio(msgId);
       sound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded) {
           setAudioProgress((prev) => ({ ...prev, [msgId]: status.durationMillis > 0 ? status.positionMillis / status.durationMillis : 0 }));
           if (status.didJustFinish) {
-            sound.unloadAsync();
-            soundRef.current = null;
-            setPlayingAudio(null);
+            stopActiveSound();
             setAudioProgress((prev) => ({ ...prev, [msgId]: 0 }));
           }
         }
@@ -297,6 +361,9 @@ const Chat = ({ navigation, route }) => {
       await sound.playAsync();
     } catch (err) {
       console.error('Audio play error:', err);
+      await stopActiveSound();
+    } finally {
+      playbackRequestRef.current = false;
     }
   };
 
@@ -554,7 +621,11 @@ const Chat = ({ navigation, route }) => {
             {isMedia && mediaUrl ? (
               <View>
                 <Image source={{ uri: mediaUrl }} style={styles.msgMediaImage} resizeMode="cover" />
-                {item.text ? <Text style={[styles.msgText, isMine && styles.msgTextMine, styles.msgMediaText]}>{item.text}</Text> : null}
+                {item.text ? (
+                  <Text style={[styles.msgText, { color: isMine ? currentTheme.textMine : currentTheme.textTheir }, isMine && styles.msgTextMine, styles.msgMediaText]}>
+                    {item.text}
+                  </Text>
+                ) : null}
               </View>
             ) : isVoice ? (
               <TouchableOpacity
@@ -577,7 +648,7 @@ const Chat = ({ navigation, route }) => {
                 </Text>
               </TouchableOpacity>
             ) : (
-              <Text style={[styles.msgText, isMine && styles.msgTextMine]}>
+              <Text style={[styles.msgText, { color: isMine ? currentTheme.textMine : currentTheme.textTheir }, isMine && styles.msgTextMine]}>
                 {item.text}
               </Text>
             )}
@@ -651,6 +722,7 @@ const Chat = ({ navigation, route }) => {
             style={styles.headerUser}
             activeOpacity={0.7}
             onPress={handleViewProfile}
+            hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
           >
             {avatar ? (
               <Image source={{ uri: avatar }} style={styles.headerAvatarImg} />
@@ -898,10 +970,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(7,7,17,0.95)',
   },
   backBtn: { padding: 8, marginRight: 8, borderRadius: 20 },
-  headerUser: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 },
+  headerUser: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0, alignSelf: 'stretch', paddingVertical: 2, paddingRight: 6 },
   headerAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
   headerAvatarImg: { width: 36, height: 36, borderRadius: 18, marginRight: 10, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.1)' },
-  headerInfo: { justifyContent: 'center', minWidth: 0 },
+  headerInfo: { justifyContent: 'center', minWidth: 0, flex: 1 },
   headerTitle: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
   headerStatus: { fontSize: 11, color: '#8A8A9A', marginTop: 1 },
   headerActions: { flexDirection: 'row', gap: 4 },
@@ -993,12 +1065,12 @@ const styles = StyleSheet.create({
   themeHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.15)' },
   themeTitle: { fontSize: 17, fontWeight: '800', color: '#FFFFFF', textAlign: 'center', paddingVertical: 8, marginBottom: 8 },
   themeGrid: { paddingHorizontal: 16, paddingVertical: 8, gap: 12 },
-  themeCard: { alignItems: 'center', width: 80, paddingVertical: 8 },
+  themeCard: { alignItems: 'center', width: 92, minHeight: 96, paddingVertical: 8, paddingHorizontal: 4 },
   themeCardActive: { borderWidth: 2, borderColor: '#FF3B8A', borderRadius: 16 },
   themePreview: { width: 60, height: 60, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center', gap: 4, overflow: 'hidden' },
   themeBubblePreview: { width: 28, height: 14, borderRadius: 7, alignSelf: 'flex-end', marginRight: 4 },
   themeBubblePreviewTheir: { width: 28, height: 14, borderRadius: 7, alignSelf: 'flex-start', marginLeft: 4, position: 'absolute', top: 8, left: 6 },
-  themeLabel: { fontSize: 11, color: '#8A8A9A', fontWeight: '600', marginTop: 6 },
+  themeLabel: { fontSize: 11, color: '#D7D7E2', fontWeight: '700', marginTop: 6, textAlign: 'center' },
   themeLabelActive: { color: '#FF3B8A' },
   themeCheck: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#FF3B8A', position: 'absolute', top: 4, right: 4 },
   themeClose: { alignItems: 'center', paddingVertical: 14, marginTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)', marginHorizontal: 16 },

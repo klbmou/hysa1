@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Modal,
-  TextInput,
   KeyboardAvoidingView,
   Platform,
   Image,
@@ -24,7 +23,8 @@ import { useAuth } from '../context/AuthContext';
 import { feedAPI, postAPI, uploadAPI, storiesAPI } from '../api/client';
 import PostCard from '../components/PostCard';
 import { User } from 'lucide-react-native';
-import { X, Send, Image as ImageIcon, Camera, Trash2, Search, Bell, Volume2, VolumeX } from 'lucide-react-native';
+import { X, Send, Image as ImageIcon, Camera, Trash2, Search, Bell, Volume2, VolumeX, PenLine, WifiOff } from 'lucide-react-native';
+import { Avatar, EmptyState, GlassCard, HysaButton, Input, SectionHeader } from '../components/ui';
 import theme from '../theme';
 
 const THROTTLE_MS = 800;
@@ -518,16 +518,11 @@ const Feed = ({ navigation, route }) => {
 
   const renderStories = () => (
     <View style={styles.storiesWrap}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      <SectionHeader title="Stories" />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storiesContent}>
         <TouchableOpacity style={styles.storyItem} onPress={() => navigation.navigate('StoryComposer')} activeOpacity={0.7}>
           <View style={styles.storyRing}>
-            {currentUser?.avatarUrl ? (
-              <Image source={{ uri: currentUser.avatarUrl }} style={styles.storyAvatar} />
-            ) : (
-              <View style={styles.storyAvatarPlaceholder}>
-                <User size={24} color="#fff" />
-              </View>
-            )}
+            <Avatar uri={currentUser?.avatarUrl} name={currentUser?.username || 'You'} size={62} ring />
             <View style={styles.storyPlusBadge}>
               <Text style={styles.storyPlusText}>+</Text>
             </View>
@@ -545,15 +540,7 @@ const Feed = ({ navigation, route }) => {
           return (
           <TouchableOpacity key={group.userKey} style={styles.storyItem} activeOpacity={0.7} onPress={() => openStoryViewer(groupIdx)}>
             <View style={styles.storyRing}>
-              {avatar ? (
-                <Image source={{ uri: avatar }} style={styles.storyAvatar} />
-              ) : thumbnail ? (
-                <Image source={{ uri: thumbnail }} style={styles.storyAvatar} />
-              ) : (
-                <View style={styles.storyAvatarPlaceholder}>
-                   <User size={24} color="#fff" />
-                </View>
-              )}
+              <Avatar uri={avatar || thumbnail} name={username} size={62} ring />
               {isVideo && <View style={styles.storyVideoDot} />}
             </View>
             <Text style={styles.storyLabel} numberOfLines={1}>{username}</Text>
@@ -565,27 +552,28 @@ const Feed = ({ navigation, route }) => {
   );
 
   const renderPost = ({ item }) => (
-    <View style={{ marginBottom: 4 }}>
-      <PostCard
-        post={item}
-        onLike={handleLike}
-        onBookmark={handleBookmark}
-        onComment={handleComment}
-        onRepost={handleRepost}
-        onViewProfile={handleViewProfile}
-      />
-    </View>
+    <PostCard
+      post={item}
+      onLike={handleLike}
+      onBookmark={handleBookmark}
+      onComment={handleComment}
+      onRepost={handleRepost}
+      onViewProfile={handleViewProfile}
+    />
   );
 
   const renderHeader = () => (
     <View style={styles.header}>
-      <Text style={styles.logoText}>HYSA</Text> {/* Ensure consistent capitalization */}
-      <View style={{ flexDirection: 'row', gap: 10 }}>
+      <View>
+        <Text style={styles.logoText}>HYSA</Text>
+        <Text style={styles.headerTagline}>Algeria's beta social space</Text>
+      </View>
+      <View style={styles.headerActions}>
         <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.navigate('Explore')}>
-          <Search size={18} color="#FFFFFF" />
+          <Search size={18} color={theme.colors.textPrimary} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.navigate('Notifications')}>
-          <Bell size={18} color="#FFFFFF" />
+          <Bell size={18} color={theme.colors.textPrimary} />
         </TouchableOpacity>
       </View>
     </View>
@@ -613,30 +601,30 @@ const Feed = ({ navigation, route }) => {
     if (error) {
       if (errorStatus === 401) {
         return (
-          <View style={styles.centerContainer}>
-            <Text style={styles.errorText}>Please sign in again.</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={() => logout()}>
-              <Text style={styles.retryText}>Sign In</Text>
-            </TouchableOpacity>
-          </View>
+          <EmptyState
+            icon={<WifiOff size={34} color={theme.colors.accent} />}
+            title="Session expired"
+            message="Please sign in again to keep using HYSA."
+            action={<HysaButton title="Sign In" onPress={() => logout()} />}
+          />
         );
       }
       return (
-        <View style={styles.centerContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
-            <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
+        <EmptyState
+          icon={<WifiOff size={34} color={theme.colors.accent} />}
+          title="Feed unavailable"
+          message={error}
+          action={<HysaButton title="Retry" onPress={onRefresh} />}
+        />
       );
     }
 
     return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.emptyEmoji}>📝</Text>
-        <Text style={styles.emptyText}>No posts yet</Text>
-        <Text style={styles.emptySubtext}>Be the first to post!</Text>
-      </View>
+      <EmptyState
+        icon={<PenLine size={34} color={theme.colors.accent} />}
+        title="No posts yet"
+        message="Start the HYSA feed with the first post."
+      />
     );
   };
 
@@ -705,7 +693,7 @@ const Feed = ({ navigation, route }) => {
           style={styles.composeOverlay}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
         >
-          <View style={styles.composeCard}>
+          <GlassCard style={styles.composeCard} contentStyle={styles.composeCardContent}>
             <View style={styles.composeHandle} />
             <View style={styles.composeHeader}>
               <Text style={styles.composeTitle}>New Post</Text>
@@ -716,10 +704,9 @@ const Feed = ({ navigation, route }) => {
 
             {renderMediaPreview()}
 
-            <TextInput
+            <Input
               style={[styles.composeInput, composeMedia.length > 0 && styles.composeInputWithMedia]}
               placeholder="What's happening?"
-              placeholderTextColor={theme.colors.textMuted}
               value={composeText}
               onChangeText={setComposeText}
               multiline
@@ -750,24 +737,17 @@ const Feed = ({ navigation, route }) => {
                   <Camera size={20} color={uploading || composeSubmitting ? theme.colors.textMuted : theme.colors.accent} />
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={[styles.composeSubmit, (!composeText.trim() && composeMedia.length === 0 || composeSubmitting || uploading) && styles.composeSubmitDisabled]}
+              <HysaButton
+                style={styles.composeSubmit}
+                title="Post"
                 onPress={handleComposeSubmit}
                 disabled={!composeText.trim() && composeMedia.length === 0 || composeSubmitting || uploading}
-                activeOpacity={0.7}
-              >
-                {composeSubmitting || uploading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Send size={16} color="#fff" />
-                    <Text style={styles.composeSubmitText}>Post</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+                loading={composeSubmitting || uploading}
+                leftIcon={<Send size={16} color="#fff" />}
+              />
             </View>
             <View style={{ height: Math.max(insets.bottom, 12) }} />
-          </View>
+          </GlassCard>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -946,47 +926,40 @@ const Feed = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: { 
     flex: 1,
-    backgroundColor: '#070711',
+    backgroundColor: theme.colors.background,
   },
   feedContent: {
     paddingHorizontal: 0,
-    paddingTop: 0,
+    paddingTop: 2,
     paddingBottom: 92,
-    backgroundColor: '#070711',
+    backgroundColor: theme.colors.background,
   },
   storiesWrap: {
-    paddingVertical: 10,
-    paddingLeft: 12,
-    marginBottom: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    paddingTop: 12,
+    paddingBottom: 14,
+    marginBottom: 2,
+  },
+  storiesContent: {
+    paddingHorizontal: 14,
   },
   storyItem: {
-    width: 64,
-    marginRight: 14,
+    width: 70,
+    marginRight: 12,
     alignItems: 'center',
   },
   storyRing: {
     width: 62,
     height: 62,
     borderRadius: 31,
-    padding: 2,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.02)',
-  },
-  storyAvatar: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 29,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   storyLabel: {
-    marginTop: 5,
-    color: '#B7B7C8',
+    marginTop: 7,
+    color: theme.colors.textSoft,
     fontSize: 10,
-    fontWeight: '600',
-    maxWidth: 64,
+    fontWeight: '700',
+    maxWidth: 68,
     textAlign: 'center',
   },
   storyPlusBadge: {
@@ -996,9 +969,9 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: '#FF3B8A',
+    backgroundColor: theme.colors.accent,
     borderWidth: 2,
-    borderColor: '#070711',
+    borderColor: theme.colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 2,
@@ -1006,16 +979,8 @@ const styles = StyleSheet.create({
   storyPlusText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#fff',
+    color: theme.colors.textPrimary,
     marginTop: -1,
-  },
-  storyAvatarPlaceholder: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 29,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   storyVideoDot: {
     position: 'absolute',
@@ -1024,24 +989,36 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#5CCBE3',
+    backgroundColor: theme.colors.blue,
     borderWidth: 1,
-    borderColor: '#070711',
+    borderColor: theme.colors.background,
   },
   header: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 12,
+    paddingBottom: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#070711',
+    backgroundColor: theme.colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderSubtle,
   },
   logoText: {
-    color: '#FFFFFF',
-    fontSize: 26,
+    color: theme.colors.textPrimary,
+    fontSize: 27,
     fontWeight: '900',
-    letterSpacing: -0.5,
+    letterSpacing: 0,
+  },
+  headerTagline: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 10,
   },
   headerIconBtn: {
     width: 38,
@@ -1049,26 +1026,26 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: theme.colors.surfaceStrong,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: theme.colors.border,
   },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  emptyText: { fontSize: 15, color: '#8A8A9A', textAlign: 'center', marginTop: 12 },
-  emptySubtext: { fontSize: 13, color: '#8A8A9A', textAlign: 'center', marginTop: 4 },
-  emptyEmoji: { fontSize: 32 },
-  errorText: { fontSize: 15, color: '#FF3B8A', textAlign: 'center', marginBottom: 12 },
-  retryButton: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)' },
-  retryText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
+  emptyText: { fontSize: 15, color: theme.colors.textMuted, textAlign: 'center', marginTop: 12 },
+  emptySubtext: { fontSize: 13, color: theme.colors.textMuted, textAlign: 'center', marginTop: 4 },
+  errorText: { fontSize: 15, color: theme.colors.accent, textAlign: 'center', marginBottom: 12 },
+  retryButton: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20, backgroundColor: theme.colors.surfaceStrong },
+  retryText: { color: theme.colors.textPrimary, fontSize: 14, fontWeight: '700' },
   footer: { paddingVertical: 16, alignItems: 'center' },
-  composeOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  composeCard: { backgroundColor: '#0F0F1A', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16, paddingBottom: 8 },
-  composeHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.15)', alignSelf: 'center', marginBottom: 16 },
+  composeOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.68)', justifyContent: 'flex-end' },
+  composeCard: { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
+  composeCardContent: { padding: 16, paddingBottom: 8 },
+  composeHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.18)', alignSelf: 'center', marginBottom: 16 },
   composeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  composeTitle: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
-  composeInput: { backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 16, padding: 14, fontSize: 15, color: '#FFFFFF', maxHeight: 160, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  composeTitle: { fontSize: 17, fontWeight: '900', color: theme.colors.textPrimary },
+  composeInput: { maxHeight: 160, minHeight: 106 },
   composeInputWithMedia: { maxHeight: 100 },
-  mediaPreviewContainer: { marginBottom: 12, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  mediaPreviewContainer: { marginBottom: 12, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: theme.colors.border },
   mediaPreview: { width: '100%', height: 180 },
   removeMediaBtn: { position: 'absolute', top: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 14, padding: 6 },
   videoBadge: { position: 'absolute', bottom: 8, left: 8, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
@@ -1076,11 +1053,9 @@ const styles = StyleSheet.create({
   composeToolbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, marginBottom: 8 },
   composeToolbarLeft: { flexDirection: 'row', gap: 10 },
   toolbarBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  composeSubmit: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, backgroundColor: '#FF3B8A', flexDirection: 'row', alignItems: 'center', gap: 6 },
-  composeSubmitDisabled: { opacity: 0.5 },
-  composeSubmitText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-  uploadErrorText: { color: '#FF3B8A', fontSize: 13, textAlign: 'center', marginBottom: 8 },
-  storyComposerContainer: { flex: 1, backgroundColor: '#070711' },
+  composeSubmit: { minWidth: 98 },
+  uploadErrorText: { color: theme.colors.accent, fontSize: 13, textAlign: 'center', marginBottom: 8, fontWeight: '700' },
+  storyComposerContainer: { flex: 1, backgroundColor: theme.colors.background },
   storyErrorBar: { position: 'absolute', top: 60, left: 16, right: 16, backgroundColor: 'rgba(255,59,138,0.15)', borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: 'rgba(255,59,138,0.3)', zIndex: 30 },
   storyErrorText: { color: '#FF3B8A', fontSize: 13, fontWeight: '600', flex: 1, marginRight: 8 },
   storyErrorClose: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, backgroundColor: 'rgba(255,59,138,0.2)' },

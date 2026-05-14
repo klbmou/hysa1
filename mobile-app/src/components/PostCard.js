@@ -24,6 +24,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import MediaViewer from './MediaViewer';
+import { Avatar, GlassCard, MediaFallback } from './ui';
 import * as haptics from '../utils/haptics';
 import { sharePost } from '../utils/share';
 import theme from '../theme';
@@ -53,7 +54,7 @@ const PostCard = memo(({
   const [reposted, setReposted] = useState(post.repostedByMe || false);
   const [likeCount, setLikeCount] = useState(getCount(post.likeCount, post.likesCount, post.likes?.length, post.reactions?.likes, post.stats?.likes, 0));
   const commentCount = getCount(post.commentCount, post.commentsCount, post.comments, post.stats?.comments);
-  const repostCount = getCount(post.repostCount, post.repostsCount, post.reposts, post.stats?.reposts);
+  const [repostCount, setRepostCount] = useState(getCount(post.repostCount, post.repostsCount, post.reposts, post.stats?.reposts));
   const [actionLoading, setActionLoading] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   const [actionFeedback, setActionFeedback] = useState(null);
@@ -170,9 +171,7 @@ const PostCard = memo(({
     if (!post.media || post.media.length === 0) return null;
     if (mediaError) {
       return (
-        <View style={styles.mediaErrorWrap}>
-          <Text style={styles.mediaErrorText}>Media unavailable</Text>
-        </View>
+        <MediaFallback style={styles.mediaErrorWrap} />
       );
     }
 
@@ -187,7 +186,7 @@ const PostCard = memo(({
       const aspectRatio = media.width && media.height ? media.width / media.height : null;
 
       return (
-        <View style={[styles.mediaWrap, { backgroundColor: '#000' }]}>
+        <View style={styles.mediaWrap}>
           <TouchableOpacity
             style={{ flex: 1 }}
             onPress={() => { setViewerMedia(media); haptics.light(); }}
@@ -221,7 +220,7 @@ const PostCard = memo(({
           if (!displayUrl) return null;
           const aspectRatio = media.width && media.height ? media.width / media.height : 1;
           return (
-            <View key={index} style={[styles.gridItem, mediaItems.length === 1 && styles.gridItemFull, { backgroundColor: '#000' }]}>
+            <View key={index} style={[styles.gridItem, mediaItems.length === 1 && styles.gridItemFull]}>
               <TouchableOpacity
                 style={{ flex: 1 }}
                 onPress={() => { setViewerMedia(media); haptics.light(); }}
@@ -255,10 +254,10 @@ const PostCard = memo(({
     null;
 
   return (
-    <View style={styles.card}>
+    <GlassCard gradient style={styles.card} contentStyle={styles.cardContent}>
       {repostUser ? (
         <View style={styles.repostRow}>
-          <Repeat size={13} color="#A855F7" />
+          <Repeat size={13} color={theme.colors.purple} />
           <Text style={styles.repostText}>@{repostUser} reposted</Text>
         </View>
       ) : null}
@@ -268,23 +267,17 @@ const PostCard = memo(({
           style={styles.avatarContainer}
           onPress={() => onViewProfile && onViewProfile(post.authorKey)}
         >
-          {post.authorAvatar ? (
-            <Image source={{ uri: post.authorAvatar }} style={styles.avatar} />
-          ) : (
-            <View style={styles.avatarPlaceholder}>
-              <View style={styles.avatarDot} />
-            </View>
-          )}
+          <Avatar uri={post.authorAvatar} name={post.author} size={42} ring />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <View style={styles.authorNameRow}>
             <Text style={styles.authorName}>{post.author}</Text>
-            {post.verified && <Verified size={14} color="#7C3AED" fill="#7C3AED" style={{ marginLeft: 4 }} />}
+            {post.verified && <Verified size={14} color={theme.colors.verified} fill={theme.colors.verified} style={{ marginLeft: 4 }} />}
           </View>
           <Text style={styles.timestamp}>{formatDate(post.createdAt)}</Text>
         </View>
         <TouchableOpacity style={styles.moreButton} onPress={() => setMenuOpen(true)}>
-          <MoreHorizontal size={20} color="#B7B7C8" />
+          <MoreHorizontal size={20} color={theme.colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
@@ -310,8 +303,8 @@ const PostCard = memo(({
         <TouchableOpacity style={styles.actionBtn} onPress={handleLike} disabled={actionLoading.like}>
             <Heart
               size={20}
-              color={liked ? '#FF3B8A' : '#B7B7C8'}
-              fill={liked ? '#FF3B8A' : 'transparent'}
+              color={liked ? theme.colors.accent : theme.colors.textSecondary}
+              fill={liked ? theme.colors.accent : 'transparent'}
             />
             <Text style={[styles.actionText, liked && styles.actionTextActive]}>
               {likeCount}
@@ -319,7 +312,7 @@ const PostCard = memo(({
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionBtn} onPress={() => onComment && onComment(post.id)}>
-            <MessageCircle size={20} color={'#B7B7C8'} />
+            <MessageCircle size={20} color={theme.colors.textSecondary} />
             <Text style={styles.actionText}>{commentCount}</Text>
         </TouchableOpacity>
 
@@ -330,8 +323,8 @@ const PostCard = memo(({
         >
             <Repeat
               size={20}
-              color={reposted ? '#A855F7' : '#B7B7C8'}
-              fill={reposted ? '#A855F7' : 'transparent'}
+              color={reposted ? theme.colors.purple : theme.colors.textSecondary}
+              fill={reposted ? theme.colors.purple : 'transparent'}
             />
             <Text style={[styles.actionText, reposted && styles.actionTextRepost]}>
               {repostCount}
@@ -346,8 +339,8 @@ const PostCard = memo(({
           >
             <Bookmark
               size={20}
-              color={bookmarked ? '#7C3AED' : '#B7B7C8'}
-              fill={bookmarked ? '#7C3AED' : 'transparent'}
+              color={bookmarked ? theme.colors.purple : theme.colors.textSecondary}
+              fill={bookmarked ? theme.colors.purple : 'transparent'}
             />
           </TouchableOpacity>
         </View>
@@ -398,60 +391,56 @@ const PostCard = memo(({
         media={viewerMedia}
         onClose={() => setViewerMedia(null)}
       />
-    </View>
+    </GlassCard>
   );
 });
 
 const styles = StyleSheet.create({
   card: {
-    marginHorizontal: 0,
-    marginBottom: 6,
-    padding: 14,
-    backgroundColor: '#070711',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    marginHorizontal: 13,
+    marginBottom: 15,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  cardContent: {
+    padding: 15,
   },
   repostRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  repostText: { color: '#8A8A9A', fontSize: 12, fontWeight: '600' },
+  repostText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700' },
   authorRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   avatarContainer: { marginRight: 10 },
-  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.06)' },
-  avatarPlaceholder: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
-  avatarDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#7C3AED' },
   authorNameRow: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 },
-  authorName: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  authorName: { color: theme.colors.textPrimary, fontSize: 15, fontWeight: '900' },
   headerInfo: { flex: 1 },
-  timestamp: { color: '#8A8A9A', fontSize: 12, marginTop: 2 },
-  moreButton: { padding: 8, marginLeft: 4 },
-  postText: { color: '#FFFFFF', fontSize: 15, lineHeight: 21, fontWeight: '400' },
-  mediaWrap: { marginTop: 12, borderRadius: 16, overflow: 'hidden', backgroundColor: '#000', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
-  media: { width: '100%', minHeight: 200, maxHeight: 500, borderRadius: 16 },
-  mediaErrorWrap: { marginTop: 12, borderRadius: 16, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', height: 160, alignItems: 'center', justifyContent: 'center' },
-  mediaErrorText: { fontSize: 13, color: '#555', fontWeight: '600' },
+  timestamp: { color: theme.colors.textMuted, fontSize: 12, marginTop: 2, fontWeight: '600' },
+  moreButton: { padding: 8, marginLeft: 4, borderRadius: 16 },
+  postText: { color: theme.colors.textPrimary, fontSize: 15, lineHeight: 22, fontWeight: '400' },
+  mediaWrap: { marginTop: 12, borderRadius: 20, overflow: 'hidden', backgroundColor: 'rgba(2,2,7,0.72)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  media: { width: '100%', minHeight: 200, maxHeight: 500, borderRadius: 18 },
+  mediaErrorWrap: { marginTop: 12 },
   mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12, gap: 4 },
-  gridItem: { width: '49%', aspectRatio: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.045)' },
+  gridItem: { width: '49%', aspectRatio: 1, borderRadius: 18, overflow: 'hidden', backgroundColor: 'rgba(2,2,7,0.72)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   gridItemFull: { width: '100%', aspectRatio: 4/3, margin: 0, borderRadius: 14, overflow: 'hidden' },
   gridImage: { width: '100%', height: '100%', borderRadius: 8 },
   playOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
   gridPlayOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
-  quotedPost: { marginTop: 10, padding: 12, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  quotedPost: { marginTop: 10, padding: 12, backgroundColor: 'rgba(255,255,255,0.055)', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   quotedHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  quotedAuthor: { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
-  quotedText: { fontSize: 14, color: '#B7B7C8', lineHeight: 19 },
-  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.04)' },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 6 },
+  quotedAuthor: { fontSize: 13, fontWeight: '800', color: theme.colors.textPrimary },
+  quotedText: { fontSize: 14, color: theme.colors.textSoft, lineHeight: 19 },
+  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: theme.colors.borderSubtle },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 7, borderRadius: 16 },
   actionsRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  actionText: { color: '#8A8A9A', fontSize: 13, fontWeight: '600' },
-  actionTextActive: { color: '#FF3B8A' },
-  actionTextRepost: { color: '#A855F7' },
+  actionText: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '700' },
+  actionTextActive: { color: theme.colors.accent },
+  actionTextRepost: { color: theme.colors.purple },
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end', alignItems: 'center' },
-  menuCard: { width: '85%', backgroundColor: '#0F0F1A', borderRadius: 20, padding: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  menuCard: { width: '85%', backgroundColor: theme.colors.bgGlassStrong, borderRadius: 22, padding: 8, borderWidth: 1, borderColor: theme.colors.border },
   menuItem: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12, borderRadius: 12 },
-  menuItemText: { fontSize: 15, color: '#FFFFFF', fontWeight: '500' },
-  menuClose: { alignItems: 'center', padding: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)', marginTop: 4 },
-  menuCloseText: { fontSize: 15, fontWeight: '700', color: '#8A8A9A' },
-  feedbackToast: { position: 'absolute', bottom: 40, left: 20, right: 20, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 16, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  feedbackText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
+  menuItemText: { fontSize: 15, color: theme.colors.textPrimary, fontWeight: '600' },
+  menuClose: { alignItems: 'center', padding: 14, borderTopWidth: 1, borderTopColor: theme.colors.borderSubtle, marginTop: 4 },
+  menuCloseText: { fontSize: 15, fontWeight: '800', color: theme.colors.textMuted },
+  feedbackToast: { position: 'absolute', bottom: 40, left: 20, right: 20, backgroundColor: theme.colors.bgGlassStrong, borderRadius: 18, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: theme.colors.border },
+  feedbackText: { color: theme.colors.textPrimary, fontSize: 14, fontWeight: '700' },
 });
 
 PostCard.displayName = 'PostCard';
