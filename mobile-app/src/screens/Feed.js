@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -214,30 +214,30 @@ const Feed = ({ navigation, route }) => {
     }, [])
   );
 
-  const handleLike = (postId) => throttledAction(`like-${postId}`, async () => {
+  const handleLike = useCallback((postId) => throttledAction(`like-${postId}`, async () => {
     try { await postAPI.likePost(postId); } catch (err) { console.error('Like error:', err); }
-  });
+  }), [throttledAction]);
 
-  const handleBookmark = (postId) => throttledAction(`bm-${postId}`, async () => {
+  const handleBookmark = useCallback((postId) => throttledAction(`bm-${postId}`, async () => {
     try { await postAPI.bookmarkPost(postId); } catch (err) { console.error('Bookmark error:', err); }
-  });
+  }), [throttledAction]);
 
-  const handleComment = (postId) => {
+  const handleComment = useCallback((postId) => {
     navigation.navigate('PostDetail', { postId });
-  };
+  }, [navigation]);
 
-  const handleRepost = (postId) => throttledAction(`rp-${postId}`, async () => {
+  const handleRepost = useCallback((postId) => throttledAction(`rp-${postId}`, async () => {
     try { await postAPI.repostPost(postId); } catch (err) { console.error('Repost error:', err); }
-  });
+  }), [throttledAction]);
 
-  const handleViewProfile = (userKey) => {
+  const handleViewProfile = useCallback((userKey) => {
     const myKey = currentUser && (currentUser.key || currentUser.userKey || '');
     if (userKey && myKey && String(userKey) === String(myKey)) {
       navigation.navigate('Profile');
     } else {
       navigation.navigate('UserProfile', { userKey });
     }
-  };
+  }, [currentUser, navigation]);
 
   const pickFromGallery = async () => {
     try {
@@ -401,7 +401,7 @@ const Feed = ({ navigation, route }) => {
   const storyProgressTimerRef = useRef(null);
 
   // Group stories by user
-  const groupedStories = (() => {
+  const groupedStories = useMemo(() => {
     const groups = [];
     const userMap = new Map();
     stories.forEach((s) => {
@@ -413,7 +413,7 @@ const Feed = ({ navigation, route }) => {
     });
     userMap.forEach((group) => groups.push(group));
     return groups;
-  })();
+  }, [stories]);
 
   const currentGroup = groupedStories[viewingStoryUserIndex];
   const currentStoryList = currentGroup?.stories || [];
@@ -522,7 +522,7 @@ const Feed = ({ navigation, route }) => {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storiesContent}>
         <TouchableOpacity style={styles.storyItem} onPress={() => navigation.navigate('StoryComposer')} activeOpacity={0.7}>
           <View style={styles.storyRing}>
-            <Avatar uri={currentUser?.avatarUrl} name={currentUser?.username || 'You'} size={62} ring />
+            <Avatar uri={currentUser?.avatarUrl} name={currentUser?.username || 'You'} size={54} ring />
             <View style={styles.storyPlusBadge}>
               <Text style={styles.storyPlusText}>+</Text>
             </View>
@@ -540,7 +540,7 @@ const Feed = ({ navigation, route }) => {
           return (
           <TouchableOpacity key={group.userKey} style={styles.storyItem} activeOpacity={0.7} onPress={() => openStoryViewer(groupIdx)}>
             <View style={styles.storyRing}>
-              <Avatar uri={avatar || thumbnail} name={username} size={62} ring />
+              <Avatar uri={avatar || thumbnail} name={username} size={54} ring />
               {isVideo && <View style={styles.storyVideoDot} />}
             </View>
             <Text style={styles.storyLabel} numberOfLines={1}>{username}</Text>
@@ -551,7 +551,7 @@ const Feed = ({ navigation, route }) => {
     </View>
   );
 
-  const renderPost = ({ item }) => (
+  const renderPost = useCallback(({ item }) => (
     <PostCard
       post={item}
       onLike={handleLike}
@@ -560,7 +560,9 @@ const Feed = ({ navigation, route }) => {
       onRepost={handleRepost}
       onViewProfile={handleViewProfile}
     />
-  );
+  ), [handleLike, handleBookmark, handleComment, handleRepost, handleViewProfile]);
+
+  const keyExtractor = useCallback((item) => getPostId(item), []);
 
   const renderHeader = () => (
     <View style={styles.header}>
@@ -670,7 +672,7 @@ const Feed = ({ navigation, route }) => {
       <FlatList
         data={posts}
         renderItem={renderPost}
-        keyExtractor={(item) => getPostId(item)}
+        keyExtractor={keyExtractor}
         ListEmptyComponent={renderEmpty}
         ListFooterComponent={renderFooter}
         ListHeaderComponent={renderStories}
@@ -685,6 +687,12 @@ const Feed = ({ navigation, route }) => {
         onEndReachedThreshold={0.5}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.feedContent}
+        removeClippedSubviews={Platform.OS === 'android'}
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
+        windowSize={7}
+        updateCellsBatchingPeriod={80}
+        keyboardShouldPersistTaps="handled"
       />
 
       <Modal visible={composeOpen} animationType="slide" transparent statusBarTranslucent>
@@ -930,36 +938,36 @@ const styles = StyleSheet.create({
   },
   feedContent: {
     paddingHorizontal: 0,
-    paddingTop: 2,
-    paddingBottom: 92,
+    paddingTop: 0,
+    paddingBottom: 148,
     backgroundColor: theme.colors.background,
   },
   storiesWrap: {
-    paddingTop: 12,
-    paddingBottom: 14,
-    marginBottom: 2,
+    paddingTop: 10,
+    paddingBottom: 10,
+    marginBottom: 0,
   },
   storiesContent: {
     paddingHorizontal: 14,
   },
   storyItem: {
-    width: 70,
-    marginRight: 12,
+    width: 62,
+    marginRight: 11,
     alignItems: 'center',
   },
   storyRing: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
   },
   storyLabel: {
-    marginTop: 7,
+    marginTop: 6,
     color: theme.colors.textSoft,
     fontSize: 10,
     fontWeight: '700',
-    maxWidth: 68,
+    maxWidth: 62,
     textAlign: 'center',
   },
   storyPlusBadge: {
@@ -995,8 +1003,8 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 10,
+    paddingTop: 10,
+    paddingBottom: 9,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1006,7 +1014,7 @@ const styles = StyleSheet.create({
   },
   logoText: {
     color: theme.colors.textPrimary,
-    fontSize: 27,
+    fontSize: 25,
     fontWeight: '900',
     letterSpacing: 0,
   },
@@ -1026,7 +1034,7 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.colors.surfaceStrong,
+    backgroundColor: 'rgba(255,255,255,0.055)',
     borderWidth: 1,
     borderColor: theme.colors.border,
   },

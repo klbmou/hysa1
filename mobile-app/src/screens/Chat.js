@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   ArrowLeft, Send, User, MoreVertical, Phone, Video,
   Shield, Trash2, VolumeX, MessageSquare,
@@ -48,6 +49,7 @@ const CHAT_THEMES = [
 ];
 
 const SCREEN_W = Dimensions.get('window').width;
+const MIN_RECORDING_MS = 900;
 
 const VOICE_RECORDING_OPTIONS = {
   isMeteringEnabled: true,
@@ -99,6 +101,8 @@ const Chat = ({ navigation, route }) => {
   const recordingRef = useRef(null);
   const recordTimerRef = useRef(null);
   const recordDurationRef = useRef(0);
+  const recordStartedAtRef = useRef(0);
+  const recordingPreparedRef = useRef(false);
   const stoppingRecordingRef = useRef(false);
   const soundRef = useRef(null);
   const activeSoundIdRef = useRef(null);
@@ -165,6 +169,8 @@ const Chat = ({ navigation, route }) => {
     }
     recordingRef.current = null;
     recordDurationRef.current = 0;
+    recordStartedAtRef.current = 0;
+    recordingPreparedRef.current = false;
     stoppingRecordingRef.current = false;
     if (mountedRef.current) {
       setRecording(false);
@@ -172,6 +178,8 @@ const Chat = ({ navigation, route }) => {
     }
     micAnim.setValue(1);
   };
+
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const stopActiveSound = async ({ resetProgressId = null, updateState = true } = {}) => {
     const sound = soundRef.current;
@@ -282,6 +290,8 @@ const Chat = ({ navigation, route }) => {
         500
       );
       recordingRef.current = newRecording;
+      recordingPreparedRef.current = true;
+      recordStartedAtRef.current = Date.now();
       setRecording(true);
       setRecordDuration(0);
       recordDurationRef.current = 0;
@@ -320,7 +330,7 @@ const Chat = ({ navigation, route }) => {
   };
 
   const stopRecording = async () => {
-    if (!recordingRef.current || stoppingRecordingRef.current) return;
+    if (!recordingRef.current || stoppingRecordingRef.current || !recordingPreparedRef.current) return;
     stoppingRecordingRef.current = true;
     try {
       if (recordTimerRef.current) {
@@ -333,8 +343,25 @@ const Chat = ({ navigation, route }) => {
       }
       const recording = recordingRef.current;
       recordingRef.current = null;
+      const elapsed = Date.now() - recordStartedAtRef.current;
+      if (elapsed < MIN_RECORDING_MS) {
+        await wait(MIN_RECORDING_MS - elapsed);
+      }
       const finalStatus = await recording.getStatusAsync().catch(() => null);
-      await recording.stopAndUnloadRecordingAsync();
+      if (finalStatus && finalStatus.canRecord === false && !finalStatus.isDoneRecording) {
+        throw new Error('Recording was not ready to stop.');
+      }
+      try {
+        await recording.stopAndUnloadRecordingAsync();
+      } catch (stopErr) {
+        const message = String(stopErr?.message || stopErr || '');
+        if (message.includes('E_AUDIO_NODATA') || message.includes('no valid audio data')) {
+          await wait(450);
+          await recording.stopAndUnloadRecordingAsync();
+        } else {
+          throw stopErr;
+        }
+      }
       const uri = recording.getURI();
       const finalDuration = Math.max(recordDurationRef.current, Math.ceil((finalStatus?.durationMillis || 0) / 1000));
       if (mountedRef.current) {
@@ -344,8 +371,11 @@ const Chat = ({ navigation, route }) => {
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false }).catch(() => {});
       if (uri) {
         setMediaPreview({ uri, type: 'audio', duration: finalDuration, mimeType: 'audio/mp4' });
+        if (mountedRef.current) setRecordDuration(finalDuration);
       }
       recordDurationRef.current = 0;
+      recordStartedAtRef.current = 0;
+      recordingPreparedRef.current = false;
       stoppingRecordingRef.current = false;
     } catch (err) {
       console.error('Stop recording error:', err);
@@ -368,10 +398,27 @@ const Chat = ({ navigation, route }) => {
     setRecording(false);
     setRecordDuration(0);
     recordDurationRef.current = 0;
+    recordStartedAtRef.current = 0;
+    recordingPreparedRef.current = false;
     stoppingRecordingRef.current = false;
     micAnim.setValue(1);
     Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false }).catch(() => {});
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        stopActiveSound();
+        if (recordingRef.current) {
+          const recordingToStop = recordingRef.current;
+          recordingRef.current = null;
+          recordingToStop.stopAndUnloadRecordingAsync().catch(() => {});
+        }
+        resetRecordingState();
+        Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false }).catch(() => {});
+      };
+    }, [])
+  );
 
   const sendVoiceMessage = async () => {
     if (!mediaPreview || mediaPreview.type !== 'audio') return;
@@ -845,7 +892,7 @@ const Chat = ({ navigation, route }) => {
                 <Animated.View style={{ transform: [{ scale: micAnim }] }}>
                   <Mic size={20} color={theme.colors.accent} />
                 </Animated.View>
-                <Text style={styles.audioPreviewText}>Voice message ({formatDuration(recordDuration)})</Text>
+                <Text style={styles.audioPreviewText}>Voice message ({formatDuration(mediaPreview.duration || recordDuration)})</Text>
                 <TouchableOpacity style={styles.mediaPreviewCancel} onPress={cancelMediaPreview} activeOpacity={0.7}>
                   <X size={16} color="#fff" />
                 </TouchableOpacity>
@@ -869,7 +916,12 @@ const Chat = ({ navigation, route }) => {
               <TouchableOpacity style={styles.recordingCancel} onPress={cancelRecording} activeOpacity={0.7}>
                 <Text style={styles.recordingCancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.recordingSend} onPress={stopRecording} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={[styles.recordingSend, (!recordingPreparedRef.current || stoppingRecordingRef.current) && styles.recordingSendDisabled]}
+                onPress={stopRecording}
+                disabled={!recordingPreparedRef.current || stoppingRecordingRef.current}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.recordingSendText}>Done</Text>
               </TouchableOpacity>
             </View>
@@ -1091,6 +1143,7 @@ const styles = StyleSheet.create({
   recordingCancel: { marginLeft: 'auto', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)' },
   recordingCancelText: { fontSize: 13, color: '#8A8A9A', fontWeight: '600' },
   recordingSend: { paddingVertical: 8, paddingHorizontal: 18, borderRadius: 20, backgroundColor: '#FF3B8A' },
+  recordingSendDisabled: { opacity: 0.55 },
   recordingSendText: { fontSize: 13, color: '#fff', fontWeight: '700' },
   msgText: { fontSize: 15, lineHeight: 20, flexWrap: 'wrap', color: '#FFFFFF' },
   msgTextMine: { color: '#fff' },

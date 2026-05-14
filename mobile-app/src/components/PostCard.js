@@ -1,4 +1,4 @@
-import React, { useState, memo } from 'react';
+import React, { useState, memo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -39,6 +39,12 @@ const getCount = (...values) => {
   return 0;
 };
 
+const getMediaUrl = (media) => media?.fullUrl || media?.url || media?.secure_url || '';
+const getMediaKind = (media) => {
+  const kind = media?.kind || media?.type || media?.resource_type || '';
+  return kind === 'video' || kind === 'reel' ? 'video' : 'image';
+};
+
 const PostCard = memo(({
   post,
   onLike,
@@ -63,11 +69,21 @@ const PostCard = memo(({
 
   const isOwner = currentUser && (post.authorKey === currentUser.key || post.authorId === currentUser.id);
 
+  const openMediaViewer = useCallback((media) => {
+    const url = getMediaUrl(media);
+    if (!url) {
+      setMediaError(true);
+      return;
+    }
+    haptics.light();
+    setViewerMedia({ ...media, fullUrl: media.fullUrl || media.url || media.secure_url, kind: getMediaKind(media) });
+  }, []);
+
   const setLoading = (key, value) => {
     setActionLoading((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleLike = async () => {
+  const handleLike = useCallback(async () => {
     if (actionLoading.like) return;
     setLoading('like', true);
     haptics.light();
@@ -81,9 +97,9 @@ const PostCard = memo(({
     } finally {
       setLoading('like', false);
     }
-  };
+  }, [actionLoading.like, liked, likeCount, onLike, post.id]);
 
-  const handleBookmark = async () => {
+  const handleBookmark = useCallback(async () => {
     if (actionLoading.bookmark) return;
     setLoading('bookmark', true);
     haptics.light();
@@ -95,9 +111,9 @@ const PostCard = memo(({
     } finally {
       setLoading('bookmark', false);
     }
-  };
+  }, [actionLoading.bookmark, bookmarked, onBookmark, post.id]);
 
-  const handleRepost = async () => {
+  const handleRepost = useCallback(async () => {
     if (actionLoading.repost || !onRepost) return;
     setLoading('repost', true);
     haptics.medium();
@@ -112,7 +128,7 @@ const PostCard = memo(({
     } finally {
       setLoading('repost', false);
     }
-  };
+  }, [actionLoading.repost, onRepost, onRepostSuccess, post.id, reposted, repostCount]);
 
   const handleShare = async () => {
     setMenuOpen(false);
@@ -179,8 +195,9 @@ const PostCard = memo(({
 
     if (mediaItems.length === 1) {
       const media = mediaItems[0];
-      const displayUrl = media.fullUrl || media.url;
+      const displayUrl = getMediaUrl(media);
       const thumbUrl = media.thumbnailUrl || displayUrl;
+      const mediaKind = getMediaKind(media);
       if (!displayUrl) return null;
 
       const aspectRatio = media.width && media.height ? media.width / media.height : null;
@@ -189,11 +206,11 @@ const PostCard = memo(({
         <View style={styles.mediaWrap}>
           <TouchableOpacity
             style={{ flex: 1 }}
-            onPress={() => { setViewerMedia(media); haptics.light(); }}
+            onPress={() => openMediaViewer(media)}
             activeOpacity={0.8}
           >
             <Image
-              source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }}
+              source={{ uri: mediaKind === 'video' ? thumbUrl : displayUrl }}
               style={[
                 styles.media,
                 aspectRatio ? { aspectRatio } : { height: 300 },
@@ -203,7 +220,7 @@ const PostCard = memo(({
               onError={() => setMediaError(true)}
             />
           </TouchableOpacity>
-          {media.kind === 'video' && (
+          {mediaKind === 'video' && (
             <View style={styles.playOverlay} pointerEvents="none">
               <Play size={32} color="#fff" fill="#fff" />
             </View>
@@ -215,25 +232,26 @@ const PostCard = memo(({
     return (
       <View style={styles.mediaGrid}>
         {mediaItems.map((media, index) => {
-          const displayUrl = media.fullUrl || media.url;
+          const displayUrl = getMediaUrl(media);
           const thumbUrl = media.thumbnailUrl || displayUrl;
+          const mediaKind = getMediaKind(media);
           if (!displayUrl) return null;
           const aspectRatio = media.width && media.height ? media.width / media.height : 1;
           return (
             <View key={index} style={[styles.gridItem, mediaItems.length === 1 && styles.gridItemFull]}>
               <TouchableOpacity
                 style={{ flex: 1 }}
-                onPress={() => { setViewerMedia(media); haptics.light(); }}
+                onPress={() => openMediaViewer(media)}
                 activeOpacity={0.8}
               >
                 <Image
-                  source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }}
+                  source={{ uri: mediaKind === 'video' ? thumbUrl : displayUrl }}
                   style={[styles.gridImage, { aspectRatio, resizeMode: 'contain' }]}
                   resizeMode="contain"
                   onError={() => setMediaError(true)}
                 />
               </TouchableOpacity>
-              {media.kind === 'video' && (
+              {mediaKind === 'video' && (
                 <View style={styles.gridPlayOverlay} pointerEvents="none">
                   <Play size={20} color="#fff" fill="#fff" />
                 </View>
@@ -267,7 +285,7 @@ const PostCard = memo(({
           style={styles.avatarContainer}
           onPress={() => onViewProfile && onViewProfile(post.authorKey)}
         >
-          <Avatar uri={post.authorAvatar} name={post.author} size={42} ring />
+          <Avatar uri={post.authorAvatar} name={post.author} size={38} ring />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <View style={styles.authorNameRow}>
@@ -397,40 +415,40 @@ const PostCard = memo(({
 
 const styles = StyleSheet.create({
   card: {
-    marginHorizontal: 12,
-    marginBottom: 14,
-    borderColor: 'rgba(255,255,255,0.13)',
+    marginHorizontal: 10,
+    marginBottom: 10,
+    borderColor: 'rgba(255,255,255,0.105)',
   },
   cardContent: {
-    padding: 15,
+    padding: 12,
   },
-  repostRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  repostText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700' },
-  authorRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  avatarContainer: { marginRight: 10 },
+  repostRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 7 },
+  repostText: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '700' },
+  authorRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  avatarContainer: { marginRight: 9 },
   authorNameRow: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 },
-  authorName: { color: theme.colors.textPrimary, fontSize: 15, fontWeight: '900' },
+  authorName: { color: theme.colors.textPrimary, fontSize: 14, fontWeight: '800' },
   headerInfo: { flex: 1 },
-  timestamp: { color: theme.colors.textMuted, fontSize: 12, marginTop: 2, fontWeight: '600' },
+  timestamp: { color: theme.colors.textMuted, fontSize: 11, marginTop: 1, fontWeight: '600' },
   moreButton: { padding: 8, marginLeft: 4, borderRadius: 16 },
-  postText: { color: theme.colors.textPrimary, fontSize: 15, lineHeight: 22, fontWeight: '400' },
-  mediaWrap: { marginTop: 12, borderRadius: 20, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.035)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
-  media: { width: '100%', minHeight: 200, maxHeight: 500, borderRadius: 18 },
-  mediaErrorWrap: { marginTop: 12 },
-  mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12, gap: 4 },
-  gridItem: { width: '49%', aspectRatio: 1, borderRadius: 18, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.035)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  postText: { color: theme.colors.textPrimary, fontSize: 14, lineHeight: 20, fontWeight: '400' },
+  mediaWrap: { marginTop: 10, borderRadius: 16, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.09)' },
+  media: { width: '100%', minHeight: 160, maxHeight: 360, borderRadius: 15 },
+  mediaErrorWrap: { marginTop: 10 },
+  mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10, gap: 4 },
+  gridItem: { width: '49%', aspectRatio: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   gridItemFull: { width: '100%', aspectRatio: 4/3, margin: 0, borderRadius: 14, overflow: 'hidden' },
   gridImage: { width: '100%', height: '100%', borderRadius: 8 },
   playOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
   gridPlayOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
-  quotedPost: { marginTop: 10, padding: 12, backgroundColor: 'rgba(255,255,255,0.055)', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  quotedPost: { marginTop: 9, padding: 10, backgroundColor: 'rgba(255,255,255,0.045)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   quotedHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   quotedAuthor: { fontSize: 13, fontWeight: '800', color: theme.colors.textPrimary },
   quotedText: { fontSize: 14, color: theme.colors.textSoft, lineHeight: 19 },
-  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)' },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 7, borderRadius: 16 },
+  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 11, paddingTop: 9, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.055)' },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 7, paddingVertical: 6, borderRadius: 14 },
   actionsRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  actionText: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '700' },
+  actionText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700' },
   actionTextActive: { color: theme.colors.accent },
   actionTextRepost: { color: theme.colors.purple },
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end', alignItems: 'center' },
