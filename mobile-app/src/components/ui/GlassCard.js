@@ -13,7 +13,7 @@ const GlassCard = ({ children, style, contentStyle, gradient = false }) => {
   if (gradient) {
     return (
       <LinearGradient
-        colors={['rgba(255,255,255,0.13)', 'rgba(255,59,138,0.085)', 'rgba(124,58,237,0.065)', 'rgba(255,255,255,0.04)']}
+        colors={['rgba(255,255,255,0.16)', 'rgba(255,59,138,0.07)', 'rgba(124,58,237,0.055)', 'rgba(255,255,255,0.045)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.card, style]}
@@ -28,16 +28,16 @@ const GlassCard = ({ children, style, contentStyle, gradient = false }) => {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: theme.colors.bgGlassLight,
+    backgroundColor: 'rgba(255,255,255,0.045)',
     borderRadius: theme.radius.xl,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: 'rgba(255,255,255,0.12)',
     overflow: 'hidden',
     shadowColor: '#FF3B8A',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.18,
-    shadowRadius: 22,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 5,
   },
   content: {
     flex: 1,

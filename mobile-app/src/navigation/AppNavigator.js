@@ -44,7 +44,12 @@ const CenterComposeButton = () => {
       onPress={() => navigation.navigate('Home', { openCompose: Date.now() })}
       activeOpacity={0.8}
     >
-      <Plus size={26} color="#FFFFFF" />
+      <LinearGradient
+        colors={['#FF3B8A', '#FF2F92', '#7C3AED']}
+        style={styles.centerButtonGradient}
+      >
+        <Plus size={26} color="#FFFFFF" />
+      </LinearGradient>
     </TouchableOpacity>
   );
 };
@@ -58,7 +63,7 @@ const MainTabs = () => {
         tabBarStyle: [styles.tabBar, { paddingBottom: Math.max(insets.bottom, 6) }],
         tabBarBackground: () => (
           <LinearGradient
-            colors={['rgba(255,255,255,0.17)', 'rgba(255,255,255,0.075)', 'rgba(255,59,138,0.08)']}
+            colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0.105)', 'rgba(255,59,138,0.12)']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
@@ -91,7 +96,18 @@ const MainTabs = () => {
           }
           return (
             <View style={[styles.tabIconWrap, focused && styles.tabIconWrapActive]}>
-              <Icon size={focused ? 23 : 21} color={focused ? '#FFFFFF' : color} />
+              {focused ? (
+                <LinearGradient
+                  colors={['#FF3B8A', '#FF2F92', '#7C3AED']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.tabIconActiveGradient}
+                >
+                  <Icon size={22} color="#FFFFFF" />
+                </LinearGradient>
+              ) : (
+                <Icon size={21} color={color} />
+              )}
             </View>
           );
         },
@@ -180,40 +196,48 @@ const AppNavigator = () => {
 const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#070711' },
   tabBar: {
-    backgroundColor: 'rgba(20,20,34,0.34)',
+    backgroundColor: 'rgba(255,255,255,0.055)',
     borderWidth: 1,
     borderTopWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    height: 68,
+    borderColor: 'rgba(255,255,255,0.16)',
+    height: 70,
     borderRadius: 34,
     position: 'absolute',
     bottom: 14,
-    marginHorizontal: 16,
+    marginHorizontal: 14,
     overflow: 'hidden',
-    elevation: 18,
+    elevation: 10,
     shadowColor: '#FF3B8A',
-    shadowOpacity: 0.22,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 10 },
-    paddingTop: 7,
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    paddingTop: 8,
     paddingBottom: 2,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
   },
-  tabBarLabel: { fontSize: 10, fontWeight: '800', marginTop: 1 },
-  tabBarItem: { paddingTop: 2, borderRadius: 24 },
+  tabBarLabel: { fontSize: 10, fontWeight: '900', marginTop: 2 },
+  tabBarItem: { paddingTop: 2, borderRadius: 26 },
   tabIconWrap: {
-    width: 38,
-    height: 30,
-    borderRadius: 16,
+    width: 42,
+    height: 32,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
   tabIconWrapActive: {
-    backgroundColor: '#FF3B8A',
     shadowColor: '#FF3B8A',
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
+    shadowOpacity: 0.55,
+    shadowRadius: 14,
     elevation: 7,
+  },
+  tabIconActiveGradient: {
+    width: 42,
+    height: 32,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
   centerButton: {
     width: 50, height: 50, borderRadius: 25,
@@ -227,7 +251,14 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.22)',
     overflow: 'hidden',
-    backgroundColor: '#FF3B8A',
+    backgroundColor: 'transparent',
+  },
+  centerButtonGradient: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 

@@ -397,9 +397,9 @@ const PostCard = memo(({
 
 const styles = StyleSheet.create({
   card: {
-    marginHorizontal: 13,
-    marginBottom: 15,
-    borderColor: 'rgba(255,255,255,0.16)',
+    marginHorizontal: 12,
+    marginBottom: 14,
+    borderColor: 'rgba(255,255,255,0.13)',
   },
   cardContent: {
     padding: 15,
@@ -414,11 +414,11 @@ const styles = StyleSheet.create({
   timestamp: { color: theme.colors.textMuted, fontSize: 12, marginTop: 2, fontWeight: '600' },
   moreButton: { padding: 8, marginLeft: 4, borderRadius: 16 },
   postText: { color: theme.colors.textPrimary, fontSize: 15, lineHeight: 22, fontWeight: '400' },
-  mediaWrap: { marginTop: 12, borderRadius: 20, overflow: 'hidden', backgroundColor: 'rgba(2,2,7,0.72)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  mediaWrap: { marginTop: 12, borderRadius: 20, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.035)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
   media: { width: '100%', minHeight: 200, maxHeight: 500, borderRadius: 18 },
   mediaErrorWrap: { marginTop: 12 },
   mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12, gap: 4 },
-  gridItem: { width: '49%', aspectRatio: 1, borderRadius: 18, overflow: 'hidden', backgroundColor: 'rgba(2,2,7,0.72)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  gridItem: { width: '49%', aspectRatio: 1, borderRadius: 18, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.035)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   gridItemFull: { width: '100%', aspectRatio: 4/3, margin: 0, borderRadius: 14, overflow: 'hidden' },
   gridImage: { width: '100%', height: '100%', borderRadius: 8 },
   playOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
@@ -427,7 +427,7 @@ const styles = StyleSheet.create({
   quotedHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   quotedAuthor: { fontSize: 13, fontWeight: '800', color: theme.colors.textPrimary },
   quotedText: { fontSize: 14, color: theme.colors.textSoft, lineHeight: 19 },
-  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: theme.colors.borderSubtle },
+  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)' },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 7, borderRadius: 16 },
   actionsRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   actionText: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '700' },

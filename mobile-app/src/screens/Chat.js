@@ -49,6 +49,33 @@ const CHAT_THEMES = [
 
 const SCREEN_W = Dimensions.get('window').width;
 
+const VOICE_RECORDING_OPTIONS = {
+  isMeteringEnabled: true,
+  android: {
+    extension: '.m4a',
+    outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+    audioEncoder: Audio.AndroidAudioEncoder.AAC,
+    sampleRate: 44100,
+    numberOfChannels: 1,
+    bitRate: 96000,
+  },
+  ios: {
+    extension: '.m4a',
+    outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+    audioQuality: Audio.IOSAudioQuality.HIGH,
+    sampleRate: 44100,
+    numberOfChannels: 1,
+    bitRate: 96000,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+  web: {
+    mimeType: 'audio/webm',
+    bitsPerSecond: 96000,
+  },
+};
+
 const Chat = ({ navigation, route }) => {
   const userKey = route.params?.userKey || '';
   const username = route.params?.username || 'User';
@@ -71,8 +98,12 @@ const Chat = ({ navigation, route }) => {
   const flatListRef = useRef(null);
   const recordingRef = useRef(null);
   const recordTimerRef = useRef(null);
+  const recordDurationRef = useRef(0);
+  const stoppingRecordingRef = useRef(false);
   const soundRef = useRef(null);
+  const activeSoundIdRef = useRef(null);
   const playbackRequestRef = useRef(false);
+  const mountedRef = useRef(true);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const sheetAnim = useRef(new Animated.Value(400)).current;
   const micAnim = useRef(new Animated.Value(1)).current;
@@ -100,17 +131,25 @@ const Chat = ({ navigation, route }) => {
 
   useEffect(() => {
     return () => {
+      mountedRef.current = false;
       if (recordTimerRef.current) {
         clearInterval(recordTimerRef.current);
+        recordTimerRef.current = null;
       }
       if (recordingRef.current) {
-        recordingRef.current.stopAndUnloadRecordingAsync();
+        const recording = recordingRef.current;
+        recordingRef.current = null;
+        recording.stopAndUnloadRecordingAsync().catch(() => {});
       }
       if (soundRef.current) {
-        soundRef.current.unloadAsync();
+        const sound = soundRef.current;
+        soundRef.current = null;
+        sound.setOnPlaybackStatusUpdate(null);
+        sound.unloadAsync().catch(() => {});
       }
       if (micLoopRef.current) {
         micLoopRef.current.stop();
+        micLoopRef.current = null;
       }
     };
   }, []);
@@ -125,16 +164,26 @@ const Chat = ({ navigation, route }) => {
       micLoopRef.current = null;
     }
     recordingRef.current = null;
-    setRecording(false);
-    setRecordDuration(0);
+    recordDurationRef.current = 0;
+    stoppingRecordingRef.current = false;
+    if (mountedRef.current) {
+      setRecording(false);
+      setRecordDuration(0);
+    }
     micAnim.setValue(1);
   };
 
-  const stopActiveSound = async () => {
+  const stopActiveSound = async ({ resetProgressId = null, updateState = true } = {}) => {
     const sound = soundRef.current;
     soundRef.current = null;
+    activeSoundIdRef.current = null;
     playbackRequestRef.current = false;
-    setPlayingAudio(null);
+    if (updateState && mountedRef.current) {
+      setPlayingAudio(null);
+      if (resetProgressId) {
+        setAudioProgress((prev) => ({ ...prev, [resetProgressId]: 0 }));
+      }
+    }
     if (sound) {
       sound.setOnPlaybackStatusUpdate(null);
       try {
@@ -201,16 +250,17 @@ const Chat = ({ navigation, route }) => {
   };
 
   const startRecording = async () => {
-    if (recording || recordingRef.current) return;
+    if (recording || recordingRef.current || stoppingRecordingRef.current) return;
     try {
       await stopActiveSound();
+      await Audio.setIsEnabledAsync(true);
       const currentPermission = await Audio.getPermissionsAsync();
       const permission = currentPermission.status === 'granted'
         ? currentPermission
         : await Audio.requestPermissionsAsync();
       if (permission.status !== 'granted') {
         resetRecordingState();
-        Alert.alert('Microphone permission needed', 'Enable microphone access for HYSA in Android settings to send voice messages.');
+        Alert.alert('Microphone permission needed', 'Enable microphone access for HYSA in Android settings, then try recording again.');
         return;
       }
       await Audio.setAudioModeAsync({
@@ -218,22 +268,33 @@ const Chat = ({ navigation, route }) => {
         playsInSilentModeIOS: true,
         staysActiveInBackground: false,
         interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
-        shouldDuckAndroid: true,
+        shouldDuckAndroid: false,
         playThroughEarpieceAndroid: false,
       });
-      const options = Audio.RecordingOptionsPresets?.HIGH_QUALITY || Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY;
-      const { recording: newRecording } = await Audio.Recording.createAsync(options);
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        VOICE_RECORDING_OPTIONS,
+        (status) => {
+          if (!mountedRef.current || !status?.isRecording) return;
+          const seconds = Math.floor((status.durationMillis || 0) / 1000);
+          recordDurationRef.current = seconds;
+          setRecordDuration(seconds);
+        },
+        500
+      );
       recordingRef.current = newRecording;
       setRecording(true);
       setRecordDuration(0);
+      recordDurationRef.current = 0;
       recordTimerRef.current = setInterval(() => {
-        setRecordDuration((prev) => {
-          if (prev >= 60) {
+        recordDurationRef.current += 1;
+        if (mountedRef.current) {
+          setRecordDuration(recordDurationRef.current);
+        }
+        if (recordDurationRef.current >= 60) {
+          if (!stoppingRecordingRef.current) {
             stopRecording();
-            return 60;
           }
-          return prev + 1;
-        });
+        }
       }, 1000);
       micLoopRef.current = Animated.loop(
         Animated.sequence([
@@ -254,15 +315,18 @@ const Chat = ({ navigation, route }) => {
       try {
         await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false });
       } catch (e) {}
-      Alert.alert('Recording unavailable', 'Could not start voice recording. Check microphone permission and try again.');
+      Alert.alert('Recording unavailable', 'HYSA could not start the microphone. Close other apps using the mic, check permission, and try again.');
     }
   };
 
   const stopRecording = async () => {
-    if (!recordingRef.current) return;
+    if (!recordingRef.current || stoppingRecordingRef.current) return;
+    stoppingRecordingRef.current = true;
     try {
-      clearInterval(recordTimerRef.current);
-      recordTimerRef.current = null;
+      if (recordTimerRef.current) {
+        clearInterval(recordTimerRef.current);
+        recordTimerRef.current = null;
+      }
       if (micLoopRef.current) {
         micLoopRef.current.stop();
         micLoopRef.current = null;
@@ -272,13 +336,17 @@ const Chat = ({ navigation, route }) => {
       const finalStatus = await recording.getStatusAsync().catch(() => null);
       await recording.stopAndUnloadRecordingAsync();
       const uri = recording.getURI();
-      const finalDuration = Math.max(recordDuration, Math.ceil((finalStatus?.durationMillis || 0) / 1000));
-      setRecording(false);
+      const finalDuration = Math.max(recordDurationRef.current, Math.ceil((finalStatus?.durationMillis || 0) / 1000));
+      if (mountedRef.current) {
+        setRecording(false);
+      }
       micAnim.setValue(1);
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false }).catch(() => {});
       if (uri) {
         setMediaPreview({ uri, type: 'audio', duration: finalDuration, mimeType: 'audio/mp4' });
       }
+      recordDurationRef.current = 0;
+      stoppingRecordingRef.current = false;
     } catch (err) {
       console.error('Stop recording error:', err);
       resetRecordingState();
@@ -299,6 +367,8 @@ const Chat = ({ navigation, route }) => {
     }
     setRecording(false);
     setRecordDuration(0);
+    recordDurationRef.current = 0;
+    stoppingRecordingRef.current = false;
     micAnim.setValue(1);
     Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false }).catch(() => {});
   };
@@ -327,19 +397,19 @@ const Chat = ({ navigation, route }) => {
 
   const playAudio = async (uri, msgId) => {
     if (!uri || playbackRequestRef.current) return;
+    if (activeSoundIdRef.current === msgId) {
+      await stopActiveSound({ resetProgressId: msgId });
+      return;
+    }
     playbackRequestRef.current = true;
     try {
-      if (playingAudio === msgId) {
-        await stopActiveSound();
-        return;
-      }
       await stopActiveSound();
       playbackRequestRef.current = true;
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
         staysActiveInBackground: false,
-        interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+        interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
         shouldDuckAndroid: true,
         playThroughEarpieceAndroid: false,
       });
@@ -348,20 +418,23 @@ const Chat = ({ navigation, route }) => {
         { shouldPlay: false, progressUpdateIntervalMillis: 180 }
       );
       soundRef.current = sound;
-      setPlayingAudio(msgId);
+      activeSoundIdRef.current = msgId;
+      if (mountedRef.current) {
+        setPlayingAudio(msgId);
+      }
       sound.setOnPlaybackStatusUpdate((status) => {
+        if (!mountedRef.current || activeSoundIdRef.current !== msgId) return;
         if (status.isLoaded) {
           setAudioProgress((prev) => ({ ...prev, [msgId]: status.durationMillis > 0 ? status.positionMillis / status.durationMillis : 0 }));
           if (status.didJustFinish) {
-            stopActiveSound();
-            setAudioProgress((prev) => ({ ...prev, [msgId]: 0 }));
+            stopActiveSound({ resetProgressId: msgId });
           }
         }
       });
       await sound.playAsync();
     } catch (err) {
       console.error('Audio play error:', err);
-      await stopActiveSound();
+      await stopActiveSound({ resetProgressId: msgId });
     } finally {
       playbackRequestRef.current = false;
     }
