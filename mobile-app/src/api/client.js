@@ -203,4 +203,24 @@ export const dmAPI = {
     api.post(`/api/dm/${userKey}`, { text, ...options }),
 };
 
+// HYSA AI API
+export const aiAPI = {
+  chat: async (message, context = []) => {
+    const response = await api.post('/api/ai/chat', { message, context });
+    const diagnostics = response.data?.diagnostics;
+    console.log('[ai:mobile:diag]', {
+      baseUrl: API_BASE_URL,
+      hasDiagnostics: !!diagnostics,
+      backendSource: diagnostics?.backendSource,
+      environment: diagnostics?.environment,
+      model: diagnostics?.model,
+      geminiConfigured: diagnostics?.geminiConfigured,
+      requestReachedGemini: diagnostics?.requestReachedGemini,
+      fallbackUsed: diagnostics?.fallbackUsed,
+      fallbackReason: diagnostics?.fallbackReason,
+    });
+    return response;
+  },
+};
+
 export default api;

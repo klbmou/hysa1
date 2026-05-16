@@ -41,6 +41,7 @@ const RATE_LIMITS = {
   posts: { windowMs: 60 * 1000, max: 40 },
   comments: { windowMs: 60 * 1000, max: 80 },
   uploads: { windowMs: 10 * 60 * 1000, max: 30 },
+  ai: { windowMs: 10 * 60 * 1000, max: 10 },
 };
 const ALLOWED_UPLOAD_MIMES = new Set([
   "image/jpeg",
@@ -75,6 +76,24 @@ const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
 const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || "").trim();
 const GOOGLE_CLIENT_SECRET = String(process.env.GOOGLE_CLIENT_SECRET || "").trim();
 const GOOGLE_AUTH_CONFIGURED = !!GOOGLE_CLIENT_ID;
+const RAW_GEMINI_API_KEY = String(process.env.GEMINI_API_KEY || "").trim();
+const GEMINI_PLACEHOLDERS = new Set(["YOUR_NEW_GEMINI_KEY", "CHANGE_ME", "PASTE_NEW_GEMINI_KEY_HERE"]);
+const GEMINI_API_KEY_HASH = RAW_GEMINI_API_KEY
+  ? crypto.createHash("sha256").update(RAW_GEMINI_API_KEY).digest("hex")
+  : "";
+const GEMINI_KEY_IS_PLACEHOLDER = GEMINI_PLACEHOLDERS.has(RAW_GEMINI_API_KEY);
+const GEMINI_API_KEY = GEMINI_KEY_IS_PLACEHOLDER
+  ? ""
+  : RAW_GEMINI_API_KEY;
+const GEMINI_MODEL = "models/gemini-2.5-flash";
+const AI_INPUT_MAX_CHARS = 1000;
+const AI_CONTEXT_MAX_MESSAGES = 8;
+const AI_TIMEOUT_MS = 20000;
+console.log(`[ai:diag] dotenvPath=${path.join(__dirname, ".env")} envGeminiExists=${!!RAW_GEMINI_API_KEY} envGeminiLength=${RAW_GEMINI_API_KEY.length} geminiPlaceholder=${GEMINI_KEY_IS_PLACEHOLDER} geminiConfigured=${!!GEMINI_API_KEY} sdkInitialized=false sdk=fetch model=${GEMINI_MODEL}`);
+const BACKEND_SOURCE = process.env.RENDER_SERVICE_NAME ||
+  process.env.RENDER_EXTERNAL_HOSTNAME ||
+  process.env.HYSA_BACKEND_SOURCE ||
+  "local";
 const AUTH_COOKIE_NAME = "hysa_auth";
 const AUTH_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const CSRF_HEADER_NAME = "x-csrf-token";
@@ -2850,6 +2869,211 @@ app.get("/api/me", async (req, res) => {
   return res.status(200).json({ ok: true, csrfToken: csrfTokenForAuthToken(getAuthToken(req)), me: toPublicMe(u) });
 });
 
+function sanitizeAiPrompt(input) {
+  const raw = stripUnsafeText(input, AI_INPUT_MAX_CHARS + 1).trim();
+  if (!raw) return { ok: false, error: "EMPTY_MESSAGE" };
+  if (raw.length > AI_INPUT_MAX_CHARS) return { ok: false, error: "MESSAGE_TOO_LONG" };
+  if (!/[A-Za-z0-9\u0600-\u06FF]/.test(raw)) return { ok: false, error: "INVALID_MESSAGE" };
+  return { ok: true, message: raw };
+}
+
+function normalizeAiReply(text) {
+  return stripUnsafeText(text, 1400)
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, 1400);
+}
+
+function getAiIntent(message) {
+  const lower = String(message || "").toLowerCase();
+  const hints = [];
+  if (/\bcaption|كابشن|تعليق\b/.test(lower)) hints.push("caption");
+  if (/\bhashtag|hashtags|هاشتاق|هاشتاقات\b/.test(lower)) hints.push("hashtags");
+  if (/\bbio|profile|بايو|بروفايل\b/.test(lower)) hints.push("bio");
+  if (/\breply|respond|رد|نرد\b/.test(lower)) hints.push("reply");
+  if (/\brewrite|improve|fix|عدل|حسن|صحح\b/.test(lower)) hints.push("rewrite");
+  return hints;
+}
+
+function aiSystemPromptFor(intentHints) {
+  const base = [
+    "You are HYSA AI, the built-in assistant for the HYSA social app.",
+    "Act like a real conversational assistant, not a form generator.",
+    "Be modern, intelligent, natural, fluid, concise when the answer is simple, and detailed when the user clearly needs depth.",
+    "HYSA is social-first, so you are especially strong at captions, hashtags, bios, post rewrites, short replies, engagement ideas, aesthetic wording, and modern internet tone, but do not force every answer into social-media mode.",
+    "Read the latest user message and recent context naturally. Continue the conversation instead of reintroducing yourself.",
+    "Avoid repetitive intros like 'Sure', 'Absolutely', or 'Here are' when they are not needed.",
+    "Avoid repetitive emoji patterns. Use emojis sparingly and only when they fit the user's tone.",
+    "Avoid numbered lists unless options, steps, or comparisons genuinely help.",
+    "Use markdown-friendly formatting only when it improves readability: short bullets, bold labels, or compact sections.",
+    "Support Arabic strongly. Reply in natural Arabic when the user writes Arabic, and handle Darija/Algerian Arabic plus English mix without sounding translated.",
+    "If the user asks for Gen Z, trendy, romantic, luxury, funny, clean, professional, or casual tone, adapt naturally.",
+    "If the user is vague, make a reasonable helpful assumption and answer. Ask a short follow-up only when needed.",
+    "Use recent conversation context only for this chat session. Do not claim permanent memory.",
+  ];
+  const hints = Array.isArray(intentHints) && intentHints.length
+    ? `\n\nSoft intent hints from the app: ${intentHints.join(", ")}. Treat these as weak hints only. Do not follow a fixed template; answer in whatever format best fits the actual message.`
+    : "\n\nNo special task hint. Answer naturally.";
+  return `${base.join("\n")}${hints}`;
+}
+
+function sanitizeAiContext(input) {
+  if (!Array.isArray(input)) return [];
+  return input
+    .slice(-AI_CONTEXT_MAX_MESSAGES)
+    .map((item) => {
+      const role = item && item.role === "ai" ? "model" : "user";
+      const text = stripUnsafeText(item && item.text, 600).trim();
+      return text ? { role, parts: [{ text }] } : null;
+    })
+    .filter(Boolean);
+}
+
+function aiDiagnostics(extra = {}) {
+  return {
+    backendSource: BACKEND_SOURCE,
+    environment: NODE_ENV,
+    model: GEMINI_MODEL,
+    geminiConfigured: !!GEMINI_API_KEY,
+    fallbackUsed: false,
+    ...extra,
+  };
+}
+
+async function callGeminiAi(message, context = []) {
+  console.log(`[ai:diag] beforeGemini exists=${!!RAW_GEMINI_API_KEY} keyLength=${RAW_GEMINI_API_KEY.length} configured=${!!GEMINI_API_KEY} placeholder=${GEMINI_KEY_IS_PLACEHOLDER} sdkInitialized=false sdk=fetch requestReachedGemini=false fallbackActivated=false`);
+  if (!GEMINI_API_KEY) {
+    console.warn(`[ai:diag] fallbackBranch reason=AI_NOT_CONFIGURED exists=${!!RAW_GEMINI_API_KEY} keyLength=${RAW_GEMINI_API_KEY.length} placeholder=${GEMINI_KEY_IS_PLACEHOLDER} requestReachedGemini=false fallbackActivated=true`);
+    const err = new Error("AI_NOT_CONFIGURED");
+    err.code = "AI_NOT_CONFIGURED";
+    throw err;
+  }
+  const intentHints = getAiIntent(message);
+  const requestId = crypto.randomBytes(6).toString("hex");
+  console.log(`[ai] gemini call started id=${requestId} model=${GEMINI_MODEL} promptChars=${String(message || "").length} contextMessages=${context.length}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+  try {
+    console.log(`[ai:diag] geminiFetchStart id=${requestId} model=${GEMINI_MODEL} requestReachedGemini=pending fallbackActivated=false`);
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{
+              text: aiSystemPromptFor(intentHints),
+            }],
+          },
+          contents: [
+            ...context,
+            { role: "user", parts: [{ text: message }] },
+          ],
+          generationConfig: {
+            temperature: 0.82,
+            maxOutputTokens: 420,
+            topP: 0.9,
+          },
+        }),
+      }
+    );
+    console.log(`[ai:diag] afterGeminiHttp id=${requestId} requestReachedGemini=true httpStatus=${response.status} fallbackActivated=false`);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      console.warn(`[ai] gemini response received id=${requestId} status=${response.status}`);
+      console.warn(`[ai:diag] catchBranch id=${requestId} reason=GEMINI_REQUEST_FAILED httpStatus=${response.status} requestReachedGemini=true fallbackActivated=true`);
+      const err = new Error("GEMINI_REQUEST_FAILED");
+      err.status = response.status;
+      throw err;
+    }
+    const text = body && body.candidates && body.candidates[0] && body.candidates[0].content &&
+      body.candidates[0].content.parts && body.candidates[0].content.parts[0] &&
+      body.candidates[0].content.parts[0].text;
+    const reply = normalizeAiReply(text || "");
+    if (!reply) {
+      const err = new Error("EMPTY_AI_RESPONSE");
+      err.code = "EMPTY_AI_RESPONSE";
+      console.warn(`[ai:diag] catchBranch id=${requestId} reason=EMPTY_AI_RESPONSE httpStatus=${response.status} requestReachedGemini=true fallbackActivated=true`);
+      throw err;
+    }
+    console.log(`[ai] gemini response received id=${requestId} status=${response.status} replyChars=${reply.length}`);
+    console.log(`[ai:diag] afterGeminiResponse id=${requestId} requestReachedGemini=true httpStatus=${response.status} rawTextLength=${String(text || "").length} fallbackActivated=false`);
+    return reply;
+  } catch (err) {
+    console.warn(`[ai:diag] catchBranch id=${requestId} reason=${err && err.name === "AbortError" ? "AI_TIMEOUT" : err && err.code ? err.code : err && err.status ? "GEMINI_HTTP_ERROR" : "FETCH_OR_PARSE_ERROR"} httpStatus=${err && err.status ? err.status : "none"} requestReachedGemini=${err && err.status ? "true" : "unknown"} fallbackActivated=true`);
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+app.post("/api/ai/chat", rateLimit("ai"), async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const sanitized = sanitizeAiPrompt(req.body && req.body.message);
+  if (!sanitized.ok) return res.status(400).json({ ok: false, error: sanitized.error });
+  const context = sanitizeAiContext(req.body && req.body.context);
+  console.log(`[ai] request received user=${String(viewer.userKey || "unknown")} promptChars=${sanitized.message.length} contextMessages=${context.length}`);
+  console.log(`[ai:diag] routeEntered path=/api/ai/chat exists=${!!RAW_GEMINI_API_KEY} keyLength=${RAW_GEMINI_API_KEY.length} configured=${!!GEMINI_API_KEY} sdkInitialized=false sdk=fetch model=${GEMINI_MODEL}`);
+  try {
+    const reply = await callGeminiAi(sanitized.message, context);
+    return res.status(200).json({
+      ok: true,
+      reply,
+      diagnostics: aiDiagnostics({
+        requestReachedGemini: true,
+        fallbackUsed: false,
+      }),
+    });
+  } catch (err) {
+    if (err && err.name === "AbortError") {
+      console.warn("[ai] timeout occurred");
+      console.warn("[ai] fallback used reason=AI_TIMEOUT");
+      console.warn("[ai:diag] routeCatch reason=AI_TIMEOUT fallbackActivated=true");
+      return res.status(504).json({
+        ok: false,
+        error: "AI_TIMEOUT",
+        message: "HYSA AI took too long. Try again.",
+        diagnostics: aiDiagnostics({
+          requestReachedGemini: true,
+          fallbackUsed: true,
+          fallbackReason: "AI_TIMEOUT",
+        }),
+      });
+    }
+    if (err && err.code === "AI_NOT_CONFIGURED") {
+      console.warn("[ai] fallback used reason=AI_NOT_CONFIGURED");
+      console.warn(`[ai:diag] routeCatch reason=AI_NOT_CONFIGURED fallbackActivated=true exists=${!!RAW_GEMINI_API_KEY} keyLength=${RAW_GEMINI_API_KEY.length} placeholder=${GEMINI_KEY_IS_PLACEHOLDER}`);
+      return res.status(503).json({
+        ok: false,
+        error: "AI_NOT_CONFIGURED",
+        message: "HYSA AI is not configured yet.",
+        diagnostics: aiDiagnostics({
+          requestReachedGemini: false,
+          fallbackUsed: true,
+          fallbackReason: "AI_NOT_CONFIGURED",
+        }),
+      });
+    }
+    console.error("[ai] error occurred:", err && err.status ? `status=${err.status}` : (err && err.message ? err.message : err));
+    console.warn("[ai] fallback used reason=AI_UNAVAILABLE");
+    console.warn(`[ai:diag] routeCatch reason=AI_UNAVAILABLE fallbackActivated=true httpStatus=${err && err.status ? err.status : "none"}`);
+    return res.status(502).json({
+      ok: false,
+      error: "AI_UNAVAILABLE",
+      message: "HYSA AI is unavailable right now. Try again soon.",
+      diagnostics: aiDiagnostics({
+        requestReachedGemini: !!(err && err.status),
+        fallbackUsed: true,
+        fallbackReason: "AI_UNAVAILABLE",
+        geminiHttpStatus: err && err.status ? err.status : undefined,
+      }),
+    });
+  }
+});
+
 function paginationFromReq(req) {
   const pageRaw = Number.parseInt(String(req.query.page || "1"), 10);
   const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1;
@@ -4459,70 +4683,6 @@ function aiNotConfigured(kind, prompt) {
     reply: aiSmartReply(trimmed),
   };
 }
-
-app.post("/api/ai/chat", async (req, res) => {
-  const viewer = await requireAuth(req, res);
-  if (!viewer) return;
-  const message = String(req.body && req.body.message || "").trim();
-  if (!message || message.length > 2000) return res.status(400).json({ ok: false, error: "INVALID_MESSAGE" });
-
-  const anthropicKey = process.env.ANTHROPIC_API_KEY ? String(process.env.ANTHROPIC_API_KEY).trim() : "";
-  const openaiKey = process.env.OPENAI_API_KEY ? String(process.env.OPENAI_API_KEY).trim() : "";
-
-  // Try Anthropic Claude first
-  if (anthropicKey) {
-    try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": anthropicKey,
-          "anthropic-version": "2023-06-01",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "claude-3-haiku-20240307",
-          max_tokens: 1024,
-          system: "أنت بلوطة 🌰، مساعد ذكي ومرح على منصة HYSA الاجتماعية. أجب دائماً بنفس لغة المستخدم (عربي أو إنجليزي). كن مرحاً، ودوداً، وإبداعياً. تخصصك في كتابة الكابشنات والهاشتاقات والبايو للسوشيال ميديا. لا تقل أبداً أنك روبوت أو ذكاء اصطناعي — أنت بلوطة فقط.",
-          messages: [{ role: "user", content: message }],
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (response.ok && body.content && body.content[0]) {
-        const reply = String(body.content[0].text || "").trim();
-        if (reply) return res.status(200).json({ ok: true, configured: true, reply });
-      }
-    } catch (err) {
-      console.error("[ai] anthropic error:", err.message);
-    }
-  }
-
-  // Try OpenAI fallback
-  if (openaiKey) {
-    try {
-      const response = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${openaiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-          input: message,
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (response.ok) {
-        const reply = String(body.output_text || body.text || "").trim();
-        if (reply) return res.status(200).json({ ok: true, configured: true, reply });
-      }
-    } catch (err) {
-      console.error("[ai] openai error:", err.message);
-    }
-  }
-
-  // Smart local fallback — always works
-  return res.status(200).json({ ok: true, configured: false, reply: aiSmartReply(message) });
-});
 
 app.post("/api/ai/image", async (req, res) => {
   const viewer = await requireAuth(req, res);
