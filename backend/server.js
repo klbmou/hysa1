@@ -42,6 +42,7 @@ const RATE_LIMITS = {
   comments: { windowMs: 60 * 1000, max: 80 },
   uploads: { windowMs: 10 * 60 * 1000, max: 30 },
   ai: { windowMs: 10 * 60 * 1000, max: 10 },
+  social: { windowMs: 10 * 60 * 1000, max: 8 },
   typing: { windowMs: 10 * 1000, max: 35 },
 };
 const ALLOWED_UPLOAD_MIMES = new Set([
@@ -93,6 +94,10 @@ const AI_CONTEXT_MAX_CHARS = 1800;
 const AI_TIMEOUT_MS = 30000;
 const AI_RETRY_DELAY_MS = 850;
 const AI_FRIENDLY_UNAVAILABLE_MESSAGE = "HYSA AI is having a small connection issue. Try again in a moment.";
+const BUFFER_ACCESS_TOKEN = String(process.env.BUFFER_ACCESS_TOKEN || "").trim();
+const BUFFER_ORGANIZATION_ID = String(process.env.BUFFER_ORGANIZATION_ID || "").trim();
+const BUFFER_API_URL = "https://api.buffer.com";
+const BUFFER_TIMEOUT_MS = 15000;
 console.log(`[ai:diag] dotenvPath=${path.join(__dirname, ".env")} envGeminiExists=${!!RAW_GEMINI_API_KEY} envGeminiLength=${RAW_GEMINI_API_KEY.length} geminiPlaceholder=${GEMINI_KEY_IS_PLACEHOLDER} geminiConfigured=${!!GEMINI_API_KEY} sdkInitialized=false sdk=fetch model=${GEMINI_MODEL}`);
 const BACKEND_SOURCE = process.env.RENDER_SERVICE_NAME ||
   process.env.RENDER_EXTERNAL_HOSTNAME ||
@@ -3156,6 +3161,114 @@ async function callGeminiAi(message, context = []) {
   throw lastErr || new Error("GEMINI_REQUEST_FAILED");
 }
 
+const BUFFER_CREATE_IDEA_MUTATION = `
+mutation CreateIdea($input: CreateIdeaInput!) {
+  createIdea(input: $input) {
+    ... on Idea {
+      id
+      content {
+        title
+        text
+      }
+    }
+    ... on MutationError {
+      message
+    }
+  }
+}
+`;
+
+function sanitizeBufferIdeaText(input, maxLen) {
+  return String(input ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .trim()
+    .slice(0, maxLen);
+}
+
+function sanitizeSocialIdeaPayload(body) {
+  if (body && body.title !== undefined && typeof body.title !== "string") return { ok: false, error: "INVALID_TITLE" };
+  if (!body || typeof body.text !== "string") return { ok: false, error: "INVALID_TEXT" };
+  const titleRaw = stripUnsafeText(body && body.title, 121).trim();
+  const textRaw = sanitizeBufferIdeaText(body && body.text, 2001);
+  if (titleRaw.length > 120) return { ok: false, error: "TITLE_TOO_LONG" };
+  if (!textRaw) return { ok: false, error: "EMPTY_TEXT" };
+  if (textRaw.length > 2000) return { ok: false, error: "TEXT_TOO_LONG" };
+  return {
+    ok: true,
+    title: titleRaw || "HYSA post idea",
+    text: textRaw,
+  };
+}
+
+async function createBufferIdea({ title, text }) {
+  if (!BUFFER_ACCESS_TOKEN || !BUFFER_ORGANIZATION_ID) {
+    const err = new Error("BUFFER_NOT_CONFIGURED");
+    err.code = "BUFFER_NOT_CONFIGURED";
+    throw err;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), BUFFER_TIMEOUT_MS);
+  try {
+    const response = await fetch(BUFFER_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${BUFFER_ACCESS_TOKEN}`,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        query: BUFFER_CREATE_IDEA_MUTATION,
+        variables: {
+          input: {
+            organizationId: BUFFER_ORGANIZATION_ID,
+            content: { title, text },
+          },
+        },
+      }),
+    });
+
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const err = new Error("BUFFER_HTTP_ERROR");
+      err.status = response.status;
+      throw err;
+    }
+
+    if (Array.isArray(body.errors) && body.errors.length) {
+      const err = new Error("BUFFER_GRAPHQL_ERROR");
+      err.status = 502;
+      err.graphQlErrorCount = body.errors.length;
+      throw err;
+    }
+
+    const payload = body && body.data && body.data.createIdea;
+    if (payload && payload.id) {
+      return {
+        id: String(payload.id),
+        title: String(payload.content && payload.content.title || title),
+        text: String(payload.content && payload.content.text || text),
+      };
+    }
+
+    const mutationMessage = payload && payload.message ? String(payload.message) : "";
+    const err = new Error(mutationMessage ? "BUFFER_MUTATION_ERROR" : "BUFFER_EMPTY_RESPONSE");
+    err.status = 502;
+    throw err;
+  } catch (err) {
+    if (err && err.name === "AbortError") {
+      const timeoutErr = new Error("BUFFER_TIMEOUT");
+      timeoutErr.code = "BUFFER_TIMEOUT";
+      throw timeoutErr;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 app.post("/api/ai/chat", rateLimit("ai"), async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
@@ -3221,6 +3334,37 @@ app.post("/api/ai/chat", rateLimit("ai"), async (req, res) => {
         geminiHttpStatus: err && err.status ? err.status : undefined,
       }),
     });
+  }
+});
+
+app.post("/api/social/idea", rateLimit("social"), async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+
+  const payload = sanitizeSocialIdeaPayload(req.body);
+  if (!payload.ok) return res.status(400).json({ ok: false, error: payload.error });
+
+  console.log(`[buffer] createIdea requested user=${String(viewer.userKey || "unknown")} titleChars=${payload.title.length} textChars=${payload.text.length}`);
+  try {
+    const idea = await createBufferIdea({ title: payload.title, text: payload.text });
+    console.log(`[buffer] createIdea success user=${String(viewer.userKey || "unknown")} ideaId=${idea.id} titleChars=${idea.title.length} textChars=${idea.text.length}`);
+    return res.status(200).json({
+      ok: true,
+      ideaId: idea.id,
+      title: idea.title,
+      text: idea.text,
+    });
+  } catch (err) {
+    if (err && err.code === "BUFFER_NOT_CONFIGURED") {
+      console.warn("[buffer] createIdea blocked reason=BUFFER_NOT_CONFIGURED");
+      return res.status(503).json({ ok: false, error: "BUFFER_NOT_CONFIGURED" });
+    }
+    if (err && err.code === "BUFFER_TIMEOUT") {
+      console.warn("[buffer] createIdea failed reason=BUFFER_TIMEOUT");
+      return res.status(504).json({ ok: false, error: "BUFFER_TIMEOUT" });
+    }
+    console.warn(`[buffer] createIdea failed reason=${err && err.message ? err.message : "UNKNOWN"} status=${err && err.status ? err.status : "none"} graphQlErrors=${err && err.graphQlErrorCount ? err.graphQlErrorCount : 0}`);
+    return res.status(502).json({ ok: false, error: "BUFFER_IDEA_FAILED" });
   }
 });
 

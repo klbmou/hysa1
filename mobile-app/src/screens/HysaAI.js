@@ -10,15 +10,17 @@ import {
   Platform,
   ActivityIndicator,
   Animated,
+  Alert,
   Clipboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, Check, Copy, RefreshCcw, RotateCcw, Send, Sparkles } from 'lucide-react-native';
-import { aiAPI } from '../api/client';
+import api, { aiAPI } from '../api/client';
 import theme from '../theme';
 
 const STARTERS = [
+  'Draft a post idea',
   'Write a caption',
   'Suggest hashtags',
   'Improve my post',
@@ -57,11 +59,40 @@ const MarkdownText = ({ children, style }) => {
   );
 };
 
-const AnimatedMessage = ({ item, copiedId, onCopy, onRegenerate }) => {
+const BUFFER_IDEA_TEXT_LIMIT = 2000;
+const BUFFER_IDEA_TITLE_LIMIT = 120;
+
+const plainTitleText = (value) => String(value || '')
+  .replace(/[*_`>#]/g, ' ')
+  .replace(/^[\s-]+/gm, '')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const buildBufferIdeaTitle = (item) => {
+  const body = String(item?.fullText || item?.text || '').trim();
+  const firstLine = body.split(/\r?\n/).map(plainTitleText).find(Boolean);
+  const promptLine = plainTitleText(item?.prompt);
+  const title = firstLine || promptLine || 'HYSA post idea';
+  return title.length > BUFFER_IDEA_TITLE_LIMIT
+    ? `${title.slice(0, BUFFER_IDEA_TITLE_LIMIT - 3).trim()}...`
+    : title;
+};
+
+const AnimatedMessage = ({
+  item,
+  copiedId,
+  bufferSendingId,
+  bufferSentId,
+  onCopy,
+  onRegenerate,
+  onSendToBuffer,
+}) => {
   const appear = useRef(new Animated.Value(0)).current;
   const isUser = item.role === 'user';
   const isRevealing = item.fullText && item.text !== item.fullText;
   const showActions = !isUser && !item.isError && item.id !== 'ai-welcome' && !isRevealing;
+  const isSendingToBuffer = bufferSendingId === item.id;
+  const isSentToBuffer = bufferSentId === item.id || !!item.bufferIdeaId;
 
   useEffect(() => {
     Animated.timing(appear, {
@@ -105,6 +136,28 @@ const AnimatedMessage = ({ item, copiedId, onCopy, onRegenerate }) => {
               <RotateCcw size={13} color="#fff" />
               <Text style={styles.aiActionText}>Regenerate</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.aiActionBtn,
+                styles.bufferActionBtn,
+                isSentToBuffer && styles.bufferActionBtnSent,
+                isSendingToBuffer && styles.aiActionBtnDisabled,
+              ]}
+              onPress={() => onSendToBuffer(item)}
+              disabled={isSendingToBuffer || isSentToBuffer}
+              activeOpacity={0.72}
+            >
+              {isSendingToBuffer ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : isSentToBuffer ? (
+                <Check size={13} color="#fff" />
+              ) : (
+                <Send size={13} color="#fff" />
+              )}
+              <Text style={styles.aiActionText}>
+                {isSendingToBuffer ? 'Sending' : isSentToBuffer ? 'Buffer Idea' : 'Send to Buffer Ideas'}
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -135,6 +188,8 @@ const HysaAI = ({ navigation }) => {
   const [lastPrompt, setLastPrompt] = useState('');
   const [error, setError] = useState('');
   const [copiedId, setCopiedId] = useState('');
+  const [bufferSendingId, setBufferSendingId] = useState('');
+  const [bufferSentId, setBufferSentId] = useState('');
 
   useEffect(() => () => {
     if (revealTimerRef.current) clearInterval(revealTimerRef.current);
@@ -223,12 +278,52 @@ const HysaAI = ({ navigation }) => {
     await requestAi(prompt, context, { prompt });
   };
 
+  const sendToBufferIdea = async (item) => {
+    if (bufferSendingId) return;
+    const text = String(item?.fullText || item?.text || '').trim();
+    if (!text) {
+      setError('Nothing to send to Buffer Ideas yet.');
+      return;
+    }
+    if (text.length > BUFFER_IDEA_TEXT_LIMIT) {
+      setError('Buffer Ideas text must stay under 2000 characters.');
+      return;
+    }
+
+    const title = buildBufferIdeaTitle(item);
+    setBufferSendingId(item.id);
+    setError('');
+    try {
+      const response = await api.post('/api/social/idea', { title, text });
+      const ideaId = String(response.data?.ideaId || '');
+      setBufferSentId(item.id);
+      setMessages((prev) => prev.map((message) => (
+        message.id === item.id ? { ...message, bufferIdeaId: ideaId } : message
+      )));
+      Alert.alert('Saved to Buffer Ideas', 'This was saved as a Buffer Idea for review. Nothing was published.');
+    } catch (err) {
+      const status = err?.response?.status;
+      const code = err?.response?.data?.error;
+      const fallback = status === 429
+        ? 'Buffer Ideas rate limit reached. Try again in a few minutes.'
+        : code === 'BUFFER_NOT_CONFIGURED'
+          ? 'Buffer is not configured on the server yet.'
+          : 'Could not save this to Buffer Ideas. Try again.';
+      setError(fallback);
+    } finally {
+      setBufferSendingId('');
+    }
+  };
+
   const renderMessage = ({ item }) => (
     <AnimatedMessage
       item={item}
       copiedId={copiedId}
+      bufferSendingId={bufferSendingId}
+      bufferSentId={bufferSentId}
       onCopy={copyMessage}
       onRegenerate={regenerateMessage}
+      onSendToBuffer={sendToBufferIdea}
     />
   );
 
@@ -343,6 +438,9 @@ const styles = StyleSheet.create({
   userBubbleText: { fontWeight: '700' },
   aiActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 },
   aiActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 6, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.09)' },
+  aiActionBtnDisabled: { opacity: 0.55 },
+  bufferActionBtn: { backgroundColor: 'rgba(255,59,138,0.18)', borderColor: 'rgba(255,59,138,0.28)' },
+  bufferActionBtnSent: { backgroundColor: 'rgba(46,213,115,0.16)', borderColor: 'rgba(46,213,115,0.3)' },
   aiActionText: { color: 'rgba(255,255,255,0.86)', fontSize: 11, fontWeight: '900' },
   typingRow: { marginTop: 2 },
   typingBubble: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 12, paddingHorizontal: 14, minWidth: 58 },
