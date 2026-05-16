@@ -83,6 +83,8 @@ let dmInboxPollTimer = null;
 let dmPollGeneration = 0;
 let lastDmThreadSignature = "";
 let lastDmInboxSignature = "";
+let dmTypingIdleTimer = null;
+let dmLastTypingSentAt = 0;
 let aiSessionMessages = [];
 let aiLastPrompt = "";
 let aiBusy = false;
@@ -1878,6 +1880,35 @@ function updateDmSendState() {
   el.dmSend.classList.toggle("ready", hasText || !!dmVoiceDraft);
 }
 
+function sendDmTypingState(isTyping) {
+  if (!activeDmPeer || activeDmGroup) return;
+  api(`/api/dm/${encodeURIComponent(activeDmPeer)}/typing`, {
+    method: "POST",
+    body: JSON.stringify({ typing: !!isTyping }),
+  }).catch(() => {});
+}
+
+function handleDmTextInput() {
+  updateDmSendState();
+  if (!activeDmPeer || activeDmGroup) return;
+  window.clearTimeout(dmTypingIdleTimer);
+  const hasText = !!String(el.dmText?.value || "").trim();
+  if (!hasText) {
+    dmLastTypingSentAt = 0;
+    sendDmTypingState(false);
+    return;
+  }
+  const now = Date.now();
+  if (now - dmLastTypingSentAt > 2500) {
+    dmLastTypingSentAt = now;
+    sendDmTypingState(true);
+  }
+  dmTypingIdleTimer = window.setTimeout(() => {
+    dmLastTypingSentAt = 0;
+    sendDmTypingState(false);
+  }, 4500);
+}
+
 function clearDmVoiceDraft() {
   document.getElementById("dmRecordStatus")?.classList.remove("sending");
   if (dmVoiceDraft?.url) URL.revokeObjectURL(dmVoiceDraft.url);
@@ -2017,7 +2048,7 @@ function startDmInboxPolling() {
 
 function applyDmThreadPayload(payload, { preserveScroll = false } = {}) {
   const messages = Array.isArray(payload?.messages) ? payload.messages : [];
-  const signature = dmMessageSignature(messages);
+  const signature = `${dmMessageSignature(messages)}|typing:${payload?.typing ? "1" : "0"}|active:${payload?.peerActiveNow ? "1" : "0"}`;
   if (preserveScroll && signature === lastDmThreadSignature) return;
   lastDmThreadSignature = signature;
   if (payload.conversation && payload.conversation.type === "group") {
@@ -2029,7 +2060,11 @@ function applyDmThreadPayload(payload, { preserveScroll = false } = {}) {
     activeDmGroup = null;
     activeDmPeerProfile = payload.peer || activeDmPeerProfile || { key: activeDmPeer, username: activeDmPeer, avatarUrl: "" };
     if (el.dmPeer) el.dmPeer.textContent = `@${activeDmPeerProfile.username || activeDmPeer || "dm"}`;
-    if (el.dmStatus) el.dmStatus.textContent = messages.length ? `Updated ${fmtTime(messages[messages.length - 1]?.createdAt)}` : "No messages yet";
+    if (el.dmStatus) {
+      el.dmStatus.textContent = payload?.typing
+        ? "typing..."
+        : (payload?.peerActiveNow ? "Active now" : (messages.length ? `Updated ${fmtTime(messages[messages.length - 1]?.createdAt)}` : "No messages yet"));
+    }
   }
   if (el.dmPeer && !activeDmGroup) {
     const dmBadge = renderUserBadge(activeDmPeerProfile);
@@ -2058,7 +2093,7 @@ function applyDmThreadPayload(payload, { preserveScroll = false } = {}) {
   const typing = document.createElement("div");
   typing.className = "dmTyping";
   typing.textContent = "typing...";
-  typing.hidden = true;
+  typing.hidden = !payload?.typing;
   el.dmMessages.appendChild(typing);
   if (!preserveScroll || nearBottom) scrollDmToLatest({ smooth: preserveScroll });
 }
@@ -2332,6 +2367,8 @@ async function openDmInbox() {
 
 function closeDmView() {
   stopDmPolling();
+  window.clearTimeout(dmTypingIdleTimer);
+  sendDmTypingState(false);
   if (el.dmModal) el.dmModal.hidden = true;
   activeDmPeer = null;
   activeDmPeerProfile = null;
@@ -2350,6 +2387,9 @@ async function sendDmMessage({ text = "", media = [] } = {}) {
       await api(`/api/dm/${encodeURIComponent(activeDmPeer)}`, { method: "POST", body: JSON.stringify(body) });
     }
     if (el.dmText) el.dmText.value = "";
+    window.clearTimeout(dmTypingIdleTimer);
+    dmLastTypingSentAt = 0;
+    sendDmTypingState(false);
     if (activeDmGroup) await openDmGroup(activeDmGroup.id, { silent: true });
     else await openDmThread(activeDmPeer, { silent: true });
     scrollDmToLatest({ smooth: true });
@@ -7572,7 +7612,7 @@ async function boot() {
       return sendDmMessage({ text: el.dmText?.value || "" });
     });
   }
-  on(el.dmText, "input", updateDmSendState);
+  on(el.dmText, "input", handleDmTextInput);
   updateDmSendState();
   on(el.dmText, "keydown", (e) => {
     if (e.key !== "Enter" || e.shiftKey) return;

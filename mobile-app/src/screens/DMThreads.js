@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,8 @@ import {
   Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, User, Verified, MessageSquare, UsersPlus } from 'lucide-react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { ArrowLeft, User, Verified, MessageSquare, UserPlus } from 'lucide-react-native';
 import { dmAPI } from '../api/client';
 import * as haptics from '../utils/haptics';
 import theme from '../theme';
@@ -18,28 +19,42 @@ const DMThreads = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const [threads, setThreads] = useState([]);
   const [loading, setLoading] = useState(true);
+  const fetchInFlightRef = useRef(false);
 
-  useEffect(() => {
-    fetchThreads();
-  }, []);
-
-  const fetchThreads = async () => {
+  const fetchThreads = async ({ silent = false } = {}) => {
+    if (fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
     try {
       const response = await dmAPI.getThreads();
       if (response.data.ok) {
         setThreads(response.data.threads || []);
       }
     } catch (err) {
-      console.error('DM threads error:', err);
+      if (!silent) console.error('DM threads error:', err);
     } finally {
+      fetchInFlightRef.current = false;
       setLoading(false);
     }
   };
 
+  useFocusEffect(
+    useCallback(() => {
+      fetchThreads({ silent: true });
+      const timer = setInterval(() => {
+        fetchThreads({ silent: true });
+      }, 5000);
+      return () => clearInterval(timer);
+    }, [])
+  );
+
   const openThread = (thread) => {
     haptics.light();
     if (thread.type === 'direct') {
-      navigation.navigate('Chat', { userKey: thread.peerKey, username: thread.peerUsername, avatar: thread.peerAvatar });
+      navigation.navigate('Chat', {
+        userKey: thread.peerKey || thread.userKey,
+        username: thread.peerUsername || thread.username || thread.peerKey,
+        avatar: thread.peerAvatar || thread.avatarUrl,
+      });
     }
   };
 
@@ -57,32 +72,39 @@ const DMThreads = ({ navigation }) => {
     return `${days}d`;
   };
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity style={styles.threadItem} onPress={() => openThread(item)} activeOpacity={0.7}>
-      <View style={styles.avatarWrap}>
-        {item.peerAvatar ? (
-          <Image source={{ uri: item.peerAvatar }} style={styles.avatar} />
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <User size={20} color={theme.colors.textMuted} />
-          </View>
-        )}
-        {item.unreadCount > 0 && <View style={styles.unreadDot} />}
-      </View>
-      <View style={styles.threadContent}>
-        <View style={styles.threadHeader}>
-          <View style={styles.nameRow}>
-            <Text style={styles.peerName}>{item.peerUsername}</Text>
-            {item.peerVerified && <Verified size={12} color={theme.colors.verified} fill={theme.colors.verified} />}
-          </View>
-          <Text style={styles.threadTime}>{formatDate(item.createdAt)}</Text>
+  const renderItem = ({ item }) => {
+    const username = item.peerUsername || item.username || item.peerKey || 'Conversation';
+    const avatar = item.peerAvatar || item.avatarUrl || item.authorAvatar;
+    const timestamp = item.lastMessageAt || item.updatedAt || item.createdAt;
+
+    return (
+      <TouchableOpacity style={styles.threadItem} onPress={() => openThread(item)} activeOpacity={0.7}>
+        <View style={styles.avatarWrap}>
+          {avatar ? (
+            <Image source={{ uri: avatar }} style={styles.avatar} />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <User size={20} color={theme.colors.textMuted} />
+            </View>
+          )}
+          {item.unreadCount > 0 && <View style={styles.unreadDot} />}
+          {item.peerActiveNow && <View style={styles.activeDot} />}
         </View>
-        <Text style={styles.lastMessage} numberOfLines={1}>
-          {item.lastMessage || 'Start a conversation'}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
+        <View style={styles.threadContent}>
+          <View style={styles.threadHeader}>
+            <View style={styles.nameRow}>
+              <Text style={styles.peerName} numberOfLines={1}>{username}</Text>
+              {item.peerVerified && <Verified size={12} color={theme.colors.verified} fill={theme.colors.verified} />}
+            </View>
+            <Text style={styles.threadTime}>{formatDate(timestamp)}</Text>
+          </View>
+          <Text style={styles.lastMessage} numberOfLines={1}>
+            {item.peerTyping ? 'typing...' : (item.peerActiveNow ? 'Active now' : (item.lastMessage || 'Start a conversation'))}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return (
@@ -100,7 +122,7 @@ const DMThreads = ({ navigation }) => {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Messages</Text>
         <TouchableOpacity style={styles.groupBtn} onPress={() => navigation.navigate('CreateGroup')} activeOpacity={0.7}>
-          <UsersPlus size={20} color={theme.colors.accent} />
+          <UserPlus size={20} color={theme.colors.accent} />
         </TouchableOpacity>
       </View>
 
@@ -134,10 +156,11 @@ const styles = StyleSheet.create({
   avatar: { width: 48, height: 48, borderRadius: 24 },
   avatarPlaceholder: { width: 48, height: 48, borderRadius: 24, backgroundColor: theme.colors.bgInput, alignItems: 'center', justifyContent: 'center' },
   unreadDot: { position: 'absolute', top: 0, right: 0, width: 12, height: 12, borderRadius: 6, backgroundColor: theme.colors.accent, borderWidth: 2, borderColor: theme.colors.bgPrimary },
+  activeDot: { position: 'absolute', bottom: 0, right: 0, width: 14, height: 14, borderRadius: 7, backgroundColor: '#49E58F', borderWidth: 2, borderColor: theme.colors.bgPrimary },
   threadContent: { flex: 1 },
   threadHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  nameRow: { flexDirection: 'row', alignItems: 'center' },
-  peerName: { fontSize: 15, fontWeight: '600', color: theme.colors.textPrimary },
+  nameRow: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0, marginRight: 8 },
+  peerName: { fontSize: 15, fontWeight: '600', color: theme.colors.textPrimary, flexShrink: 1 },
   threadTime: { fontSize: 12, color: theme.colors.textMuted },
   lastMessage: { fontSize: 14, color: theme.colors.textSecondary },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },

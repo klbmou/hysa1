@@ -201,6 +201,8 @@ export const dmAPI = {
   getConversation: (userKey) => api.get(`/api/dm/${userKey}`),
   sendMessage: (userKey, text, options = {}) =>
     api.post(`/api/dm/${userKey}`, { text, ...options }),
+  setTyping: (userKey, typing = true) =>
+    api.post(`/api/dm/${userKey}/typing`, { typing }),
 };
 
 // HYSA AI API

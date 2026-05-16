@@ -42,6 +42,7 @@ const RATE_LIMITS = {
   comments: { windowMs: 60 * 1000, max: 80 },
   uploads: { windowMs: 10 * 60 * 1000, max: 30 },
   ai: { windowMs: 10 * 60 * 1000, max: 10 },
+  typing: { windowMs: 10 * 1000, max: 35 },
 };
 const ALLOWED_UPLOAD_MIMES = new Set([
   "image/jpeg",
@@ -87,8 +88,11 @@ const GEMINI_API_KEY = GEMINI_KEY_IS_PLACEHOLDER
   : RAW_GEMINI_API_KEY;
 const GEMINI_MODEL = "models/gemini-2.5-flash";
 const AI_INPUT_MAX_CHARS = 1000;
-const AI_CONTEXT_MAX_MESSAGES = 8;
-const AI_TIMEOUT_MS = 20000;
+const AI_CONTEXT_MAX_MESSAGES = 6;
+const AI_CONTEXT_MAX_CHARS = 1800;
+const AI_TIMEOUT_MS = 30000;
+const AI_RETRY_DELAY_MS = 850;
+const AI_FRIENDLY_UNAVAILABLE_MESSAGE = "HYSA AI is having a small connection issue. Try again in a moment.";
 console.log(`[ai:diag] dotenvPath=${path.join(__dirname, ".env")} envGeminiExists=${!!RAW_GEMINI_API_KEY} envGeminiLength=${RAW_GEMINI_API_KEY.length} geminiPlaceholder=${GEMINI_KEY_IS_PLACEHOLDER} geminiConfigured=${!!GEMINI_API_KEY} sdkInitialized=false sdk=fetch model=${GEMINI_MODEL}`);
 const BACKEND_SOURCE = process.env.RENDER_SERVICE_NAME ||
   process.env.RENDER_EXTERNAL_HOSTNAME ||
@@ -2084,6 +2088,57 @@ function conversationKey(a, b) {
   return x < y ? `${x}:${y}` : `${y}:${x}`;
 }
 
+const DM_TYPING_TTL_MS = 8000;
+const DM_ACTIVE_TTL_MS = 45000;
+const dmTypingStates = new Map();
+const dmPresenceStates = new Map();
+
+function markDmActive(userKey) {
+  const key = String(userKey || "");
+  if (!key) return;
+  const now = Date.now();
+  for (const [typingKey, state] of dmTypingStates.entries()) {
+    if (now > Number(state.expiresAt || 0)) dmTypingStates.delete(typingKey);
+  }
+  dmPresenceStates.set(key, now);
+}
+
+function dmPresencePayload(userKey) {
+  const key = String(userKey || "");
+  const lastSeenMs = Number(dmPresenceStates.get(key) || 0);
+  return {
+    activeNow: !!lastSeenMs && Date.now() - lastSeenMs <= DM_ACTIVE_TTL_MS,
+    lastActiveAt: lastSeenMs ? new Date(lastSeenMs).toISOString() : "",
+  };
+}
+
+function setDmTyping(fromKey, toKey, isTyping) {
+  const from = String(fromKey || "");
+  const to = String(toKey || "");
+  if (!from || !to || from === to) return null;
+  const key = conversationKey(from, to);
+  const current = dmTypingStates.get(key);
+  if (!isTyping) {
+    if (current && current.from === from && current.to === to) dmTypingStates.delete(key);
+    return null;
+  }
+  const state = { from, to, expiresAt: Date.now() + DM_TYPING_TTL_MS };
+  dmTypingStates.set(key, state);
+  return state;
+}
+
+function getDmTyping(fromKey, toKey) {
+  const from = String(fromKey || "");
+  const to = String(toKey || "");
+  const state = dmTypingStates.get(conversationKey(from, to));
+  if (!state) return false;
+  if (Date.now() > Number(state.expiresAt || 0)) {
+    dmTypingStates.delete(conversationKey(from, to));
+    return false;
+  }
+  return state.from === from && state.to === to;
+}
+
 async function visiblePostsForViewer(viewer) {
   const viewerKey = viewer ? String(viewer.userKey) : "";
   const viewerFollowing = asArray(viewer && viewer.following).map(String);
@@ -2919,14 +2974,34 @@ function aiSystemPromptFor(intentHints) {
 
 function sanitizeAiContext(input) {
   if (!Array.isArray(input)) return [];
-  return input
-    .slice(-AI_CONTEXT_MAX_MESSAGES)
+  const compact = input
     .map((item) => {
       const role = item && item.role === "ai" ? "model" : "user";
-      const text = stripUnsafeText(item && item.text, 600).trim();
+      const text = stripUnsafeText(item && item.text, 360).trim();
       return text ? { role, parts: [{ text }] } : null;
     })
     .filter(Boolean);
+  const selected = [];
+  let totalChars = 0;
+  for (let i = compact.length - 1; i >= 0 && selected.length < AI_CONTEXT_MAX_MESSAGES; i -= 1) {
+    const item = compact[i];
+    const text = item && item.parts && item.parts[0] && item.parts[0].text || "";
+    if (totalChars + text.length > AI_CONTEXT_MAX_CHARS && selected.length > 0) continue;
+    totalChars += text.length;
+    selected.unshift(item);
+  }
+  return selected;
+}
+
+function aiContextStats(context) {
+  const list = Array.isArray(context) ? context : [];
+  return {
+    contextMessages: list.length,
+    contextChars: list.reduce((sum, item) => {
+      const text = item && item.parts && item.parts[0] && item.parts[0].text || "";
+      return sum + String(text).length;
+    }, 0),
+  };
 }
 
 function aiDiagnostics(extra = {}) {
@@ -2940,6 +3015,25 @@ function aiDiagnostics(extra = {}) {
   };
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientGeminiStatus(status) {
+  const code = Number(status || 0);
+  return code === 408 || code === 429 || code === 500 || code === 502 || code === 503 || code === 504;
+}
+
+function extractGeminiText(body) {
+  const candidates = Array.isArray(body && body.candidates) ? body.candidates : [];
+  for (const candidate of candidates) {
+    const parts = candidate && candidate.content && Array.isArray(candidate.content.parts) ? candidate.content.parts : [];
+    const text = parts.map((part) => part && part.text ? String(part.text) : "").join("").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
 async function callGeminiAi(message, context = []) {
   console.log(`[ai:diag] beforeGemini exists=${!!RAW_GEMINI_API_KEY} keyLength=${RAW_GEMINI_API_KEY.length} configured=${!!GEMINI_API_KEY} placeholder=${GEMINI_KEY_IS_PLACEHOLDER} sdkInitialized=false sdk=fetch requestReachedGemini=false fallbackActivated=false`);
   if (!GEMINI_API_KEY) {
@@ -2950,63 +3044,116 @@ async function callGeminiAi(message, context = []) {
   }
   const intentHints = getAiIntent(message);
   const requestId = crypto.randomBytes(6).toString("hex");
-  console.log(`[ai] gemini call started id=${requestId} model=${GEMINI_MODEL} promptChars=${String(message || "").length} contextMessages=${context.length}`);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
-  try {
-    console.log(`[ai:diag] geminiFetchStart id=${requestId} model=${GEMINI_MODEL} requestReachedGemini=pending fallbackActivated=false`);
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [{
-              text: aiSystemPromptFor(intentHints),
-            }],
-          },
-          contents: [
-            ...context,
-            { role: "user", parts: [{ text: message }] },
-          ],
-          generationConfig: {
-            temperature: 0.82,
-            maxOutputTokens: 420,
-            topP: 0.9,
-          },
-        }),
+  const stats = aiContextStats(context);
+  console.log(`[ai] gemini call started id=${requestId} model=${GEMINI_MODEL} promptChars=${String(message || "").length} contextMessages=${stats.contextMessages} contextChars=${stats.contextChars}`);
+  const payload = {
+    systemInstruction: {
+      parts: [{
+        text: aiSystemPromptFor(intentHints),
+      }],
+    },
+    contents: [
+      ...context,
+      { role: "user", parts: [{ text: message }] },
+    ],
+    generationConfig: {
+      temperature: 0.78,
+      maxOutputTokens: 480,
+      topP: 0.9,
+    },
+  };
+  const meta = {
+    requestId,
+    requestReachedGemini: false,
+    geminiHttpStatus: undefined,
+    retryTriggered: false,
+    retryCount: 0,
+    timeout: false,
+    emptyResponse: false,
+    ...stats,
+  };
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+    try {
+      if (attempt > 1) {
+        meta.retryTriggered = true;
+        meta.retryCount += 1;
+        console.warn(`[ai:diag] retryTriggered id=${requestId} attempt=${attempt} previousStatus=${meta.geminiHttpStatus || "none"}`);
       }
-    );
-    console.log(`[ai:diag] afterGeminiHttp id=${requestId} requestReachedGemini=true httpStatus=${response.status} fallbackActivated=false`);
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      console.warn(`[ai] gemini response received id=${requestId} status=${response.status}`);
-      console.warn(`[ai:diag] catchBranch id=${requestId} reason=GEMINI_REQUEST_FAILED httpStatus=${response.status} requestReachedGemini=true fallbackActivated=true`);
-      const err = new Error("GEMINI_REQUEST_FAILED");
-      err.status = response.status;
+      console.log(`[ai:diag] geminiFetchStart id=${requestId} attempt=${attempt} model=${GEMINI_MODEL} timeoutMs=${AI_TIMEOUT_MS} requestReachedGemini=pending fallbackActivated=false`);
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify(payload),
+        }
+      );
+      meta.requestReachedGemini = true;
+      meta.geminiHttpStatus = response.status;
+      console.log(`[ai:diag] afterGeminiHttp id=${requestId} attempt=${attempt} requestReachedGemini=true httpStatus=${response.status} fallbackActivated=false`);
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        console.warn(`[ai] gemini response received id=${requestId} attempt=${attempt} status=${response.status}`);
+        const err = new Error("GEMINI_REQUEST_FAILED");
+        err.status = response.status;
+        err.meta = { ...meta };
+        lastErr = err;
+        if (attempt === 1 && isTransientGeminiStatus(response.status)) {
+          await wait(AI_RETRY_DELAY_MS);
+          continue;
+        }
+        console.warn(`[ai:diag] catchBranch id=${requestId} reason=GEMINI_REQUEST_FAILED httpStatus=${response.status} retryTriggered=${meta.retryTriggered} requestReachedGemini=true fallbackActivated=true`);
+        throw err;
+      }
+      const text = extractGeminiText(body);
+      const reply = normalizeAiReply(text || "");
+      if (!reply) {
+        meta.emptyResponse = true;
+        const err = new Error("EMPTY_AI_RESPONSE");
+        err.code = "EMPTY_AI_RESPONSE";
+        err.meta = { ...meta };
+        lastErr = err;
+        if (attempt === 1) {
+          await wait(AI_RETRY_DELAY_MS);
+          continue;
+        }
+        console.warn(`[ai:diag] catchBranch id=${requestId} reason=EMPTY_AI_RESPONSE httpStatus=${response.status} retryTriggered=${meta.retryTriggered} requestReachedGemini=true fallbackActivated=true`);
+        throw err;
+      }
+      console.log(`[ai] gemini response received id=${requestId} attempt=${attempt} status=${response.status} replyChars=${reply.length}`);
+      console.log(`[ai:diag] afterGeminiResponse id=${requestId} attempt=${attempt} requestReachedGemini=true httpStatus=${response.status} rawTextLength=${String(text || "").length} retryTriggered=${meta.retryTriggered} fallbackActivated=false`);
+      return { reply, diagnostics: { ...meta, geminiHttpStatus: response.status, emptyResponse: false } };
+    } catch (err) {
+      if (err && err.name === "AbortError") {
+        meta.timeout = true;
+        const timeoutErr = new Error("AI_TIMEOUT");
+        timeoutErr.name = "AbortError";
+        timeoutErr.meta = { ...meta };
+        lastErr = timeoutErr;
+        if (attempt === 1) {
+          await wait(AI_RETRY_DELAY_MS);
+          continue;
+        }
+        err = timeoutErr;
+      } else if (err && !err.meta) {
+        err.meta = { ...meta };
+      }
+      if (attempt < 2 && (!err.status || isTransientGeminiStatus(err.status))) {
+        lastErr = err;
+        await wait(AI_RETRY_DELAY_MS);
+        continue;
+      }
+      console.warn(`[ai:diag] catchBranch id=${requestId} reason=${err && err.name === "AbortError" ? "AI_TIMEOUT" : err && err.code ? err.code : err && err.status ? "GEMINI_HTTP_ERROR" : "FETCH_OR_PARSE_ERROR"} httpStatus=${err && err.status ? err.status : "none"} retryTriggered=${meta.retryTriggered} requestReachedGemini=${meta.requestReachedGemini} fallbackActivated=true`);
       throw err;
+    } finally {
+      clearTimeout(timeout);
     }
-    const text = body && body.candidates && body.candidates[0] && body.candidates[0].content &&
-      body.candidates[0].content.parts && body.candidates[0].content.parts[0] &&
-      body.candidates[0].content.parts[0].text;
-    const reply = normalizeAiReply(text || "");
-    if (!reply) {
-      const err = new Error("EMPTY_AI_RESPONSE");
-      err.code = "EMPTY_AI_RESPONSE";
-      console.warn(`[ai:diag] catchBranch id=${requestId} reason=EMPTY_AI_RESPONSE httpStatus=${response.status} requestReachedGemini=true fallbackActivated=true`);
-      throw err;
-    }
-    console.log(`[ai] gemini response received id=${requestId} status=${response.status} replyChars=${reply.length}`);
-    console.log(`[ai:diag] afterGeminiResponse id=${requestId} requestReachedGemini=true httpStatus=${response.status} rawTextLength=${String(text || "").length} fallbackActivated=false`);
-    return reply;
-  } catch (err) {
-    console.warn(`[ai:diag] catchBranch id=${requestId} reason=${err && err.name === "AbortError" ? "AI_TIMEOUT" : err && err.code ? err.code : err && err.status ? "GEMINI_HTTP_ERROR" : "FETCH_OR_PARSE_ERROR"} httpStatus=${err && err.status ? err.status : "none"} requestReachedGemini=${err && err.status ? "true" : "unknown"} fallbackActivated=true`);
-    throw err;
-  } finally {
-    clearTimeout(timeout);
   }
+  throw lastErr || new Error("GEMINI_REQUEST_FAILED");
 }
 
 app.post("/api/ai/chat", rateLimit("ai"), async (req, res) => {
@@ -3018,11 +3165,12 @@ app.post("/api/ai/chat", rateLimit("ai"), async (req, res) => {
   console.log(`[ai] request received user=${String(viewer.userKey || "unknown")} promptChars=${sanitized.message.length} contextMessages=${context.length}`);
   console.log(`[ai:diag] routeEntered path=/api/ai/chat exists=${!!RAW_GEMINI_API_KEY} keyLength=${RAW_GEMINI_API_KEY.length} configured=${!!GEMINI_API_KEY} sdkInitialized=false sdk=fetch model=${GEMINI_MODEL}`);
   try {
-    const reply = await callGeminiAi(sanitized.message, context);
+    const result = await callGeminiAi(sanitized.message, context);
     return res.status(200).json({
       ok: true,
-      reply,
+      reply: result.reply,
       diagnostics: aiDiagnostics({
+        ...(result.diagnostics || {}),
         requestReachedGemini: true,
         fallbackUsed: false,
       }),
@@ -3035,8 +3183,9 @@ app.post("/api/ai/chat", rateLimit("ai"), async (req, res) => {
       return res.status(504).json({
         ok: false,
         error: "AI_TIMEOUT",
-        message: "HYSA AI took too long. Try again.",
+        message: AI_FRIENDLY_UNAVAILABLE_MESSAGE,
         diagnostics: aiDiagnostics({
+          ...(err && err.meta || {}),
           requestReachedGemini: true,
           fallbackUsed: true,
           fallbackReason: "AI_TIMEOUT",
@@ -3063,11 +3212,12 @@ app.post("/api/ai/chat", rateLimit("ai"), async (req, res) => {
     return res.status(502).json({
       ok: false,
       error: "AI_UNAVAILABLE",
-      message: "HYSA AI is unavailable right now. Try again soon.",
+      message: AI_FRIENDLY_UNAVAILABLE_MESSAGE,
       diagnostics: aiDiagnostics({
-        requestReachedGemini: !!(err && err.status),
+        ...(err && err.meta || {}),
+        requestReachedGemini: !!(err && err.meta && err.meta.requestReachedGemini) || !!(err && err.status),
         fallbackUsed: true,
-        fallbackReason: "AI_UNAVAILABLE",
+        fallbackReason: err && err.code === "EMPTY_AI_RESPONSE" ? "EMPTY_AI_RESPONSE" : "AI_UNAVAILABLE",
         geminiHttpStatus: err && err.status ? err.status : undefined,
       }),
     });
@@ -4088,6 +4238,7 @@ app.get("/api/dm/threads", async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
   const viewerKey = String(viewer.userKey);
+  markDmActive(viewerKey);
 
   const allDms = USE_POSTGRES
     ? (await pgFindAllDMs()).filter((msg) => String(msg.from) === viewerKey || String(msg.to) === viewerKey)
@@ -4128,6 +4279,9 @@ app.get("/api/dm/threads", async (req, res) => {
         peerVerified: !!(peer && peer.verified) || VERIFIED_USERS.has(peerKey) || peerKey === OWNER_USER_KEY,
         peerRole: peerKey === OWNER_USER_KEY ? "owner" : String((peer && peer.role) || ""),
         peerCreatedAt: String((peer && (peer.createdAt || peer.created_at)) || ""),
+        peerActiveNow: dmPresencePayload(peerKey).activeNow,
+        peerLastActiveAt: dmPresencePayload(peerKey).lastActiveAt,
+        peerTyping: getDmTyping(peerKey, viewerKey),
         lastMessage: String(msg.text || "") || (asArray(msg.media).length ? `[${String(asArray(msg.media)[0].kind || "media")}]` : ""),
         createdAt: String(msg.createdAt || ""),
         unreadCount,
@@ -4331,6 +4485,7 @@ app.get("/api/dm/:key", async (req, res) => {
   
   const viewerKey = String(viewer.userKey);
   const peerKey = String(peer.userKey);
+  markDmActive(viewerKey);
 
   const list = USE_POSTGRES
     ? (await pgFindAllDMs()).filter((msg) => (
@@ -4356,6 +4511,16 @@ app.get("/api/dm/:key", async (req, res) => {
     seen: String(m.from) === viewerKey ? asArray(m.readBy).includes(peerKey) : true,
     reactions: normalizeDmReactions(m.reactions),
   }));
+  const debugMessage = list.find((m) => String(m.from) === peerKey && String(m.to) === viewerKey && String(m.text || ""));
+  if (debugMessage) {
+    const rawText = String(debugMessage.text || "");
+    console.log("[dm:diag] message metadata", {
+      id: String(debugMessage.id || ""),
+      textLength: rawText.length,
+      normalizedTextLength: rawText.length,
+      fieldsPresent: ["id", "from", "to", "text", "media", "readBy"].filter((field) => debugMessage[field] !== undefined),
+    });
+  }
 
   if (USE_POSTGRES) {
     for (const message of list) {
@@ -4372,6 +4537,7 @@ app.get("/api/dm/:key", async (req, res) => {
   }
   await syncDataJson();
 
+  const peerPresence = dmPresencePayload(peerKey);
   return res.status(200).json({
     ok: true,
     peer: {
@@ -4381,8 +4547,30 @@ app.get("/api/dm/:key", async (req, res) => {
       verified: !!peer.verified || VERIFIED_USERS.has(peerKey) || peerKey === OWNER_USER_KEY,
       role: peerKey === OWNER_USER_KEY ? "owner" : String(peer.role || ""),
       isFriend: await isFriendKeys(viewerKey, peerKey),
+      activeNow: peerPresence.activeNow,
+      lastActiveAt: peerPresence.lastActiveAt,
     },
+    typing: getDmTyping(peerKey, viewerKey),
+    peerActiveNow: peerPresence.activeNow,
+    peerLastActiveAt: peerPresence.lastActiveAt,
     messages,
+  });
+});
+
+app.post("/api/dm/:key/typing", rateLimit("typing"), async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  const peer = await findUserByKeyOrName(String(req.params.key || ""));
+  if (!peer) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  const viewerKey = String(viewer.userKey);
+  const peerKey = String(peer.userKey);
+  if (peerKey === viewerKey) return res.status(400).json({ ok: false, error: "INVALID_TYPING_TARGET" });
+  markDmActive(viewerKey);
+  const state = setDmTyping(viewerKey, peerKey, !!(req.body && req.body.typing));
+  return res.status(200).json({
+    ok: true,
+    typing: !!state,
+    expiresAt: state ? new Date(state.expiresAt).toISOString() : "",
   });
 });
 
@@ -4393,6 +4581,9 @@ app.post("/api/dm/:key", async (req, res) => {
   if (!peer) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
   if (String(peer.userKey) === String(viewer.userKey)) return res.status(400).json({ ok: false, error: "INVALID_MESSAGE" });
   
+  const viewerKey = String(viewer.userKey);
+  markDmActive(viewerKey);
+  setDmTyping(viewerKey, String(peer.userKey), false);
   const text = String((req.body && req.body.text) || "").trim();
   if (text.length > 600) return res.status(400).json({ ok: false, error: "INVALID_MESSAGE" });
   const mediaCheck = validateDmMediaList(req.body && req.body.media);
@@ -4401,12 +4592,12 @@ app.post("/api/dm/:key", async (req, res) => {
   
   const message = {
     id: crypto.randomBytes(12).toString("base64url"),
-    from: String(viewer.userKey),
+    from: viewerKey,
     to: String(peer.userKey),
     text,
     media: mediaCheck.media,
     createdAt: new Date().toISOString(),
-    readBy: [String(viewer.userKey)],
+    readBy: [viewerKey],
     reactions: {},
   };
   if (USE_POSTGRES) await pgCreateDM(message);
@@ -4889,14 +5080,15 @@ app.get("/api/messages/:userId", async (req, res) => {
 });
 
 // Typing status endpoint (long polling simulation)
-app.post("/api/messages/typing", async (req, res) => {
+app.post("/api/messages/typing", rateLimit("typing"), async (req, res) => {
   const viewer = await requireAuth(req, res);
   if (!viewer) return;
 
-  const to = String(req.body && req.body.to || "").trim();
-  // In a real implementation, this would use Socket.io or similar
-  // For now, we just acknowledge the typing indicator
-  return res.status(200).json({ ok: true, typing: true, from: String(viewer.userKey), to });
+  const viewerKey = String(viewer.userKey);
+  const to = normalizeUsername(req.body && req.body.to).key;
+  markDmActive(viewerKey);
+  const state = setDmTyping(viewerKey, to, req.body && req.body.typing !== false);
+  return res.status(200).json({ ok: true, typing: !!state, from: viewerKey, to });
 });
 
 // =============================================

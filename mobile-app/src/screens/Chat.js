@@ -36,16 +36,22 @@ import theme from '../theme';
 const CHAT_BG_KEY = 'chat_bg_';
 
 const CHAT_THEMES = [
-  { id: 'default', label: 'HYSA Default', gradient: ['#070711', '#120f24', '#070711'], bubbleMine: '#FF3B8A', bubbleTheir: 'rgba(255,255,255,0.15)', inputBg: 'rgba(7,7,17,0.94)', textMine: '#FFFFFF', textTheir: '#FFFFFF' },
-  { id: 'pink', label: 'Neon Pink', gradient: ['#190814', '#310a25', '#070711'], bubbleMine: '#FF2F92', bubbleTheir: 'rgba(255,47,146,0.16)', inputBg: 'rgba(25,8,20,0.94)', textMine: '#FFFFFF', textTheir: '#FFFFFF' },
-  { id: 'purple', label: 'Midnight Purple', gradient: ['#0b0715', '#21113f', '#070711'], bubbleMine: '#8B5CF6', bubbleTheir: 'rgba(139,92,246,0.17)', inputBg: 'rgba(13,9,24,0.94)', textMine: '#FFFFFF', textTheir: '#F7F2FF' },
-  { id: 'blue', label: 'Ocean Blue', gradient: ['#061322', '#062f47', '#07101b'], bubbleMine: '#16A7E8', bubbleTheir: 'rgba(22,167,232,0.16)', inputBg: 'rgba(6,19,34,0.94)', textMine: '#FFFFFF', textTheir: '#EAF8FF' },
-  { id: 'emerald', label: 'Emerald', gradient: ['#041411', '#063729', '#06100d'], bubbleMine: '#10B981', bubbleTheir: 'rgba(16,185,129,0.16)', inputBg: 'rgba(4,20,17,0.94)', textMine: '#FFFFFF', textTheir: '#E9FFF7' },
-  { id: 'sunset', label: 'Sunset', gradient: ['#1b0a16', '#3a1515', '#241006'], bubbleMine: '#FF6B4A', bubbleTheir: 'rgba(255,186,73,0.16)', inputBg: 'rgba(27,10,22,0.94)', textMine: '#FFFFFF', textTheir: '#FFF2E7' },
-  { id: 'algeria', label: 'Algeria Green', gradient: ['#04130d', '#06351f', '#120b0b'], bubbleMine: '#0EA765', bubbleTheir: 'rgba(255,255,255,0.14)', inputBg: 'rgba(4,19,13,0.94)', textMine: '#FFFFFF', textTheir: '#FFFFFF' },
-  { id: 'glass', label: 'Glass Black', gradient: ['#050509', '#14141d', '#070711'], bubbleMine: 'rgba(255,255,255,0.24)', bubbleTheir: 'rgba(255,255,255,0.1)', inputBg: 'rgba(7,7,12,0.9)', textMine: '#FFFFFF', textTheir: '#FFFFFF' },
-  { id: 'love', label: 'Love', gradient: ['#1b0712', '#361025', '#160913'], bubbleMine: '#FF4F76', bubbleTheir: 'rgba(255,79,118,0.16)', inputBg: 'rgba(27,7,18,0.94)', textMine: '#FFFFFF', textTheir: '#FFEFF3' },
-  { id: 'gold', label: 'Gold', gradient: ['#161006', '#3b2708', '#100c06'], bubbleMine: '#C8912B', bubbleTheir: 'rgba(255,213,122,0.16)', inputBg: 'rgba(22,16,6,0.94)', textMine: '#FFFFFF', textTheir: '#FFF7E5' },
+  { id: 'default', label: 'HYSA Default', gradient: ['#070711', '#120f24', '#070711'], bubbleMine: '#FF3B8A', bubbleTheir: 'rgba(255,255,255,0.15)', inputBg: 'rgba(7,7,17,0.94)', textMine: '#FFFFFF', textTheir: '#FFFFFF', radius: 20, inputRadius: 22, messageGap: 2, voiceTrack: 'rgba(255,255,255,0.22)', wallpaper: 'rgba(255,59,138,0.025)' },
+  { id: 'neon-glass', label: 'Neon Glass', gradient: ['#05050b', '#180a1c', '#071018'], bubbleMine: 'rgba(255,59,138,0.86)', bubbleTheir: 'rgba(255,255,255,0.12)', inputBg: 'rgba(8,8,16,0.78)', textMine: '#FFFFFF', textTheir: '#FFFFFF', radius: 24, inputRadius: 26, messageGap: 4, voiceTrack: 'rgba(255,255,255,0.28)', wallpaper: 'rgba(92,203,227,0.035)' },
+  { id: 'algeria', label: 'Algeria Green', gradient: ['#04130d', '#06351f', '#120b0b'], bubbleMine: '#0EA765', bubbleTheir: 'rgba(255,255,255,0.14)', inputBg: 'rgba(4,19,13,0.94)', textMine: '#FFFFFF', textTheir: '#FFFFFF', radius: 18, inputRadius: 20, messageGap: 3, voiceTrack: 'rgba(255,255,255,0.24)', wallpaper: 'rgba(14,167,101,0.04)' },
+  { id: 'midnight-pro', label: 'Midnight Pro', gradient: ['#050508', '#111827', '#070711'], bubbleMine: '#4F46E5', bubbleTheir: 'rgba(255,255,255,0.1)', inputBg: 'rgba(8,10,18,0.96)', textMine: '#FFFFFF', textTheir: '#F4F7FF', radius: 12, inputRadius: 14, messageGap: 5, voiceTrack: 'rgba(148,163,184,0.3)', wallpaper: 'rgba(99,102,241,0.028)' },
+  { id: 'love', label: 'Love Pink', gradient: ['#1b0712', '#361025', '#160913'], bubbleMine: '#FF4F76', bubbleTheir: 'rgba(255,79,118,0.16)', inputBg: 'rgba(27,7,18,0.94)', textMine: '#FFFFFF', textTheir: '#FFEFF3', radius: 26, inputRadius: 28, messageGap: 4, voiceTrack: 'rgba(255,255,255,0.28)', wallpaper: 'rgba(255,79,118,0.04)' },
+  { id: 'gold', label: 'Gold Luxury', gradient: ['#100c06', '#2a1d08', '#070707'], bubbleMine: '#C8912B', bubbleTheir: 'rgba(255,213,122,0.14)', inputBg: 'rgba(20,14,7,0.95)', textMine: '#FFFFFF', textTheir: '#FFF7E5', radius: 16, inputRadius: 18, messageGap: 4, voiceTrack: 'rgba(255,213,122,0.28)', wallpaper: 'rgba(200,145,43,0.035)' },
+  { id: 'minimal-black', label: 'Minimal Black', gradient: ['#030304', '#09090b', '#030304'], bubbleMine: '#F5F5F5', bubbleTheir: 'rgba(255,255,255,0.11)', inputBg: 'rgba(5,5,6,0.96)', textMine: '#050505', textTheir: '#FFFFFF', radius: 8, inputRadius: 12, messageGap: 6, voiceTrack: 'rgba(255,255,255,0.18)', wallpaper: 'rgba(255,255,255,0.015)' },
+  { id: 'ocean-glow', label: 'Ocean Glow', gradient: ['#03121f', '#05314a', '#07101b'], bubbleMine: '#16A7E8', bubbleTheir: 'rgba(22,167,232,0.16)', inputBg: 'rgba(6,19,34,0.94)', textMine: '#FFFFFF', textTheir: '#EAF8FF', radius: 22, inputRadius: 24, messageGap: 3, voiceTrack: 'rgba(125,211,252,0.25)', wallpaper: 'rgba(22,167,232,0.04)' },
+  { id: 'anime-soft', label: 'Anime Soft', gradient: ['#120916', '#2b1231', '#101827'], bubbleMine: '#F472B6', bubbleTheir: 'rgba(186,230,253,0.14)', inputBg: 'rgba(18,9,22,0.92)', textMine: '#FFFFFF', textTheir: '#FDF2F8', radius: 28, inputRadius: 24, messageGap: 4, voiceTrack: 'rgba(251,207,232,0.26)', wallpaper: 'rgba(244,114,182,0.045)' },
+  { id: 'cyber-purple', label: 'Cyber Purple', gradient: ['#08020f', '#21113f', '#050914'], bubbleMine: '#8B5CF6', bubbleTheir: 'rgba(139,92,246,0.17)', inputBg: 'rgba(13,9,24,0.94)', textMine: '#FFFFFF', textTheir: '#F7F2FF', radius: 14, inputRadius: 20, messageGap: 3, voiceTrack: 'rgba(196,181,253,0.26)', wallpaper: 'rgba(139,92,246,0.045)' },
+  { id: 'pink', label: 'Neon Pink', gradient: ['#190814', '#310a25', '#070711'], bubbleMine: '#FF2F92', bubbleTheir: 'rgba(255,47,146,0.16)', inputBg: 'rgba(25,8,20,0.94)', textMine: '#FFFFFF', textTheir: '#FFFFFF', radius: 22, inputRadius: 24, messageGap: 3, voiceTrack: 'rgba(255,255,255,0.24)', wallpaper: 'rgba(255,47,146,0.035)' },
+  { id: 'purple', label: 'Midnight Purple', gradient: ['#0b0715', '#21113f', '#070711'], bubbleMine: '#8B5CF6', bubbleTheir: 'rgba(139,92,246,0.17)', inputBg: 'rgba(13,9,24,0.94)', textMine: '#FFFFFF', textTheir: '#F7F2FF', radius: 18, inputRadius: 22, messageGap: 3, voiceTrack: 'rgba(196,181,253,0.24)', wallpaper: 'rgba(139,92,246,0.035)' },
+  { id: 'blue', label: 'Ocean Blue', gradient: ['#061322', '#062f47', '#07101b'], bubbleMine: '#16A7E8', bubbleTheir: 'rgba(22,167,232,0.16)', inputBg: 'rgba(6,19,34,0.94)', textMine: '#FFFFFF', textTheir: '#EAF8FF', radius: 20, inputRadius: 22, messageGap: 3, voiceTrack: 'rgba(125,211,252,0.24)', wallpaper: 'rgba(22,167,232,0.035)' },
+  { id: 'emerald', label: 'Emerald', gradient: ['#041411', '#063729', '#06100d'], bubbleMine: '#10B981', bubbleTheir: 'rgba(16,185,129,0.16)', inputBg: 'rgba(4,20,17,0.94)', textMine: '#FFFFFF', textTheir: '#E9FFF7', radius: 18, inputRadius: 20, messageGap: 3, voiceTrack: 'rgba(167,243,208,0.24)', wallpaper: 'rgba(16,185,129,0.035)' },
+  { id: 'sunset', label: 'Sunset', gradient: ['#1b0a16', '#3a1515', '#241006'], bubbleMine: '#FF6B4A', bubbleTheir: 'rgba(255,186,73,0.16)', inputBg: 'rgba(27,10,22,0.94)', textMine: '#FFFFFF', textTheir: '#FFF2E7', radius: 20, inputRadius: 22, messageGap: 3, voiceTrack: 'rgba(255,186,73,0.24)', wallpaper: 'rgba(255,107,74,0.035)' },
+  { id: 'glass', label: 'Glass Black', gradient: ['#050509', '#14141d', '#070711'], bubbleMine: 'rgba(255,255,255,0.24)', bubbleTheir: 'rgba(255,255,255,0.1)', inputBg: 'rgba(7,7,12,0.9)', textMine: '#FFFFFF', textTheir: '#FFFFFF', radius: 22, inputRadius: 26, messageGap: 4, voiceTrack: 'rgba(255,255,255,0.2)', wallpaper: 'rgba(255,255,255,0.02)' },
 ];
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -94,9 +100,13 @@ const Chat = ({ navigation, route }) => {
   const [mediaUploading, setMediaUploading] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordDuration, setRecordDuration] = useState(0);
+  const [recordingError, setRecordingError] = useState('');
   const [playingAudio, setPlayingAudio] = useState(null);
   const [audioProgress, setAudioProgress] = useState({});
   const [mediaErrors, setMediaErrors] = useState({});
+  const [peerTyping, setPeerTyping] = useState(false);
+  const [peerActiveNow, setPeerActiveNow] = useState(false);
+  const [peerLastActiveAt, setPeerLastActiveAt] = useState('');
   const flatListRef = useRef(null);
   const recordingRef = useRef(null);
   const recordTimerRef = useRef(null);
@@ -108,6 +118,11 @@ const Chat = ({ navigation, route }) => {
   const activeSoundIdRef = useRef(null);
   const playbackRequestRef = useRef(false);
   const mountedRef = useRef(true);
+  const isNearBottomRef = useRef(true);
+  const shouldAutoScrollRef = useRef(true);
+  const lastMessageSignatureRef = useRef('');
+  const typingIdleTimerRef = useRef(null);
+  const lastTypingSentAtRef = useRef(0);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const sheetAnim = useRef(new Animated.Value(400)).current;
   const micAnim = useRef(new Animated.Value(1)).current;
@@ -116,7 +131,6 @@ const Chat = ({ navigation, route }) => {
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
     loadChatTheme();
-    fetchMessages();
   }, [userKey]);
 
   const loadChatTheme = async () => {
@@ -143,7 +157,7 @@ const Chat = ({ navigation, route }) => {
       if (recordingRef.current) {
         const recording = recordingRef.current;
         recordingRef.current = null;
-        recording.stopAndUnloadRecordingAsync().catch(() => {});
+        stopAndUnloadRecording(recording).catch(() => {});
       }
       if (soundRef.current) {
         const sound = soundRef.current;
@@ -154,6 +168,10 @@ const Chat = ({ navigation, route }) => {
       if (micLoopRef.current) {
         micLoopRef.current.stop();
         micLoopRef.current = null;
+      }
+      if (typingIdleTimerRef.current) {
+        clearTimeout(typingIdleTimerRef.current);
+        typingIdleTimerRef.current = null;
       }
     };
   }, []);
@@ -181,6 +199,34 @@ const Chat = ({ navigation, route }) => {
 
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  const restorePlaybackAudioMode = async () => {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+    } catch (e) {}
+  };
+
+  const showRecordingError = (message) => {
+    if (!mountedRef.current) return;
+    setRecordingError(message);
+    setTimeout(() => {
+      if (mountedRef.current) setRecordingError('');
+    }, 3200);
+  };
+
+  const stopAndUnloadRecording = async (recordingInstance) => {
+    if (!recordingInstance || typeof recordingInstance.stopAndUnloadAsync !== 'function') {
+      throw new TypeError('Audio recording instance is missing stopAndUnloadAsync.');
+    }
+    await recordingInstance.stopAndUnloadAsync();
+  };
+
   const stopActiveSound = async ({ resetProgressId = null, updateState = true } = {}) => {
     const sound = soundRef.current;
     soundRef.current = null;
@@ -201,6 +247,156 @@ const Chat = ({ navigation, route }) => {
         await sound.unloadAsync();
       } catch (e) {}
     }
+  };
+
+  const asList = (value) => {
+    if (!value) return [];
+    return Array.isArray(value) ? value.filter(Boolean) : [value];
+  };
+
+  const stringField = (value) => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    return '';
+  };
+
+  const firstString = (...values) => {
+    for (const value of values) {
+      if (value === null || value === undefined) continue;
+      const direct = stringField(value);
+      if (direct) return direct;
+      if (Array.isArray(value)) {
+        const parts = value.map((entry) => stringField(entry) || firstString(entry)).filter(Boolean);
+        if (parts.length) return parts.join(' ');
+      }
+      if (typeof value === 'object') {
+        const nested = firstString(value.text, value.body, value.content, value.message, value.caption, value.value);
+        if (nested) return nested;
+      }
+    }
+    return '';
+  };
+
+  const normalizeType = (value) => String(value || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+
+  const looksLikeAudioUrl = (url) => /\.(m4a|mp3|aac|wav|ogg|oga|webm)(\?|#|$)/i.test(String(url || ''));
+  const looksLikeImageUrl = (url) => /\.(jpe?g|png|gif|webp|heic|heif)(\?|#|$)/i.test(String(url || ''));
+  const looksLikeVideoUrl = (url) => /\.(mp4|mov|m4v|webm)(\?|#|$)/i.test(String(url || ''));
+
+  const getMessageText = (message) => firstString(
+    message?.text,
+    message?.body,
+    message?.content,
+    message?.message,
+    message?.caption
+  );
+
+  const getUrlFrom = (value) => firstString(
+    value?.fullUrl,
+    value?.url,
+    value?.mediaUrl,
+    value?.audioUrl,
+    value?.fileUrl,
+    value?.attachmentUrl,
+    value?.secure_url,
+    value?.src,
+    value?.uri
+  );
+
+  const getMediaItems = (message) => {
+    const items = [
+      ...asList(message?.media),
+      ...asList(message?.attachment),
+      ...asList(message?.attachments),
+      ...asList(message?.file),
+      ...asList(message?.files),
+    ];
+    const directUrl = getUrlFrom(message);
+    if (directUrl) items.unshift({ ...message, url: directUrl });
+    return items;
+  };
+
+  const getMediaKind = (item, message) => {
+    const kind = normalizeType(item?.kind || item?.type || message?.type || message?.messageType || message?.mediaType);
+    const mime = normalizeType(item?.mime || item?.mimeType || message?.mime || message?.mimeType);
+    const url = getUrlFrom(item) || getUrlFrom(message);
+    if (['voice', 'audio', 'voice_message'].includes(kind)) return 'audio';
+    if (kind === 'media' && (mime.startsWith('audio/') || looksLikeAudioUrl(url))) return 'audio';
+    if (kind === 'image' || mime.startsWith('image/') || looksLikeImageUrl(url)) return 'image';
+    if (kind === 'video' || mime.startsWith('video/') || looksLikeVideoUrl(url)) return 'video';
+    if (mime.startsWith('audio/') || looksLikeAudioUrl(url)) return 'audio';
+    return kind;
+  };
+
+  const getMessageMedia = (message) => {
+    const items = getMediaItems(message);
+    const audio = items.find((item) => getMediaKind(item, message) === 'audio' && getUrlFrom(item));
+    const video = items.find((item) => getMediaKind(item, message) === 'video' && getUrlFrom(item));
+    const image = items.find((item) => getMediaKind(item, message) === 'image' && getUrlFrom(item));
+    const fallback = items.find((item) => getUrlFrom(item));
+    const type = normalizeType(message?.type || message?.messageType || message?.mediaType);
+    const selected = audio || video || image || fallback || null;
+    const kind = selected ? getMediaKind(selected, message) : (['voice', 'audio', 'voice_message'].includes(type) ? 'audio' : type);
+    return {
+      item: selected,
+      kind,
+      url: selected ? getUrlFrom(selected) : getUrlFrom(message),
+    };
+  };
+
+  const getMessageDuration = (message, mediaItem) => {
+    const value = Number(
+      mediaItem?.duration ??
+      mediaItem?.durationSeconds ??
+      message?.duration ??
+      message?.durationSeconds ??
+      0
+    );
+    const ms = Number(mediaItem?.durationMs ?? message?.durationMs ?? 0);
+    if (Number.isFinite(value) && value > 0) return value > 1000 ? Math.round(value / 1000) : Math.round(value);
+    if (Number.isFinite(ms) && ms > 0) return Math.round(ms / 1000);
+    return 0;
+  };
+
+  const normalizeMessage = (message, index = 0) => {
+    const text = getMessageText(message);
+    return {
+      ...(message || {}),
+      id: getMessageId(message, index),
+      text,
+      normalizedText: text,
+      _textMeta: {
+        id: getMessageId(message, index),
+        textLength: stringField(message?.text).length,
+        normalizedTextLength: text.length,
+        fieldsPresent: ['text', 'body', 'content', 'message', 'caption']
+          .filter((field) => message && message[field] !== undefined),
+      },
+    };
+  };
+
+  const getMessageId = (message, index = 0) => String(
+    message?.id ||
+    message?._id ||
+    `${message?.from || message?.senderId || 'msg'}-${message?.createdAt || index}`
+  );
+
+  const isMessageMine = (message) => message?.mine === true || message?.isMine === true || message?.sender === 'me';
+
+  const messageSignature = (list) => (Array.isArray(list) ? list : [])
+    .map((message, index) => `${getMessageId(message, index)}|${message?.createdAt || ''}|${getMessageText(message)}|${getMessageMedia(message).url || ''}`)
+    .join('~');
+
+  const dedupeMessages = (list) => {
+    const seen = new Set();
+    return (Array.isArray(list) ? list : []).map(normalizeMessage).filter((message, index) => {
+      const id = getMessageId(message, index);
+      const sig = id || `${message?.from || ''}|${message?.to || ''}|${message?.createdAt || ''}|${getMessageText(message)}|${getMessageMedia(message).url || ''}`;
+      if (seen.has(sig)) return false;
+      seen.add(sig);
+      return true;
+    });
   };
 
   const isCanceled = (result) => result.canceled || result.cancelled;
@@ -238,10 +434,11 @@ const Chat = ({ navigation, route }) => {
       if (response.data.ok) {
         const media = response.data.media;
         const msgType = media.kind === 'video' ? 'video' : 'image';
+        sendTypingState(false);
         await dmAPI.sendMessage(userKey, text.trim(), { media: [media], type: msgType });
         setMediaPreview(null);
         setText('');
-        fetchMessages();
+        fetchMessages({ forceScroll: true });
       } else {
         Alert.alert('Upload failed', response.data.error || 'Could not upload media.');
       }
@@ -268,7 +465,7 @@ const Chat = ({ navigation, route }) => {
         : await Audio.requestPermissionsAsync();
       if (permission.status !== 'granted') {
         resetRecordingState();
-        Alert.alert('Microphone permission needed', 'Enable microphone access for HYSA in Android settings, then try recording again.');
+        showRecordingError('Microphone permission is needed to send voice messages.');
         return;
       }
       await Audio.setAudioModeAsync({
@@ -292,6 +489,7 @@ const Chat = ({ navigation, route }) => {
       recordingRef.current = newRecording;
       recordingPreparedRef.current = true;
       recordStartedAtRef.current = Date.now();
+      setRecordingError('');
       setRecording(true);
       setRecordDuration(0);
       recordDurationRef.current = 0;
@@ -319,19 +517,18 @@ const Chat = ({ navigation, route }) => {
       resetRecordingState();
       if (failedRecording) {
         try {
-          await failedRecording.stopAndUnloadRecordingAsync();
+          await stopAndUnloadRecording(failedRecording);
         } catch (e) {}
       }
-      try {
-        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false });
-      } catch (e) {}
-      Alert.alert('Recording unavailable', 'HYSA could not start the microphone. Close other apps using the mic, check permission, and try again.');
+      await restorePlaybackAudioMode();
+      showRecordingError('HYSA could not start the microphone. Check permission and try again.');
     }
   };
 
   const stopRecording = async () => {
     if (!recordingRef.current || stoppingRecordingRef.current || !recordingPreparedRef.current) return;
     stoppingRecordingRef.current = true;
+    const recording = recordingRef.current;
     try {
       if (recordTimerRef.current) {
         clearInterval(recordTimerRef.current);
@@ -341,52 +538,60 @@ const Chat = ({ navigation, route }) => {
         micLoopRef.current.stop();
         micLoopRef.current = null;
       }
-      const recording = recordingRef.current;
       recordingRef.current = null;
       const elapsed = Date.now() - recordStartedAtRef.current;
       if (elapsed < MIN_RECORDING_MS) {
         await wait(MIN_RECORDING_MS - elapsed);
       }
       const finalStatus = await recording.getStatusAsync().catch(() => null);
-      if (finalStatus && finalStatus.canRecord === false && !finalStatus.isDoneRecording) {
+      if (!finalStatus || (!finalStatus.canRecord && !finalStatus.isRecording)) {
         throw new Error('Recording was not ready to stop.');
       }
       try {
-        await recording.stopAndUnloadRecordingAsync();
+        await stopAndUnloadRecording(recording);
       } catch (stopErr) {
         const message = String(stopErr?.message || stopErr || '');
         if (message.includes('E_AUDIO_NODATA') || message.includes('no valid audio data')) {
-          await wait(450);
-          await recording.stopAndUnloadRecordingAsync();
-        } else {
-          throw stopErr;
+          throw new Error('Recording was too short to save audio data.');
         }
+        throw stopErr;
       }
       const uri = recording.getURI();
-      const finalDuration = Math.max(recordDurationRef.current, Math.ceil((finalStatus?.durationMillis || 0) / 1000));
-      if (mountedRef.current) {
-        setRecording(false);
+      if (!uri) {
+        throw new Error('Recording stopped without an audio URI.');
       }
+      const info = await FileSystem.getInfoAsync(uri).catch(() => null);
+      if (!info?.exists || !info?.size) {
+        throw new Error('Recording file is missing or empty.');
+      }
+      const finalDuration = Math.max(1, recordDurationRef.current, Math.ceil((finalStatus?.durationMillis || elapsed) / 1000));
+      if (mountedRef.current) setRecording(false);
       micAnim.setValue(1);
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false }).catch(() => {});
-      if (uri) {
-        setMediaPreview({ uri, type: 'audio', duration: finalDuration, mimeType: 'audio/mp4' });
-        if (mountedRef.current) setRecordDuration(finalDuration);
-      }
+      await restorePlaybackAudioMode();
+      setMediaPreview({ uri, type: 'audio', duration: finalDuration, mimeType: 'audio/mp4' });
+      if (mountedRef.current) setRecordDuration(finalDuration);
       recordDurationRef.current = 0;
       recordStartedAtRef.current = 0;
       recordingPreparedRef.current = false;
       stoppingRecordingRef.current = false;
     } catch (err) {
-      console.error('Stop recording error:', err);
+      console.error('Stop recording error:', {
+        message: err?.message,
+        name: err?.name,
+        stack: err?.stack,
+      });
+      if (recordingRef.current === recording) recordingRef.current = null;
       resetRecordingState();
-      Alert.alert('Recording error', 'Could not finish the voice message. Please try again.');
+      await restorePlaybackAudioMode();
+      showRecordingError('Could not finish the voice message. Please try again.');
     }
   };
 
   const cancelRecording = () => {
+    if (stoppingRecordingRef.current) return;
+    stoppingRecordingRef.current = true;
     if (recordingRef.current) {
-      recordingRef.current.stopAndUnloadRecordingAsync();
+      stopAndUnloadRecording(recordingRef.current).catch(() => {});
       recordingRef.current = null;
     }
     clearInterval(recordTimerRef.current);
@@ -402,7 +607,7 @@ const Chat = ({ navigation, route }) => {
     recordingPreparedRef.current = false;
     stoppingRecordingRef.current = false;
     micAnim.setValue(1);
-    Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false }).catch(() => {});
+    restorePlaybackAudioMode();
   };
 
   useFocusEffect(
@@ -412,31 +617,43 @@ const Chat = ({ navigation, route }) => {
         if (recordingRef.current) {
           const recordingToStop = recordingRef.current;
           recordingRef.current = null;
-          recordingToStop.stopAndUnloadRecordingAsync().catch(() => {});
+          stopAndUnloadRecording(recordingToStop).catch(() => {});
         }
         resetRecordingState();
-        Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true, playThroughEarpieceAndroid: false }).catch(() => {});
+        restorePlaybackAudioMode();
       };
     }, [])
   );
 
   const sendVoiceMessage = async () => {
-    if (!mediaPreview || mediaPreview.type !== 'audio') return;
+    if (!mediaPreview || mediaPreview.type !== 'audio' || mediaUploading) return;
     setMediaUploading(true);
     try {
+      if (!mediaPreview.uri) {
+        throw new Error('Voice message is missing an audio URI.');
+      }
+      const info = await FileSystem.getInfoAsync(mediaPreview.uri).catch(() => null);
+      if (!info?.exists || !info?.size) {
+        throw new Error('Voice message file is missing or empty.');
+      }
       const b64 = await FileSystem.readAsStringAsync(mediaPreview.uri, { encoding: 'base64' });
       const dataUrl = `data:${mediaPreview.mimeType || 'audio/mp4'};base64,${b64}`;
       const response = await uploadAPI.uploadMedia(dataUrl);
       if (response.data.ok) {
+        sendTypingState(false);
         await dmAPI.sendMessage(userKey, '', { media: [response.data.media], type: 'voice' });
         setMediaPreview(null);
-        fetchMessages();
+        fetchMessages({ forceScroll: true });
       } else {
-        Alert.alert('Upload failed', response.data.error || 'Could not upload voice message.');
+        showRecordingError(response.data.error || 'Could not upload voice message.');
       }
     } catch (err) {
-      console.error('Voice upload error:', err);
-      Alert.alert('Error', 'Failed to send voice message.');
+      console.error('Voice upload error:', {
+        message: err?.message,
+        name: err?.name,
+        stack: err?.stack,
+      });
+      showRecordingError('Failed to send voice message. Please try again.');
     } finally {
       setMediaUploading(false);
     }
@@ -493,28 +710,87 @@ const Chat = ({ navigation, route }) => {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  const fetchMessages = async () => {
+  const fetchMessages = async ({ silent = false, forceScroll = false } = {}) => {
     try {
       const response = await dmAPI.getConversation(userKey);
       if (response.data.ok) {
-        setMessages(response.data.messages || []);
+        setPeerTyping(!!response.data.typing);
+        setPeerActiveNow(!!response.data.peerActiveNow || !!response.data.peer?.activeNow);
+        setPeerLastActiveAt(response.data.peerLastActiveAt || response.data.peer?.lastActiveAt || '');
+        const nextMessages = dedupeMessages(response.data.messages || []);
+        const sample = nextMessages.find((message) => !isMessageMine(message) && getMessageText(message));
+        if (sample) {
+          console.log('[dm:mobile:message-meta]', sample._textMeta);
+        }
+        const nextSignature = messageSignature(nextMessages);
+        const previousSignature = lastMessageSignatureRef.current;
+        if (nextSignature !== previousSignature) {
+          const lastMessage = nextMessages[nextMessages.length - 1];
+          shouldAutoScrollRef.current = forceScroll || !previousSignature || isNearBottomRef.current || isMessageMine(lastMessage);
+          lastMessageSignatureRef.current = nextSignature;
+          setMessages(nextMessages);
+        }
       }
     } catch (err) {
-      console.error('Chat fetch error:', err);
+      if (!silent) console.error('Chat fetch error:', err);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   };
+
+  const sendTypingState = useCallback((typing) => {
+    if (!userKey) return;
+    dmAPI.setTyping(userKey, typing).catch(() => {});
+  }, [userKey]);
+
+  const handleTextChange = (value) => {
+    setText(value);
+    if (typingIdleTimerRef.current) clearTimeout(typingIdleTimerRef.current);
+    const hasText = !!value.trim();
+    if (!hasText) {
+      lastTypingSentAtRef.current = 0;
+      sendTypingState(false);
+      return;
+    }
+    const now = Date.now();
+    if (now - lastTypingSentAtRef.current > 2500) {
+      lastTypingSentAtRef.current = now;
+      sendTypingState(true);
+    }
+    typingIdleTimerRef.current = setTimeout(() => {
+      lastTypingSentAtRef.current = 0;
+      sendTypingState(false);
+    }, 4500);
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchMessages({ silent: true, forceScroll: true });
+      const timer = setInterval(() => {
+        fetchMessages({ silent: true });
+      }, 4000);
+      return () => {
+        clearInterval(timer);
+        if (typingIdleTimerRef.current) {
+          clearTimeout(typingIdleTimerRef.current);
+          typingIdleTimerRef.current = null;
+        }
+        lastTypingSentAtRef.current = 0;
+        sendTypingState(false);
+      };
+    }, [userKey, sendTypingState])
+  );
 
   const handleSend = async () => {
     if (!text.trim() || sending) return;
     setSending(true);
     haptics.light();
     try {
+      sendTypingState(false);
       const response = await dmAPI.sendMessage(userKey, text.trim());
       if (response.data.ok) {
         setText('');
-        fetchMessages();
+        fetchMessages({ forceScroll: true });
       }
     } catch (err) {
       console.error('Send error:', err);
@@ -533,10 +809,11 @@ const Chat = ({ navigation, route }) => {
       const response = await uploadAPI.uploadMedia(dataUrl);
       if (response.data.ok) {
         const media = response.data.media;
+        sendTypingState(false);
         await dmAPI.sendMessage(userKey, text.trim(), { media: [media], type: media.kind === 'video' ? 'video' : 'image' });
         setMediaPreview(null);
         setText('');
-        fetchMessages();
+        fetchMessages({ forceScroll: true });
       } else {
         Alert.alert('Upload failed', response.data.error || 'Could not upload media.');
       }
@@ -702,19 +979,27 @@ const Chat = ({ navigation, route }) => {
   );
 
   const renderMessage = ({ item, index }) => {
-    const isMine = item.mine === true;
+    const isMine = isMessageMine(item);
+    const isLastMessage = index === messages.length - 1;
     const prevMsg = index > 0 ? messages[index - 1] : null;
-    const isContinuation = prevMsg && prevMsg.mine === item.mine;
-    const showAvatar = !isMine && (!prevMsg || prevMsg.mine || prevMsg.senderId !== item.senderId);
-    const isMedia = item.type === 'image' || item.type === 'video';
-    const isVoice = item.type === 'voice';
-    const mediaUrl = item.media?.fullUrl || item.media?.url;
-    const progress = audioProgress[item.id] || 0;
+    const isContinuation = prevMsg && isMessageMine(prevMsg) === isMine;
+    const senderId = item.senderId || item.from || item.senderKey || item.sender?.id;
+    const prevSenderId = prevMsg?.senderId || prevMsg?.from || prevMsg?.senderKey || prevMsg?.sender?.id;
+    const showAvatar = !isMine && (!prevMsg || isMessageMine(prevMsg) || prevSenderId !== senderId);
+    const displayText = item.normalizedText || getMessageText(item);
+    const media = getMessageMedia(item);
+    const isVoice = media.kind === 'audio';
+    const isMedia = media.kind === 'image' || media.kind === 'video';
+    const mediaUrl = media.url;
+    const messageId = getMessageId(item, index);
+    const progress = audioProgress[messageId] || 0;
+    const duration = getMessageDuration(item, media.item);
 
     return (
       <View style={[
         styles.msgRow,
         isMine ? styles.msgRowMine : styles.msgRowTheir,
+        { marginBottom: currentTheme.messageGap ?? 2 },
       ]}>
         {!isMine && (
           <View style={[styles.msgAvatarCol, !showAvatar && styles.msgAvatarHidden]}>
@@ -733,43 +1018,46 @@ const Chat = ({ navigation, route }) => {
         ]}>
           <View style={[
             styles.msgBubble,
+            { borderRadius: currentTheme.radius ?? 20 },
             isMine ? [styles.msgBubbleMine, { backgroundColor: currentTheme.bubbleMine }] : [styles.msgBubbleTheir, { backgroundColor: currentTheme.bubbleTheir }],
             isContinuation && isMine && styles.msgBubbleMineCont,
             isContinuation && !isMine && styles.msgBubbleTheirCont,
-            isMedia && styles.msgBubbleMedia,
+            isMedia && mediaUrl && styles.msgBubbleMedia,
+            isVoice && styles.msgBubbleVoice,
           ]}>
             {isMedia && mediaUrl ? (
               <View>
                 <Image source={{ uri: mediaUrl }} style={styles.msgMediaImage} resizeMode="cover" />
-                {item.text ? (
+                {displayText ? (
                   <Text style={[styles.msgText, { color: isMine ? currentTheme.textMine : currentTheme.textTheir }, isMine && styles.msgTextMine, styles.msgMediaText]}>
-                    {item.text}
+                    {displayText}
                   </Text>
                 ) : null}
               </View>
             ) : isVoice ? (
               <TouchableOpacity
-                style={[styles.voiceBubble, isMine ? styles.voiceBubbleMine : styles.voiceBubbleTheir]}
-                onPress={() => playAudio(mediaUrl, item.id)}
+                style={[styles.voiceBubble, isMine ? styles.voiceBubbleMine : styles.voiceBubbleTheir, !mediaUrl && styles.voiceBubbleUnavailable]}
+                onPress={() => mediaUrl ? playAudio(mediaUrl, messageId) : null}
+                disabled={!mediaUrl}
                 activeOpacity={0.7}
               >
                 <View style={styles.voiceIconWrap}>
-                  {playingAudio === item.id ? (
+                  {playingAudio === messageId ? (
                     <Pause size={18} color="#fff" />
                   ) : (
                     <Play size={18} color="#fff" />
                   )}
                 </View>
-                <View style={styles.voiceProgressTrack}>
-                  <View style={[styles.voiceProgressFill, { width: `${progress * 100}%`, backgroundColor: isMine ? '#fff' : theme.colors.accent }]} />
+                <View style={[styles.voiceProgressTrack, { backgroundColor: currentTheme.voiceTrack || 'rgba(255,255,255,0.22)' }]}>
+                  <View style={[styles.voiceProgressFill, { width: `${progress * 100}%`, backgroundColor: isMine ? (currentTheme.textMine === '#050505' ? '#050505' : '#fff') : theme.colors.accent }]} />
                 </View>
                 <Text style={[styles.voiceDuration, isMine && styles.voiceDurationMine]}>
-                  {item.media?.duration ? formatDuration(Math.floor(item.media.duration)) : '0:00'}
+                  {mediaUrl ? formatDuration(duration) : '--:--'}
                 </Text>
               </TouchableOpacity>
             ) : (
               <Text style={[styles.msgText, { color: isMine ? currentTheme.textMine : currentTheme.textTheir }, isMine && styles.msgTextMine]}>
-                {item.text}
+                {displayText || 'Message unavailable'}
               </Text>
             )}
           </View>
@@ -781,6 +1069,9 @@ const Chat = ({ navigation, route }) => {
               {formatTime(item.createdAt)}
             </Text>
           )}
+          {isMine && isLastMessage ? (
+            <Text style={styles.msgSeen}>{item.seen ? 'Seen' : 'Delivered'}</Text>
+          ) : null}
         </View>
       </View>
     );
@@ -798,7 +1089,7 @@ const Chat = ({ navigation, route }) => {
         currentDate = msgDate;
         items.push({ type: 'date', date: msg.createdAt, key: `date-${index}` });
       }
-      items.push({ type: 'message', item: msg, key: `msg-${msg.id}-${index}`, msgIndex: index });
+      items.push({ type: 'message', item: msg, key: `msg-${getMessageId(msg, index)}-${index}`, msgIndex: index });
     });
 
     return (
@@ -811,13 +1102,30 @@ const Chat = ({ navigation, route }) => {
         }
         keyExtractor={(item) => item.key}
         contentContainerStyle={styles.msgList}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        onScroll={({ nativeEvent }) => {
+          const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+          isNearBottomRef.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - 96;
+        }}
+        scrollEventThrottle={120}
+        onContentSizeChange={() => {
+          if (shouldAutoScrollRef.current) {
+            flatListRef.current?.scrollToEnd({ animated: true });
+            shouldAutoScrollRef.current = false;
+          }
+        }}
         keyboardShouldPersistTaps="handled"
       />
     );
   };
 
   const currentTheme = CHAT_THEMES.find(t => t.id === chatTheme) || CHAT_THEMES[0];
+  const hasMediaPreview = !!mediaPreview;
+  const isBusySending = !!(sending || mediaUploading);
+  const canFinishRecording = !!(recordingPreparedRef.current && !stoppingRecordingRef.current);
+  const lastActiveMs = peerLastActiveAt ? Date.now() - new Date(peerLastActiveAt).getTime() : 0;
+  const headerStatusText = peerTyping
+    ? 'typing...'
+    : (peerActiveNow ? 'Active now' : (lastActiveMs > 0 && lastActiveMs < 5 * 60000 ? 'Active recently' : 'Tap for profile'));
 
   if (loading) {
     return (
@@ -829,6 +1137,7 @@ const Chat = ({ navigation, route }) => {
 
   return (
     <LinearGradient colors={currentTheme.gradient} style={styles.container}>
+      <View style={[styles.chatWallpaper, { backgroundColor: currentTheme.wallpaper || 'transparent' }]} pointerEvents="none" />
       <KeyboardAvoidingView
         style={styles.flex1}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -845,15 +1154,21 @@ const Chat = ({ navigation, route }) => {
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
           >
             {avatar ? (
-              <Image source={{ uri: avatar }} style={styles.headerAvatarImg} />
+              <View style={styles.headerAvatarWrap}>
+                <Image source={{ uri: avatar }} style={styles.headerAvatarImg} />
+                {peerActiveNow ? <View style={styles.headerActiveDot} /> : null}
+              </View>
             ) : (
-              <View style={styles.headerAvatar}>
-                <User size={16} color={theme.colors.textMuted} />
+              <View style={styles.headerAvatarWrap}>
+                <View style={styles.headerAvatar}>
+                  <User size={16} color={theme.colors.textMuted} />
+                </View>
+                {peerActiveNow ? <View style={styles.headerActiveDot} /> : null}
               </View>
             )}
             <View style={styles.headerInfo}>
               <Text style={styles.headerTitle} numberOfLines={1}>{username}</Text>
-              <Text style={styles.headerStatus}>Tap for profile</Text>
+              <Text style={[styles.headerStatus, (peerTyping || peerActiveNow) && styles.headerStatusLive]}>{headerStatusText}</Text>
             </View>
           </TouchableOpacity>
           <View style={styles.headerActions}>
@@ -906,7 +1221,18 @@ const Chat = ({ navigation, route }) => {
           </View>
         )}
 
-        <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 8), backgroundColor: currentTheme.inputBg }]}>
+        {recordingError ? (
+          <View style={styles.recordingErrorBar}>
+            <Text style={styles.recordingErrorText}>{recordingError}</Text>
+          </View>
+        ) : null}
+        {peerTyping ? (
+          <View style={styles.typingInline}>
+            <Text style={styles.typingInlineText}>typing...</Text>
+          </View>
+        ) : null}
+
+        <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 8), backgroundColor: currentTheme.inputBg, borderTopLeftRadius: currentTheme.inputRadius || 0, borderTopRightRadius: currentTheme.inputRadius || 0 }]}>
           {recording ? (
             <View style={styles.recordingBar}>
               <Animated.View style={{ transform: [{ scale: micAnim }] }}>
@@ -917,9 +1243,9 @@ const Chat = ({ navigation, route }) => {
                 <Text style={styles.recordingCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.recordingSend, (!recordingPreparedRef.current || stoppingRecordingRef.current) && styles.recordingSendDisabled]}
+                style={[styles.recordingSend, !canFinishRecording && styles.recordingSendDisabled]}
                 onPress={stopRecording}
-                disabled={!recordingPreparedRef.current || stoppingRecordingRef.current}
+                disabled={!canFinishRecording}
                 activeOpacity={0.7}
               >
                 <Text style={styles.recordingSendText}>Done</Text>
@@ -927,23 +1253,24 @@ const Chat = ({ navigation, route }) => {
             </View>
           ) : (
             <>
-              <TouchableOpacity style={styles.attachBtn} onPress={recording ? null : pickMedia} activeOpacity={0.7} disabled={mediaPreview || mediaUploading}>
-                <ImageIcon size={20} color={(mediaPreview || mediaUploading) ? '#555' : '#8A8A9A'} />
+              <TouchableOpacity style={styles.attachBtn} onPress={recording ? null : pickMedia} activeOpacity={0.7} disabled={!!(hasMediaPreview || mediaUploading)}>
+                <ImageIcon size={20} color={(hasMediaPreview || mediaUploading) ? '#555' : '#8A8A9A'} />
               </TouchableOpacity>
               <TextInput
                 style={[styles.input, mediaPreview && styles.inputWithMedia]}
+                selectionColor={currentTheme.bubbleMine}
                 placeholder="Message..."
                 placeholderTextColor={theme.colors.textMuted}
                 value={text}
-                onChangeText={setText}
+                onChangeText={handleTextChange}
                 onKeyPress={handleKeyPress}
                 multiline
                 maxLength={600}
                 returnKeyType="send"
               />
-              {text.trim() || mediaPreview ? (
+              {text.trim() || hasMediaPreview ? (
                 <TouchableOpacity
-                  style={[styles.sendBtn, { backgroundColor: currentTheme.bubbleMine }, (sending || mediaUploading) && styles.sendBtnDisabled]}
+                  style={[styles.sendBtn, { backgroundColor: currentTheme.bubbleMine }, isBusySending && styles.sendBtnDisabled]}
                   onPress={() => {
                     if (mediaPreview && mediaPreview.type === 'audio') {
                       sendVoiceMessage();
@@ -955,10 +1282,10 @@ const Chat = ({ navigation, route }) => {
                       handleSend();
                     }
                   }}
-                  disabled={sending || mediaUploading}
+                  disabled={isBusySending}
                   activeOpacity={0.7}
                 >
-                  {sending || mediaUploading ? (
+                  {isBusySending ? (
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
                     <Send size={18} color="#fff" />
@@ -1087,6 +1414,7 @@ const Chat = ({ navigation, route }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  chatWallpaper: { ...StyleSheet.absoluteFillObject },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   flex1: { flex: 1 },
   header: {
@@ -1096,11 +1424,14 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: 8, marginRight: 8, borderRadius: 20 },
   headerUser: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0, alignSelf: 'stretch', paddingVertical: 2, paddingRight: 6 },
-  headerAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
-  headerAvatarImg: { width: 36, height: 36, borderRadius: 18, marginRight: 10, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.1)' },
+  headerAvatarWrap: { width: 36, height: 36, marginRight: 10, position: 'relative' },
+  headerAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
+  headerAvatarImg: { width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.1)' },
+  headerActiveDot: { position: 'absolute', right: -1, bottom: -1, width: 12, height: 12, borderRadius: 6, backgroundColor: '#49E58F', borderWidth: 2, borderColor: '#070711' },
   headerInfo: { justifyContent: 'center', minWidth: 0, flex: 1 },
   headerTitle: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
   headerStatus: { fontSize: 11, color: '#8A8A9A', marginTop: 1 },
+  headerStatusLive: { color: '#49E58F', fontWeight: '700' },
   headerActions: { flexDirection: 'row', gap: 4 },
   headerActionBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   msgList: { paddingVertical: 12, paddingHorizontal: 12, flexGrow: 1 },
@@ -1123,16 +1454,18 @@ const styles = StyleSheet.create({
   msgBubbleMineCont: { borderRadius: 20, borderTopRightRadius: 6, borderBottomRightRadius: 6 },
   msgBubbleTheirCont: { borderRadius: 20, borderTopLeftRadius: 6 },
   msgBubbleMedia: { padding: 0, overflow: 'hidden' },
+  msgBubbleVoice: { paddingHorizontal: 12, paddingVertical: 10, minWidth: Math.min(SCREEN_W * 0.58, 230), maxWidth: Math.min(SCREEN_W * 0.7, 292) },
   msgMediaImage: { width: SCREEN_W * 0.65, height: SCREEN_W * 0.5, borderRadius: 16 },
   msgMediaText: { paddingHorizontal: 10, paddingBottom: 8, paddingTop: 6 },
-  voiceBubble: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12, gap: 10, minWidth: 180 },
-  voiceBubbleMine: { backgroundColor: 'rgba(255,255,255,0.2)' },
-  voiceBubbleTheir: { backgroundColor: 'rgba(255,255,255,0.06)' },
-  voiceIconWrap: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#FF3B8A', alignItems: 'center', justifyContent: 'center' },
-  voiceProgressTrack: { flex: 1, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.15)', overflow: 'hidden' },
-  voiceProgressFill: { height: 4, borderRadius: 2 },
-  voiceDuration: { fontSize: 11, color: '#8A8A9A', fontVariant: ['tabular-nums'] },
-  voiceDurationMine: { color: 'rgba(255,255,255,0.7)' },
+  voiceBubble: { flexDirection: 'row', alignItems: 'center', gap: 10, width: '100%' },
+  voiceBubbleMine: {},
+  voiceBubbleTheir: {},
+  voiceBubbleUnavailable: { opacity: 0.72 },
+  voiceIconWrap: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
+  voiceProgressTrack: { flex: 1, minWidth: 86, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.22)', overflow: 'hidden' },
+  voiceProgressFill: { height: '100%', borderRadius: 2 },
+  voiceDuration: { width: 42, textAlign: 'right', fontSize: 12, color: '#C9C9D6', fontWeight: '700', fontVariant: ['tabular-nums'] },
+  voiceDurationMine: { color: 'rgba(255,255,255,0.82)' },
   mediaPreviewBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 8, backgroundColor: 'rgba(7,7,17,0.97)', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' },
   mediaPreviewThumb: { width: 56, height: 56, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   mediaPreviewClose: { marginLeft: 'auto', padding: 8, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.1)' },
@@ -1145,11 +1478,16 @@ const styles = StyleSheet.create({
   recordingSend: { paddingVertical: 8, paddingHorizontal: 18, borderRadius: 20, backgroundColor: '#FF3B8A' },
   recordingSendDisabled: { opacity: 0.55 },
   recordingSendText: { fontSize: 13, color: '#fff', fontWeight: '700' },
-  msgText: { fontSize: 15, lineHeight: 20, flexWrap: 'wrap', color: '#FFFFFF' },
+  recordingErrorBar: { marginHorizontal: 10, marginBottom: 6, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 14, backgroundColor: 'rgba(255,88,116,0.14)', borderWidth: 1, borderColor: 'rgba(255,88,116,0.26)' },
+  recordingErrorText: { color: '#FF8AA0', fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  typingInline: { paddingHorizontal: 18, paddingVertical: 5, backgroundColor: 'rgba(7,7,17,0.9)', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.04)' },
+  typingInlineText: { fontSize: 12, color: '#49E58F', fontWeight: '700' },
+  msgText: { fontSize: 15, lineHeight: 21, color: '#FFFFFF', writingDirection: 'auto', includeFontPadding: true, minWidth: 18 },
   msgTextMine: { color: '#fff' },
   msgTime: { fontSize: 10, marginTop: 3, marginHorizontal: 6 },
   msgTimeMine: { color: 'rgba(255,255,255,0.4)', textAlign: 'right' },
   msgTimeTheir: { color: '#8A8A9A', textAlign: 'left' },
+  msgSeen: { fontSize: 10, marginTop: 2, marginRight: 6, color: 'rgba(255,255,255,0.48)', textAlign: 'right', fontWeight: '600' },
   emptyChat: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, paddingBottom: 100 },
   emptyAvatarCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center', marginBottom: 16, borderWidth: 2, borderColor: 'rgba(255,255,255,0.06)' },
   emptyAvatarImg: { width: 72, height: 72, borderRadius: 36, marginBottom: 16, borderWidth: 2, borderColor: 'rgba(255,255,255,0.06)' },
