@@ -19,21 +19,38 @@
       <a href="#architecture">Architecture</a>
       <a href="#roadmap">Roadmap</a>
       <a href="#growth">Growth</a>
+      <a href="#contact">Contact</a>
     </nav>
-    <a class="header-cta" href="portfolio/HYSA_Portfolio_Bilingual.pdf" target="_blank" rel="noopener">Open PDF</a>
+    <div class="header-actions">
+      <a class="header-cta header-cta-soft" href="https://github.com/klbmou/hysa1" target="_blank" rel="noopener">GitHub</a>
+      <a class="header-cta" href="https://hysa1-us9q.onrender.com" target="_blank" rel="noopener">Download HYSA</a>
+    </div>
   </header>
 
   <main id="top">
     <section class="hero" aria-labelledby="hero-title">
-      <iframe
-        class="hero-pdf"
-        title="HYSA portfolio PDF preview"
-        src="portfolio/HYSA_Portfolio_Bilingual.pdf#page=1&toolbar=0&navpanes=0&scrollbar=0"
-      ></iframe>
+      <div class="hero-preview-panel" aria-label="HYSA portfolio PDF preview">
+        <div class="preview-topbar">
+          <span></span>
+          <span></span>
+          <span></span>
+          <strong>HYSA Portfolio</strong>
+        </div>
+        <object
+          class="hero-pdf"
+          title="HYSA portfolio PDF preview"
+          data="portfolio/HYSA_Portfolio_Bilingual.pdf#page=1&toolbar=0&navpanes=0&scrollbar=0"
+          type="application/pdf"
+        >
+          <a href="portfolio/HYSA_Portfolio_Bilingual.pdf" target="_blank" rel="noopener">Open the HYSA portfolio PDF</a>
+        </object>
+        <a class="preview-link" href="portfolio/HYSA_Portfolio_Bilingual.pdf" target="_blank" rel="noopener">Open bilingual PDF</a>
+      </div>
       <div class="hero-shade" aria-hidden="true"></div>
       <div class="hero-content">
         <p class="eyebrow">Product Portfolio / ملف المشروع</p>
         <h1 id="hero-title">HYSA</h1>
+        <p class="hero-subtitle">Beta Product Overview</p>
         <p class="hero-lede">
           HYSA is a modern Algerian social platform beta combining feed, stories, reels, messaging,
           media, AI, and creator-community features into one local-first product.
@@ -43,8 +60,15 @@
           والرسائل والوسائط والذكاء الاصطناعي وميزات المجتمع في منتج محلي أولاً.
         </p>
         <div class="hero-actions">
-          <a class="primary-action" href="#summary">Explore portfolio</a>
-          <a class="secondary-action" href="https://hysa1-us9q.onrender.com" target="_blank" rel="noopener">Live app</a>
+          <a class="primary-action" href="https://hysa1-us9q.onrender.com" target="_blank" rel="noopener">Download HYSA</a>
+          <a class="secondary-action" href="https://github.com/klbmou/hysa1" target="_blank" rel="noopener">View GitHub</a>
+          <a class="tertiary-action" href="#contact">Contact</a>
+        </div>
+        <div class="hero-proof" aria-label="HYSA product highlights">
+          <span>Working beta</span>
+          <span>Android APK builds</span>
+          <span>Render deployed</span>
+          <span>Backend Gemini AI</span>
         </div>
       </div>
       <aside class="hero-meta" aria-label="Project metadata">
@@ -65,6 +89,21 @@
           <strong>May 2026</strong>
         </div>
       </aside>
+    </section>
+
+    <section class="cta-section" aria-label="HYSA primary actions">
+      <a class="cta-card cta-primary" href="https://hysa1-us9q.onrender.com" target="_blank" rel="noopener">
+        <span>Download HYSA</span>
+        <strong>Open the deployed beta and install from the browser.</strong>
+      </a>
+      <a class="cta-card" href="https://github.com/klbmou/hysa1" target="_blank" rel="noopener">
+        <span>View GitHub</span>
+        <strong>Inspect the HYSA1 source, product work, and development history.</strong>
+      </a>
+      <a class="cta-card" href="#contact">
+        <span>Contact</span>
+        <strong>Use the project channels and portfolio links for follow-up.</strong>
+      </a>
     </section>
 
     <section id="summary" class="section two-col">
@@ -349,17 +388,30 @@
       </div>
     </section>
 
-    <section class="closing-section">
+    <section id="contact" class="closing-section">
       <p class="eyebrow">Portfolio Summary & Contact / ملخص البورتفوليو والتواصل</p>
-      <h2>This portfolio presents HYSA as a real product under active development.</h2>
+      <h2>Download, inspect, or follow up through the project channels.</h2>
       <p>
-        The next challenge is not adding more random features; it is stability, polish, retention,
-        local community growth, and disciplined iteration.
+        This portfolio presents HYSA as a real product under active development. The next challenge is
+        not adding more random features; it is stability, polish, retention, local community growth,
+        and disciplined iteration.
       </p>
-      <div class="closing-links">
-        <a href="https://hysa1-us9q.onrender.com" target="_blank" rel="noopener">hysa1-us9q.onrender.com</a>
-        <a href="https://github.com/klbmou/hysa1" target="_blank" rel="noopener">github.com/klbmou/hysa1</a>
-        <a href="portfolio/HYSA_Portfolio_Bilingual.pdf" target="_blank" rel="noopener">HYSA_Portfolio_Bilingual.pdf</a>
+      <div class="contact-grid">
+        <a class="contact-card" href="https://hysa1-us9q.onrender.com" target="_blank" rel="noopener">
+          <span>Download HYSA</span>
+          <strong>hysa1-us9q.onrender.com</strong>
+          <small>Public deployed beta app</small>
+        </a>
+        <a class="contact-card" href="https://github.com/klbmou/hysa1" target="_blank" rel="noopener">
+          <span>View GitHub</span>
+          <strong>github.com/klbmou/hysa1</strong>
+          <small>Development source</small>
+        </a>
+        <a class="contact-card" href="portfolio/HYSA_Portfolio_Bilingual.pdf" target="_blank" rel="noopener" download>
+          <span>Portfolio PDF</span>
+          <strong>HYSA_Portfolio_Bilingual.pdf</strong>
+          <small>Bilingual product document</small>
+        </a>
       </div>
     </section>
   </main>
