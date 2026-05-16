@@ -83,7 +83,9 @@ let dmInboxPollTimer = null;
 let dmPollGeneration = 0;
 let lastDmThreadSignature = "";
 let lastDmInboxSignature = "";
-let aiMode = "chat";
+let aiSessionMessages = [];
+let aiLastPrompt = "";
+let aiBusy = false;
 let reelMutePreference = localStorage.getItem("hysa_reels_muted") !== "false";
 let reelFitPreference = localStorage.getItem("hysa_reels_fit_mode") || "fit";
 let videoSpeedPreference = Number(localStorage.getItem("hysa_video_speed") || "1") || 1;
@@ -6665,44 +6667,47 @@ function chooseMediaSource(choice) {
 
 function ensureAiAssistant() {
   if (el.aiFab) return;
+  const sparkleIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M9.94 14.56 8.5 19l-1.44-4.44L2.6 13.1l4.46-1.46L8.5 7.2l1.44 4.44 4.46 1.46-4.46 1.46Z"/><path d="M17.5 3 16.66 5.6 14 6.5l2.66.9.84 2.6.84-2.6 2.66-.9-2.66-.9L17.5 3Z"/></svg>`;
+  const navActions = document.querySelector(".nav-actions");
+  if (navActions && !document.getElementById("navAiBtn")) {
+    const navBtn = document.createElement("button");
+    navBtn.id = "navAiBtn";
+    navBtn.type = "button";
+    navBtn.className = "nav-icon-btn aiNavBtn";
+    navBtn.setAttribute("aria-label", "HYSA AI");
+    navBtn.title = "HYSA AI";
+    navBtn.innerHTML = sparkleIcon;
+    navActions.insertBefore(navBtn, navActions.firstChild);
+    el.navAiBtn = navBtn;
+  }
   const fab = document.createElement("button");
   fab.id = "aiFab";
   fab.type = "button";
-  fab.className = "aiFab baloota";
-  fab.setAttribute("aria-label", "بلوطة - مساعدك الذكي");
-  fab.title = "بلوطة 🌰";
-  fab.textContent = "🌰";
-
+  fab.className = "aiFab";
+  fab.setAttribute("aria-label", "HYSA AI");
+  fab.title = "HYSA AI";
+  fab.innerHTML = sparkleIcon;
   const panel = document.createElement("section");
   panel.id = "aiPanel";
   panel.className = "aiPanel glass";
   panel.hidden = true;
   panel.innerHTML = `
-    <header class="aiHeader baloota-header">
-      <div class="aiHeaderInfo">
-        <span class="aiBaloota-icon">🌰</span>
-        <div>
-          <strong>بلوطة</strong>
-          <span class="aiSubtitle">مساعدك الذكي</span>
-        </div>
-      </div>
-      <button id="aiClose" class="iconBtn" type="button" aria-label="Close">✕</button>
+    <header class="aiHeader">
+      <div class="aiHeaderInfo"><span class="aiMark" aria-hidden="true">${sparkleIcon}</span><div><strong>HYSA AI</strong><span class="aiSubtitle">Captions, replies, bios, and ideas</span></div></div>
+      <button id="aiClose" class="iconBtn" type="button" aria-label="Close">x</button>
     </header>
     <div id="aiSuggested" class="aiSuggested">
-      <button type="button" class="aiSuggestBtn" data-prompt="اكتب كابشن لصورة 📸">اكتب كابشن لصورة 📸</button>
-      <button type="button" class="aiSuggestBtn" data-prompt="اقترح هاشتاقات ✈️">اقترح هاشتاقات ✈️</button>
-      <button type="button" class="aiSuggestBtn" data-prompt="اكتب بايو احترافي">اكتب بايو احترافي</button>
-      <button type="button" class="aiSuggestBtn" data-prompt="Write a funny caption">Write a funny caption</button>
+      <button type="button" class="aiSuggestBtn" data-prompt="Write a caption">Write a caption</button>
+      <button type="button" class="aiSuggestBtn" data-prompt="Suggest hashtags">Suggest hashtags</button>
+      <button type="button" class="aiSuggestBtn" data-prompt="Improve my post">Improve my post</button>
+      <button type="button" class="aiSuggestBtn" data-prompt="Bio ideas">Bio ideas</button>
     </div>
     <div id="aiMessages" class="aiMessages"></div>
-    <form id="aiForm" class="aiForm">
-      <input id="aiPrompt" type="text" maxlength="1000" autocomplete="off" placeholder="اسألني أي شيء... 🌰" dir="auto">
-      <button id="aiSend" class="btn primary sm" type="submit">إرسال</button>
-    </form>
+    <div id="aiError" class="aiError" hidden><span id="aiErrorText"></span><button id="aiRetry" type="button">Retry</button></div>
+    <form id="aiForm" class="aiForm"><input id="aiPrompt" type="text" maxlength="1000" autocomplete="off" placeholder="Ask HYSA AI..." dir="auto"><button id="aiSend" class="btn primary sm" type="submit">Send</button></form>
   `;
   document.body.appendChild(fab);
   document.body.appendChild(panel);
-
   el.aiFab = fab;
   el.aiPanel = panel;
   el.aiClose = panel.querySelector("#aiClose");
@@ -6711,50 +6716,105 @@ function ensureAiAssistant() {
   el.aiForm = panel.querySelector("#aiForm");
   el.aiPrompt = panel.querySelector("#aiPrompt");
   el.aiSend = panel.querySelector("#aiSend");
-
-  on(fab, "click", () => {
+  el.aiError = panel.querySelector("#aiError");
+  el.aiErrorText = panel.querySelector("#aiErrorText");
+  el.aiRetry = panel.querySelector("#aiRetry");
+  const openPanel = () => {
+    if (!getToken()) return showAuth();
+    panel.hidden = false;
+    if (el.aiPrompt) el.aiPrompt.focus();
+  };
+  const togglePanel = () => {
     if (!getToken()) return showAuth();
     panel.hidden = !panel.hidden;
-    if (!panel.hidden && el.aiMessages && !el.aiMessages.children.length) {
-      addAiMessage("assistant", "أهلاً! أنا بلوطة 🌰 مساعدك على HYSA. يمكنني مساعدتك في كتابة الكابشنات، الهاشتاقات، البايو، وأفكار المحتوى. اضغط على أحد الأزرار أو اكتب سؤالك!");
-    }
     if (!panel.hidden && el.aiPrompt) el.aiPrompt.focus();
-    if (el.aiSuggested) el.aiSuggested.hidden = !!(el.aiMessages && el.aiMessages.children.length > 0);
-  });
+  };
+  on(fab, "click", togglePanel);
+  if (el.navAiBtn) on(el.navAiBtn, "click", openPanel);
   on(el.aiClose, "click", () => { panel.hidden = true; });
-
   for (const btn of panel.querySelectorAll(".aiSuggestBtn")) {
-    on(btn, "click", () => {
-      const prompt = btn.getAttribute("data-prompt") || "";
-      if (el.aiPrompt) el.aiPrompt.value = prompt;
-      if (el.aiSuggested) el.aiSuggested.hidden = true;
-      sendAiPrompt(new Event("submit"));
-    });
+    on(btn, "click", () => sendAiPrompt(null, btn.getAttribute("data-prompt") || ""));
   }
-  on(el.aiForm, "submit", (e) => {
-    if (el.aiSuggested) el.aiSuggested.hidden = true;
-    sendAiPrompt(e);
+  on(el.aiRetry, "click", () => {
+    if (aiLastPrompt) sendAiPrompt(null, aiLastPrompt, { fromRetry: true });
   });
+  on(el.aiForm, "submit", (e) => sendAiPrompt(e));
 }
 
-function addAiMessage(role, text, mediaUrl = "") {
-  if (!el.aiMessages) return;
+function aiContextPayload() {
+  return aiSessionMessages.filter((item) => item && !item.isError && item.text).slice(-8).map((item) => ({
+    role: item.role === "assistant" ? "ai" : "user",
+    text: item.text,
+  }));
+}
+
+function markdownLiteFragment(text) {
+  const frag = document.createDocumentFragment();
+  String(text || "").split("\n").forEach((line, lineIndex) => {
+    if (lineIndex) frag.appendChild(document.createElement("br"));
+    line.split(/(\*\*[^*]+\*\*)/g).forEach((part) => {
+      if (!part) return;
+      if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+        const strong = document.createElement("strong");
+        strong.textContent = part.slice(2, -2);
+        frag.appendChild(strong);
+      } else {
+        frag.appendChild(document.createTextNode(part));
+      }
+    });
+  });
+  return frag;
+}
+
+function setAiError(message) {
+  if (!el.aiError || !el.aiErrorText) return;
+  const text = String(message || "");
+  el.aiError.hidden = !text;
+  el.aiErrorText.textContent = text;
+}
+
+function addAiMessage(role, text, options = {}) {
+  if (!el.aiMessages) return null;
   const item = document.createElement("div");
-  item.className = `aiBubble ${role === "user" ? "user" : "assistant"}`;
-  const copy = document.createElement("div");
-  copy.textContent = text || "";
-  item.appendChild(copy);
-  if (mediaUrl) {
-    const card = document.createElement("a");
-    card.className = "aiMediaCard";
-    card.href = mediaUrl;
-    card.target = "_blank";
-    card.rel = "noopener";
-    card.textContent = "Open generated media";
-    item.appendChild(card);
+  item.className = `aiBubble ${role === "user" ? "user" : "assistant"}${options.isError ? " error" : ""}`;
+  const content = document.createElement("div");
+  content.className = "aiBubbleText";
+  content.appendChild(markdownLiteFragment(text || ""));
+  item.appendChild(content);
+  if (role !== "user" && !options.isError && text) {
+    const actions = document.createElement("div");
+    actions.className = "aiActions";
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.textContent = "Copy";
+    on(copyBtn, "click", async () => {
+      try {
+        await navigator.clipboard.writeText(String(text || ""));
+        copyBtn.textContent = "Copied";
+        window.setTimeout(() => { copyBtn.textContent = "Copy"; }, 1300);
+      } catch {
+        showToast(String(text || ""), false);
+      }
+    });
+    const regenBtn = document.createElement("button");
+    regenBtn.type = "button";
+    regenBtn.textContent = "Regenerate";
+    on(regenBtn, "click", () => {
+      const prompt = options.prompt || aiLastPrompt;
+      if (!prompt || aiBusy) return;
+      item.remove();
+      aiSessionMessages = aiSessionMessages.filter((entry) => entry.node !== item);
+      sendAiPrompt(null, prompt, { fromRetry: true });
+    });
+    actions.appendChild(copyBtn);
+    actions.appendChild(regenBtn);
+    item.appendChild(actions);
   }
   el.aiMessages.appendChild(item);
   el.aiMessages.scrollTop = el.aiMessages.scrollHeight;
+  aiSessionMessages.push({ role, text: String(text || ""), isError: !!options.isError, node: item });
+  if (el.aiSuggested) el.aiSuggested.hidden = aiSessionMessages.some((entry) => entry.role === "user");
+  return item;
 }
 
 function setAiTyping(show) {
@@ -6774,33 +6834,43 @@ function setAiTyping(show) {
   return node;
 }
 
-async function sendAiPrompt(e) {
-  e.preventDefault();
-  const prompt = String(el.aiPrompt?.value || "").trim();
-  if (!prompt) return;
+async function sendAiPrompt(e, promptOverride = "", options = {}) {
+  if (e && typeof e.preventDefault === "function") e.preventDefault();
+  const prompt = String(promptOverride || el.aiPrompt?.value || "").trim();
+  if (!prompt || aiBusy) return;
   if (!getToken()) return showAuth();
-  el.aiPrompt.value = "";
-  addAiMessage("user", prompt);
+  const context = options.fromRetry ? aiContextPayload().filter((entry) => entry.text !== prompt).slice(-8) : aiContextPayload();
+  aiLastPrompt = prompt;
+  setAiError("");
+  if (!options.fromRetry) addAiMessage("user", prompt);
+  if (el.aiPrompt) el.aiPrompt.value = "";
   setAiTyping(true);
+  aiBusy = true;
   if (el.aiSend) el.aiSend.disabled = true;
+  console.log("[ai:web] AI request started", { endpoint: "/api/ai/chat", contextMessages: context.length });
   try {
-    const endpoint = aiMode === "image" ? "/api/ai/image" : aiMode === "video" ? "/api/ai/video" : "/api/ai/chat";
-    const body = aiMode === "chat" ? { message: prompt } : { prompt };
-    const r = await api(endpoint, { method: "POST", body: JSON.stringify(body) });
+    const r = await api("/api/ai/chat", { method: "POST", body: JSON.stringify({ message: prompt, context }) });
+    const diagnostics = r && r.diagnostics;
+    console.log("[ai:web] AI response received", {
+      model: diagnostics && diagnostics.model,
+      backendSource: diagnostics && diagnostics.backendSource,
+      fallbackUsed: diagnostics && diagnostics.fallbackUsed,
+      fallbackReason: diagnostics && diagnostics.fallbackReason,
+    });
     setAiTyping(false);
-    const text = r.reply || r.message || "AI is not configured yet.";
-    addAiMessage("assistant", text, r.imageUrl || r.videoUrl || "");
+    const text = String((r && r.reply) || "").trim();
+    if (!text) throw new Error("EMPTY_AI_RESPONSE");
+    addAiMessage("assistant", text, { prompt });
   } catch (err) {
     setAiTyping(false);
-    addAiMessage("assistant", humanizeError(err?.message, "AI could not respond right now."));
+    const message = humanizeError(err?.message, "HYSA AI could not respond right now.");
+    setAiError(message);
+    addAiMessage("assistant", message, { isError: true });
   } finally {
+    aiBusy = false;
     if (el.aiSend) el.aiSend.disabled = false;
   }
 }
-
-// =============================================
-// FEATURE 3 — FRIENDS SYSTEM UI
-// =============================================
 
 async function openFriendsPanel() {
   try {
