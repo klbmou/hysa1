@@ -98,7 +98,11 @@ const BUFFER_ACCESS_TOKEN = String(process.env.BUFFER_ACCESS_TOKEN || "").trim()
 const BUFFER_ORGANIZATION_ID = String(process.env.BUFFER_ORGANIZATION_ID || "").trim();
 const BUFFER_API_URL = "https://api.buffer.com";
 const BUFFER_TIMEOUT_MS = 15000;
-console.log(`[ai:diag] dotenvPath=${path.join(__dirname, ".env")} envGeminiExists=${!!RAW_GEMINI_API_KEY} envGeminiLength=${RAW_GEMINI_API_KEY.length} geminiPlaceholder=${GEMINI_KEY_IS_PLACEHOLDER} geminiConfigured=${!!GEMINI_API_KEY} sdkInitialized=false sdk=fetch model=${GEMINI_MODEL}`);
+const HYSA_AI_AUTOPUBLISH_ENABLED = String(process.env.HYSA_AI_AUTOPUBLISH_ENABLED || "").trim().toLowerCase() === "true";
+const HYSA_AI_POST_INTERVAL_HOURS = Math.max(1, Number(process.env.HYSA_AI_POST_INTERVAL_HOURS) || 6);
+const HYSA_AI_MAX_POSTS_PER_DAY = Math.max(1, Math.min(10, Number(process.env.HYSA_AI_MAX_POSTS_PER_DAY) || 3));
+const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || "").trim();
+console.log(`[ai:diag] dotenvPath=${path.join(__dirname, ".env")} envGeminiExists=${!!RAW_GEMINI_API_KEY} envGeminiLength=${RAW_GEMINI_API_KEY.length} geminiPlaceholder=${GEMINI_KEY_IS_PLACEHOLDER} geminiConfigured=${!!GEMINI_API_KEY} sdkInitialized=false sdk=fetch model=${GEMINI_MODEL} autopublish=${HYSA_AI_AUTOPUBLISH_ENABLED} intervalHours=${HYSA_AI_POST_INTERVAL_HOURS} maxPerDay=${HYSA_AI_MAX_POSTS_PER_DAY}`);
 const BACKEND_SOURCE = process.env.RENDER_SERVICE_NAME ||
   process.env.RENDER_EXTERNAL_HOSTNAME ||
   process.env.HYSA_BACKEND_SOURCE ||
@@ -248,7 +252,7 @@ async function initPostgresSchema() {
 
 function safeJsonParse(text) {
   try {
-    return JSON.parse(text);
+    return JSON.parse(String(text || "").replace(/^\uFEFF/, ""));
   } catch {
     return null;
   }
@@ -709,6 +713,30 @@ const Report = createJsonModel({
     createdAt: stableCreatedAt(doc && (doc.createdAt || doc.created_at)),
     ai: doc && doc.ai ? clonePlain(doc.ai) : undefined,
   }),
+});
+
+function normalizeAutoPostObject(p) {
+  return {
+    id: String((p && p.id) || crypto.randomBytes(12).toString("base64url")),
+    title: String((p && p.title) || ""),
+    text: String((p && p.text) || ""),
+    type: String((p && p.type) || "general"),
+    status: String((p && p.status) || "draft"),
+    createdAt: stableCreatedAt(p && p.createdAt),
+    sentToBuffer: !!(p && p.sentToBuffer),
+    bufferIdeaId: String((p && p.bufferIdeaId) || ""),
+    error: String((p && p.error) || ""),
+    topic: String((p && p.topic) || ""),
+  };
+}
+
+const AutoPost = createJsonModel({
+  keyField: "id",
+  read: (data) => asArray(data.autoposts).map(normalizeAutoPostObject),
+  write: (data, docs) => {
+    data.autoposts = docs.map(normalizeAutoPostObject);
+  },
+  normalize: (doc) => normalizeAutoPostObject(doc),
 });
 
 async function connectDataFile() {
@@ -2433,7 +2461,7 @@ function extForMime(mime) {
 }
 
 function readDataFile() {
-  const fallback = { users: {}, posts: [], stories: [], dms: [], groupConversations: [], groupMessages: [], nextPostId: 1, reports: [], notifications: [] };
+  const fallback = { users: {}, posts: [], stories: [], dms: [], groupConversations: [], groupMessages: [], nextPostId: 1, reports: [], notifications: [], autoposts: [] };
   try {
     if (!isFile(DATA_FILE)) return fallback;
     const parsed = safeJsonParse(fs.readFileSync(DATA_FILE, "utf8"));
@@ -2448,6 +2476,7 @@ function readDataFile() {
       nextPostId: Number(parsed.nextPostId || 1) || 1,
       reports: Array.isArray(parsed.reports) ? parsed.reports : [],
       notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
+      autoposts: Array.isArray(parsed.autoposts) ? parsed.autoposts : [],
     };
   } catch {
     return fallback;
@@ -3366,6 +3395,327 @@ app.post("/api/social/idea", rateLimit("social"), async (req, res) => {
     console.warn(`[buffer] createIdea failed reason=${err && err.message ? err.message : "UNKNOWN"} status=${err && err.status ? err.status : "none"} graphQlErrors=${err && err.graphQlErrorCount ? err.graphQlErrorCount : 0}`);
     return res.status(502).json({ ok: false, error: "BUFFER_IDEA_FAILED" });
   }
+});
+
+// ---- HYSA AI Autonomous Scheduler ----
+
+function isAdminUser(viewer) {
+  if (!viewer) return false;
+  const userKey = String(viewer.userKey || "");
+  const role = String(viewer.role || "");
+  if (userKey === "habesyahia" || role === "admin" || role === "owner") return true;
+  if (ADMIN_EMAIL) {
+    const userEmail = String(viewer.email || "").trim().toLowerCase();
+    if (userEmail === ADMIN_EMAIL.toLowerCase()) return true;
+  }
+  return false;
+}
+
+const AUTOPOST_TOPICS = [
+  "HYSA product updates and new features",
+  "HYSA AI assistant capabilities",
+  "Realtime messaging experience on HYSA",
+  "Stories and reels on HYSA",
+  "Creator tools and community features on HYSA",
+  "Algeria-built identity and pride",
+  "Behind-the-scenes development of HYSA",
+  "HYSA launch updates and milestones",
+  "HYSA roadmap and upcoming features",
+  "HYSA app features and tips",
+  "Community questions and engagement on HYSA",
+];
+
+function pickAutopostTopic() {
+  const now = new Date();
+  const startOfYear = new Date(now.getFullYear(), 0, 0);
+  const diff = now - startOfYear;
+  const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
+  return AUTOPOST_TOPICS[dayOfYear % AUTOPOST_TOPICS.length];
+}
+
+function parseAutopostResult(text) {
+  if (!text) return null;
+  let title = "";
+  let body = "";
+  const lines = text.split("\n");
+  let inBody = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^TITLE:\s*/i.test(trimmed)) {
+      title = trimmed.replace(/^TITLE:\s*/i, "").trim();
+    } else if (/^TEXT:\s*/i.test(trimmed)) {
+      body = trimmed.replace(/^TEXT:\s*/i, "").trim();
+      inBody = true;
+    } else if (inBody) {
+      body += "\n" + trimmed;
+    }
+  }
+  if (!title && !body) {
+    title = (lines[0] || "").trim().slice(0, 120) || "HYSA post idea";
+    body = lines.slice(1).join("\n").trim();
+  }
+  if (!body) return null;
+  title = stripUnsafeText(title, 121).trim().slice(0, 120) || "HYSA post idea";
+  body = sanitizeBufferIdeaText(body, 2001);
+  if (!body) return null;
+  if (title.length > 120) title = title.slice(0, 117).trim() + "...";
+  return { title, text: body };
+}
+
+function validateAutopostContent(parsed) {
+  if (!parsed) return { ok: false, error: "PARSE_FAILED" };
+  const title = String(parsed.title || "").trim();
+  const text = String(parsed.text || "").trim();
+  const combined = title + "\n" + text;
+  if (!title || !text) return { ok: false, error: "EMPTY_CONTENT" };
+  if (text.length < 50) return { ok: false, error: "TEXT_TOO_SHORT" };
+  if (text.length > 600) return { ok: false, error: "TEXT_TOO_LONG" };
+  if (!/\bHYSA\b/i.test(combined)) return { ok: false, error: "MISSING_HYSA" };
+  if (/(buy now|click here|limited time|guaranteed|make money fast|free money)/i.test(combined)) {
+    return { ok: false, error: "SPAMMY_CONTENT" };
+  }
+  return { ok: true };
+}
+
+async function generateAutopostContent(topic) {
+  if (!GEMINI_API_KEY) {
+    const err = new Error("AI_NOT_CONFIGURED");
+    err.code = "AI_NOT_CONFIGURED";
+    throw err;
+  }
+  const topicText = topic || pickAutopostTopic();
+  const systemPrompt = "You are HYSA internal content marketing agent. Generate one social media post idea about HYSA.\n"
+    + "Requirements:\n"
+    + "- First line must start with TITLE: followed by a short catchy title (max 120 chars)\n"
+    + "- After the title write the full post body starting with TEXT:\n"
+    + "- Post body 80-260 characters, 1-2 complete sentences, never cut off mid-sentence\n"
+    + "- Tone: modern concise premium startup-like Algeria-first\n"
+    + "- Can use light emojis (1-2 max)\n"
+    + "- Can be bilingual English/Arabic sometimes\n"
+    + "- Not cringe not spammy not exaggerated\n"
+    + "- Make it feel authentic and valuable to HYSA users\n"
+    + "\nFormat:\nTITLE: Your catchy title here\nTEXT: Your full post body here.";
+  const payload = {
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ role: "user", parts: [{ text: "Generate a post about: " + topicText }] }],
+    generationConfig: {
+      temperature: 0.85,
+      maxOutputTokens: 600,
+      topP: 0.9,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
+  };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+  try {
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/" + GEMINI_MODEL + ":generateContent?key=" + encodeURIComponent(GEMINI_API_KEY),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify(payload),
+      }
+    );
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const err = new Error("GEMINI_REQUEST_FAILED");
+      err.status = response.status;
+      throw err;
+    }
+    const text = extractGeminiText(body);
+    if (!text) {
+      const err = new Error("EMPTY_AI_RESPONSE");
+      err.code = "EMPTY_AI_RESPONSE";
+      throw err;
+    }
+    return text;
+  } catch (err) {
+    if (err && err.name === "AbortError") {
+      const timeoutErr = new Error("AI_TIMEOUT");
+      timeoutErr.code = "AI_TIMEOUT";
+      throw timeoutErr;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function generateValidAutopost(topic) {
+  let lastError = "PARSE_FAILED";
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const raw = await generateAutopostContent(topic);
+    const parsed = parseAutopostResult(raw);
+    const validation = validateAutopostContent(parsed);
+    if (validation.ok) return parsed;
+    lastError = validation.error;
+  }
+  const err = new Error(lastError);
+  err.code = lastError;
+  throw err;
+}
+
+async function runAutopostCycle() {
+  const topic = pickAutopostTopic();
+  console.log("[autopost] cycle start topic=" + topic);
+  try {
+    const parsed = await generateValidAutopost(topic);
+    const record = {
+      title: parsed.title,
+      text: parsed.text,
+      type: topic,
+      status: "generated",
+      createdAt: new Date().toISOString(),
+      topic,
+    };
+    const saved = await AutoPost.create(record);
+    console.log("[autopost] saved id=" + saved.id + " titleChars=" + parsed.title.length + " textChars=" + parsed.text.length);
+    try {
+      const bufferResult = await createBufferIdea({ title: parsed.title, text: parsed.text });
+      saved.sentToBuffer = true;
+      saved.bufferIdeaId = bufferResult.id;
+      saved.status = "sent";
+      await saved.save();
+      console.log("[autopost] sent to buffer id=" + saved.id + " bufferIdeaId=" + bufferResult.id);
+    } catch (bufferErr) {
+      const msg = bufferErr && bufferErr.message ? bufferErr.message : "BUFFER_FAILED";
+      saved.error = msg;
+      saved.status = "buffer_error";
+      await saved.save();
+      console.warn("[autopost] buffer send failed id=" + saved.id + " reason=" + msg);
+    }
+  } catch (err) {
+    const msg = err && err.message ? err.message : "UNKNOWN";
+    console.warn("[autopost] generation failed reason=" + msg);
+    const record = {
+      title: "",
+      text: "",
+      type: topic || "unknown",
+      status: "error",
+      createdAt: new Date().toISOString(),
+      error: msg,
+      topic: topic || "unknown",
+    };
+    await AutoPost.create(record).catch(() => {});
+  }
+}
+
+function canRunAutopostNow() {
+  if (!HYSA_AI_AUTOPUBLISH_ENABLED) return false;
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayEnd = new Date(todayStart.getTime() + 86400000);
+  AutoPost.find({ createdAt: { $gte: todayStart.toISOString(), $lt: todayEnd.toISOString() } })
+    .sort({ createdAt: -1 })
+    .limit(1)
+    .exec()
+    .then((recent) => {
+      if (recent.length > 0) {
+        const lastAt = new Date(recent[0].createdAt).getTime();
+        const elapsedHours = (now.getTime() - lastAt) / 3600000;
+        if (elapsedHours < HYSA_AI_POST_INTERVAL_HOURS) return false;
+      }
+      return AutoPost.find({ createdAt: { $gte: todayStart.toISOString(), $lt: todayEnd.toISOString() } })
+        .exec()
+        .then((todayPosts) => {
+          if (todayPosts.length >= HYSA_AI_MAX_POSTS_PER_DAY) return false;
+          return true;
+        });
+    })
+    .then((shouldRun) => {
+      if (shouldRun) {
+        runAutopostCycle().catch((err) => {
+          console.warn("[autopost] cycle error:", err && err.message ? err.message : err);
+        });
+      }
+    })
+    .catch(() => {});
+  return true;
+}
+
+let autopostTimer = null;
+
+function startAutopostScheduler() {
+  if (autopostTimer) {
+    clearInterval(autopostTimer);
+    autopostTimer = null;
+  }
+  if (!HYSA_AI_AUTOPUBLISH_ENABLED) {
+    console.log("[autopost] scheduler disabled HYSA_AI_AUTOPUBLISH_ENABLED=false");
+    return;
+  }
+  console.log("[autopost] scheduler enabled intervalHours=" + HYSA_AI_POST_INTERVAL_HOURS + " maxPerDay=" + HYSA_AI_MAX_POSTS_PER_DAY);
+  const checkIntervalMs = Math.min(HYSA_AI_POST_INTERVAL_HOURS * 3600000, 1800000);
+  canRunAutopostNow();
+  autopostTimer = setInterval(() => {
+    canRunAutopostNow();
+  }, checkIntervalMs);
+  if (autopostTimer && typeof autopostTimer === "object" && autopostTimer.unref) {
+    autopostTimer.unref();
+  }
+}
+
+app.get("/api/hysa-ai/autoposts", rateLimit("ai"), async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  if (!isAdminUser(viewer)) {
+    return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+  }
+  const posts = await AutoPost.find().sort({ createdAt: -1 }).exec();
+  return res.status(200).json({ ok: true, posts });
+});
+
+app.post("/api/hysa-ai/generate-now", rateLimit("ai"), async (req, res) => {
+  const viewer = await requireAuth(req, res);
+  if (!viewer) return;
+  if (!isAdminUser(viewer)) {
+    return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+  }
+  const topic = req.body && req.body.topic ? String(req.body.topic).trim() : pickAutopostTopic();
+  console.log("[autopost] manual generate-now user=" + String(viewer.userKey || "unknown") + " topic=" + topic);
+  try {
+    const parsed = await generateValidAutopost(topic);
+    const record = { title: parsed.title, text: parsed.text, type: topic, status: "generated", createdAt: new Date().toISOString(), topic };
+    const saved = await AutoPost.create(record);
+    try {
+      const bufferResult = await createBufferIdea({ title: parsed.title, text: parsed.text });
+      saved.sentToBuffer = true;
+      saved.bufferIdeaId = bufferResult.id;
+      saved.status = "sent";
+      await saved.save();
+    } catch (bufferErr) {
+      const msg = bufferErr && bufferErr.message ? bufferErr.message : "BUFFER_FAILED";
+      saved.error = msg;
+      saved.status = "buffer_error";
+      await saved.save();
+    }
+    return res.status(200).json({ ok: true, post: saved });
+  } catch (err) {
+    const msg = err && err.code ? err.code : (err && err.message ? err.message : "GENERATION_FAILED");
+    console.warn("[autopost] manual generate-now failed reason=" + msg);
+    const record = { title: "", text: "", type: topic, status: "error", createdAt: new Date().toISOString(), error: msg, topic };
+    await AutoPost.create(record).catch(() => {});
+    if (err && err.code === "AI_NOT_CONFIGURED") {
+      return res.status(503).json({ ok: false, error: "AI_NOT_CONFIGURED" });
+    }
+    if (err && err.code === "AI_TIMEOUT") {
+      return res.status(504).json({ ok: false, error: "AI_TIMEOUT" });
+    }
+    return res.status(502).json({ ok: false, error: msg });
+  }
+});
+
+app.get("/api/hysa-ai/public-posts", rateLimit("ai"), async (req, res) => {
+  const posts = await AutoPost.find({ status: { $in: ["sent", "generated"] } }).sort({ createdAt: -1 }).limit(10).exec();
+  const safe = posts.map((p) => ({
+    id: p.id,
+    title: p.title,
+    text: p.text,
+    type: p.type,
+    createdAt: p.createdAt,
+  }));
+  return res.status(200).json({ ok: true, posts: safe });
 });
 
 function paginationFromReq(req) {
@@ -6002,6 +6352,7 @@ async function initializeRuntimeAfterListen() {
   } else {
     await connectDataFile();
   }
+  startAutopostScheduler();
 }
 
 function start() {
