@@ -18,14 +18,20 @@ const http = require("http");
 const express = require("express");
 const { ExpressPeerServer } = require("peer");
 const { OAuth2Client } = require("google-auth-library");
+const { rankFeedPosts, rankReelPosts } = require("./recommendation");
 
-// Optional pg and cloudinary (loaded only if needed)
-let Pool, cloudinary;
+// Optional pg, cloudinary, and image renderer (loaded only if needed)
+let Pool, cloudinary, sharp;
 try {
   Pool = require("pg").Pool;
   cloudinary = require("cloudinary").v2;
 } catch {
   // Ignore, will use fallback
+}
+try {
+  sharp = require("sharp");
+} catch {
+  // Ignore, Instagram queue media will fall back to Ideas if unavailable
 }
 
 // Render/Production Config
@@ -3277,6 +3283,99 @@ function bufferPostMetadataForService(service) {
   return undefined;
 }
 
+function escapeSvgText(input) {
+  return String(input || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function wrapImageTitle(title) {
+  const words = stripUnsafeText(title || "HYSA update", 90).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    const next = current ? current + " " + word : word;
+    if (next.length > 24 && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+    if (lines.length >= 3) break;
+  }
+  if (current && lines.length < 3) lines.push(current);
+  if (!lines.length) lines.push("HYSA update");
+  return lines.slice(0, 3).map((line, index) => {
+    if (index === 2 && words.join(" ").length > lines.join(" ").length) return line.replace(/[.,;:!?]*$/, "") + "...";
+    return line;
+  });
+}
+
+function hysaInstagramImageSvg(title) {
+  const lines = wrapImageTitle(title);
+  const titleText = lines
+    .map((line, index) => `<tspan x="96" dy="${index === 0 ? 0 : 86}">${escapeSvgText(line)}</tspan>`)
+    .join("");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff3ea5"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ff3ea5" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#070711" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1080" height="1080" fill="#070711"/>
+  <circle cx="902" cy="172" r="286" fill="url(#glow)"/>
+  <circle cx="92" cy="922" r="238" fill="#8b5cf6" opacity="0.18"/>
+  <path d="M84 148 H996" stroke="url(#accent)" stroke-width="2" opacity="0.72"/>
+  <path d="M84 932 H996" stroke="url(#accent)" stroke-width="2" opacity="0.42"/>
+  <rect x="82" y="82" width="916" height="916" rx="52" fill="none" stroke="#ffffff" stroke-opacity="0.10" stroke-width="2"/>
+  <text x="96" y="190" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="76" font-weight="800" letter-spacing="0">HYSA</text>
+  <text x="96" y="246" fill="#d9d7ff" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" letter-spacing="3">ALGERIA-BUILT SOCIAL PLATFORM</text>
+  <g transform="translate(96 374)">
+    <rect x="0" y="-32" width="128" height="10" rx="5" fill="url(#accent)"/>
+    <text x="0" y="68" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="72" font-weight="800">${titleText}</text>
+  </g>
+  <text x="96" y="882" fill="#b7b4d8" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="600">Creators | Reels | Stories | Chat | HYSA AI</text>
+  <text x="96" y="930" fill="#ffffff" fill-opacity="0.72" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="600">Made for Algeria's social generation</text>
+</svg>`;
+}
+
+async function createHysaInstagramImage(title) {
+  if (!USE_CLOUDINARY || !cloudinary) {
+    const err = new Error("CLOUDINARY_NOT_CONFIGURED");
+    err.code = "CLOUDINARY_NOT_CONFIGURED";
+    throw err;
+  }
+  if (!sharp) {
+    const err = new Error("IMAGE_RENDERER_NOT_CONFIGURED");
+    err.code = "IMAGE_RENDERER_NOT_CONFIGURED";
+    throw err;
+  }
+  const svg = hysaInstagramImageSvg(title);
+  const png = await sharp(Buffer.from(svg)).png().toBuffer();
+  const result = await uploadToCloudinary("data:image/png;base64," + png.toString("base64"), "image");
+  const url = cloudinaryTransformUrl(result.secure_url, "f_png,q_auto:good,c_fill,w_1080,h_1080") || String(result.secure_url || "");
+  if (!url) {
+    const err = new Error("IMAGE_UPLOAD_FAILED");
+    err.code = "IMAGE_UPLOAD_FAILED";
+    throw err;
+  }
+  return {
+    url,
+    publicId: String(result.public_id || ""),
+    width: Number(result.width || 1080) || 1080,
+    height: Number(result.height || 1080) || 1080,
+  };
+}
+
 async function createBufferIdea({ title, text }) {
   if (!BUFFER_ACCESS_TOKEN || !BUFFER_ORGANIZATION_ID) {
     const err = new Error("BUFFER_NOT_CONFIGURED");
@@ -3421,24 +3520,30 @@ async function createBufferQueuedPost(text, title = "") {
     throw err;
   }
 
-  void title;
   const channelServices = await loadBufferChannelServices();
   const posts = [];
   const postIds = [];
   const failures = [];
+  let instagramImage = null;
 
   for (const channelId of BUFFER_CHANNEL_IDS) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), BUFFER_TIMEOUT_MS);
+    let timeout = null;
     try {
+      const service = channelServices.get(channelId);
       const input = {
         channelId,
         schedulingType: "automatic",
         mode: "addToQueue",
         text: textRaw,
       };
-      const metadata = bufferPostMetadataForService(channelServices.get(channelId));
+      const metadata = bufferPostMetadataForService(service);
       if (metadata) input.metadata = metadata;
+      if (String(service || "").trim().toLowerCase() === "instagram") {
+        if (!instagramImage) instagramImage = await createHysaInstagramImage(title);
+        input.assets = [{ image: { url: instagramImage.url } }];
+      }
+      const controller = new AbortController();
+      timeout = setTimeout(() => controller.abort(), BUFFER_TIMEOUT_MS);
       const response = await fetch(BUFFER_API_URL, {
         method: "POST",
         headers: {
@@ -3485,7 +3590,7 @@ async function createBufferQueuedPost(text, title = "") {
         failures.push({ channelId, reason: bufferErrorCode(err, "BUFFER_POST_FAILED") });
       }
     } finally {
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
     }
   }
 
@@ -3502,6 +3607,7 @@ async function createBufferQueuedPost(text, title = "") {
     posts,
     channelCount: BUFFER_CHANNEL_IDS.length,
     failures,
+    instagramImageUrl: instagramImage ? instagramImage.url : "",
     text: textRaw,
   };
 }
@@ -3993,16 +4099,20 @@ function paginationFromReq(req) {
 
 async function paginatedPostsForViewer(req, viewer) {
   const { page, limit, cursor } = paginationFromReq(req);
+  const modeRaw = String(req.query.mode || "forYou").toLowerCase();
+  const mode = modeRaw === "following" || modeRaw === "latest" ? modeRaw : "forYou";
   const posts = await visiblePostsForViewer(viewer);
-  const slice = await Promise.all(posts.slice(cursor, cursor + limit).map((p) => toPublicPost(p, viewer)));
-  const nextCursor = cursor + slice.length < posts.length ? String(cursor + slice.length) : null;
+  const ranked = await rankFeedPosts(posts, viewer, { mode });
+  const slice = await Promise.all(ranked.slice(cursor, cursor + limit).map((p) => toPublicPost(p, viewer)));
+  const nextCursor = cursor + slice.length < ranked.length ? String(cursor + slice.length) : null;
   const nextPage = nextCursor ? page + 1 : null;
   return {
     page,
     limit,
-    total: posts.length,
+    total: ranked.length,
     data: slice,
     posts: slice,
+    mode,
     nextPage,
     nextCursor,
   };
@@ -4045,17 +4155,32 @@ app.get("/api/reels", async (req, res) => {
   let slice;
   let hasMore = false;
   if (USE_POSTGRES) {
-    const ranked = await pgFindRankedReelPosts(viewer, limit, cursor);
-    slice = ranked.slice(0, limit);
-    hasMore = ranked.length > limit;
+    const ranked = await pgFindRankedReelPosts(viewer, limit + 1, cursor);
+    const all = await visiblePostsForViewer(viewer);
+    const videoPosts = all.filter((p) => asArray(p.media).some((m) => String(m.kind) === "video"));
+    const diversified = await rankReelPosts(videoPosts, viewer);
+    const indexed = {};
+    for (const p of ranked) indexed[String(p.id)] = p;
+    const merged = [];
+    const seen = new Set();
+    for (const p of diversified) {
+      const id = String(p.id);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      if (indexed[id]) {
+        merged.push(indexed[id]);
+      } else {
+        merged.push(p);
+      }
+    }
+    slice = merged.slice(cursor, cursor + limit);
+    hasMore = cursor + slice.length < merged.length;
   } else {
     const all = await visiblePostsForViewer(viewer);
-    const candidates = sortReelsForViewer(
-      all.filter((p) => asArray(p.media).some((m) => String(m.kind) === "video")),
-      viewer,
-    );
-    slice = candidates.slice(cursor, cursor + limit);
-    hasMore = cursor + slice.length < candidates.length;
+    const videoPosts = all.filter((p) => asArray(p.media).some((m) => String(m.kind) === "video"));
+    const ranked = await rankReelPosts(videoPosts, viewer);
+    slice = ranked.slice(cursor, cursor + limit);
+    hasMore = cursor + slice.length < ranked.length;
   }
   const reels = await Promise.all(slice.map((p) => toPublicPost(p, viewer)));
   const nextCursor = hasMore ? String(cursor + slice.length) : null;
