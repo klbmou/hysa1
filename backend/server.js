@@ -96,6 +96,10 @@ const AI_RETRY_DELAY_MS = 850;
 const AI_FRIENDLY_UNAVAILABLE_MESSAGE = "HYSA AI is having a small connection issue. Try again in a moment.";
 const BUFFER_ACCESS_TOKEN = String(process.env.BUFFER_ACCESS_TOKEN || "").trim();
 const BUFFER_ORGANIZATION_ID = String(process.env.BUFFER_ORGANIZATION_ID || "").trim();
+const BUFFER_CHANNEL_IDS = Array.from(new Set(String(process.env.BUFFER_CHANNEL_IDS || "")
+  .split(",")
+  .map((id) => String(id || "").trim())
+  .filter(Boolean)));
 const BUFFER_API_URL = "https://api.buffer.com";
 const BUFFER_TIMEOUT_MS = 15000;
 const HYSA_AI_AUTOPUBLISH_ENABLED = String(process.env.HYSA_AI_AUTOPUBLISH_ENABLED || "").trim().toLowerCase() === "true";
@@ -723,8 +727,11 @@ function normalizeAutoPostObject(p) {
     type: String((p && p.type) || "general"),
     status: String((p && p.status) || "draft"),
     createdAt: stableCreatedAt(p && p.createdAt),
-    sentToBuffer: !!(p && p.sentToBuffer),
+    sentToBuffer: !!(p && (p.sentToBuffer || p.sentToBufferIdeas || p.sentToBufferQueue)),
+    sentToBufferIdeas: !!(p && (p.sentToBufferIdeas || (p.sentToBuffer && p.bufferIdeaId))),
+    sentToBufferQueue: !!(p && (p.sentToBufferQueue || asArray(p.bufferPostIds).length)),
     bufferIdeaId: String((p && p.bufferIdeaId) || ""),
+    bufferPostIds: asArray(p && p.bufferPostIds).map(String).filter(Boolean),
     error: String((p && p.error) || ""),
     topic: String((p && p.topic) || ""),
   };
@@ -3207,6 +3214,34 @@ mutation CreateIdea($input: CreateIdeaInput!) {
 }
 `;
 
+const BUFFER_CREATE_POST_MUTATION = `
+mutation CreatePost($input: CreatePostInput!) {
+  createPost(input: $input) {
+    ... on PostActionSuccess {
+      post {
+        id
+        text
+        dueAt
+        channelId
+        status
+      }
+    }
+    ... on MutationError {
+      message
+    }
+  }
+}
+`;
+
+const BUFFER_CHANNELS_QUERY = `
+query BufferChannels($organizationId: OrganizationId!) {
+  channels(input: { organizationId: $organizationId }) {
+    id
+    service
+  }
+}
+`;
+
 function sanitizeBufferIdeaText(input, maxLen) {
   return String(input ?? "")
     .replace(/\r\n/g, "\n")
@@ -3229,6 +3264,17 @@ function sanitizeSocialIdeaPayload(body) {
     title: titleRaw || "HYSA post idea",
     text: textRaw,
   };
+}
+
+function bufferErrorCode(err, fallback = "BUFFER_FAILED") {
+  return String((err && (err.code || err.message)) || fallback).replace(/[^A-Z0-9_:.-]/gi, "_").slice(0, 80) || fallback;
+}
+
+function bufferPostMetadataForService(service) {
+  const key = String(service || "").trim().toLowerCase();
+  if (key === "facebook") return { facebook: { type: "post" } };
+  if (key === "instagram") return { instagram: { type: "post", shouldShareToFeed: true } };
+  return undefined;
 }
 
 async function createBufferIdea({ title, text }) {
@@ -3296,6 +3342,168 @@ async function createBufferIdea({ title, text }) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function loadBufferChannelServices() {
+  if (!BUFFER_ACCESS_TOKEN || !BUFFER_ORGANIZATION_ID) {
+    const err = new Error("BUFFER_NOT_CONFIGURED");
+    err.code = "BUFFER_NOT_CONFIGURED";
+    throw err;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), BUFFER_TIMEOUT_MS);
+  try {
+    const response = await fetch(BUFFER_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${BUFFER_ACCESS_TOKEN}`,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        query: BUFFER_CHANNELS_QUERY,
+        variables: { organizationId: BUFFER_ORGANIZATION_ID },
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const err = new Error("BUFFER_HTTP_ERROR");
+      err.status = response.status;
+      throw err;
+    }
+    if (Array.isArray(body.errors) && body.errors.length) {
+      const err = new Error("BUFFER_GRAPHQL_ERROR");
+      err.status = 502;
+      err.graphQlErrorCount = body.errors.length;
+      throw err;
+    }
+    const channels = Array.isArray(body && body.data && body.data.channels) ? body.data.channels : [];
+    const services = new Map();
+    for (const channel of channels) {
+      const id = String(channel && channel.id || "");
+      if (id) services.set(id, String(channel && channel.service || ""));
+    }
+    return services;
+  } catch (err) {
+    if (err && err.name === "AbortError") {
+      const timeoutErr = new Error("BUFFER_TIMEOUT");
+      timeoutErr.code = "BUFFER_TIMEOUT";
+      throw timeoutErr;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function createBufferQueuedPost(text, title = "") {
+  if (!BUFFER_ACCESS_TOKEN) {
+    const err = new Error("BUFFER_NOT_CONFIGURED");
+    err.code = "BUFFER_NOT_CONFIGURED";
+    throw err;
+  }
+  if (!BUFFER_CHANNEL_IDS.length) {
+    const err = new Error("BUFFER_CHANNELS_NOT_CONFIGURED");
+    err.code = "BUFFER_CHANNELS_NOT_CONFIGURED";
+    throw err;
+  }
+
+  const textRaw = sanitizeBufferIdeaText(text, 2001);
+  if (!textRaw) {
+    const err = new Error("EMPTY_TEXT");
+    err.code = "EMPTY_TEXT";
+    throw err;
+  }
+  if (textRaw.length > 2000) {
+    const err = new Error("TEXT_TOO_LONG");
+    err.code = "TEXT_TOO_LONG";
+    throw err;
+  }
+
+  void title;
+  const channelServices = await loadBufferChannelServices();
+  const posts = [];
+  const postIds = [];
+  const failures = [];
+
+  for (const channelId of BUFFER_CHANNEL_IDS) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), BUFFER_TIMEOUT_MS);
+    try {
+      const input = {
+        channelId,
+        schedulingType: "automatic",
+        mode: "addToQueue",
+        text: textRaw,
+      };
+      const metadata = bufferPostMetadataForService(channelServices.get(channelId));
+      if (metadata) input.metadata = metadata;
+      const response = await fetch(BUFFER_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${BUFFER_ACCESS_TOKEN}`,
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          query: BUFFER_CREATE_POST_MUTATION,
+          variables: { input },
+        }),
+      });
+
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        failures.push({ channelId, reason: "BUFFER_HTTP_ERROR" });
+        continue;
+      }
+
+      if (Array.isArray(body.errors) && body.errors.length) {
+        failures.push({ channelId, reason: "BUFFER_GRAPHQL_ERROR" });
+        continue;
+      }
+
+      const payload = body && body.data && body.data.createPost;
+      if (payload && payload.post && payload.post.id) {
+        const post = {
+          id: String(payload.post.id),
+          channelId: String(payload.post.channelId || channelId),
+          dueAt: String(payload.post.dueAt || ""),
+          status: String(payload.post.status || ""),
+        };
+        posts.push(post);
+        postIds.push(post.id);
+        continue;
+      }
+
+      const mutationMessage = payload && payload.message ? String(payload.message) : "";
+      failures.push({ channelId, reason: mutationMessage ? "BUFFER_MUTATION_ERROR" : "BUFFER_EMPTY_RESPONSE" });
+    } catch (err) {
+      if (err && err.name === "AbortError") {
+        failures.push({ channelId, reason: "BUFFER_TIMEOUT" });
+      } else {
+        failures.push({ channelId, reason: bufferErrorCode(err, "BUFFER_POST_FAILED") });
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  if (!postIds.length && failures.length) {
+    const err = new Error("BUFFER_QUEUE_FAILED");
+    err.code = "BUFFER_QUEUE_FAILED";
+    err.failures = failures;
+    err.partialPostIds = [];
+    throw err;
+  }
+
+  return {
+    postIds,
+    posts,
+    channelCount: BUFFER_CHANNEL_IDS.length,
+    failures,
+    text: textRaw,
+  };
 }
 
 app.post("/api/ai/chat", rateLimit("ai"), async (req, res) => {
@@ -3560,6 +3768,73 @@ async function generateValidAutopost(topic) {
   throw err;
 }
 
+async function sendAutopostToBuffer(saved, parsed, source) {
+  const result = {
+    sentToBufferIdeas: false,
+    sentToBufferQueue: false,
+    bufferPostIds: [],
+    bufferIdeaId: "",
+    fallbackReason: "",
+  };
+  const sourceLabel = String(source || "autopost");
+
+  if (BUFFER_CHANNEL_IDS.length) {
+    console.log("[autopost] buffer queue requested source=" + sourceLabel + " channelCount=" + BUFFER_CHANNEL_IDS.length);
+    try {
+      const queueResult = await createBufferQueuedPost(parsed.text, parsed.title);
+      result.sentToBufferQueue = true;
+      result.bufferPostIds = queueResult.postIds;
+      saved.sentToBuffer = true;
+      saved.sentToBufferQueue = true;
+      saved.bufferPostIds = queueResult.postIds;
+      saved.status = "sent";
+      await saved.save();
+      console.log("[autopost] sent to buffer queue id=" + saved.id + " channelCount=" + queueResult.channelCount + " queuedPostCount=" + queueResult.postIds.length + " bufferPostIds=" + queueResult.postIds.join(","));
+      if (!queueResult.failures.length) {
+        return result;
+      }
+      result.fallbackReason = "BUFFER_QUEUE_PARTIAL_FAILED";
+      console.warn("[autopost] buffer queue partial id=" + saved.id + " channelCount=" + queueResult.channelCount + " queuedPostCount=" + queueResult.postIds.length + " failedChannelCount=" + queueResult.failures.length + " fallback=ideas");
+    } catch (queueErr) {
+      const reason = bufferErrorCode(queueErr, "BUFFER_QUEUE_FAILED");
+      result.fallbackReason = reason;
+      const partialPostIds = asArray(queueErr && queueErr.partialPostIds).map(String).filter(Boolean);
+      if (partialPostIds.length) {
+        result.sentToBufferQueue = true;
+        result.bufferPostIds = partialPostIds;
+        saved.sentToBuffer = true;
+        saved.sentToBufferQueue = true;
+        saved.bufferPostIds = partialPostIds;
+      }
+      console.warn("[autopost] buffer queue failed id=" + saved.id + " reason=" + reason + " channelCount=" + BUFFER_CHANNEL_IDS.length + " partialPostCount=" + partialPostIds.length + " fallback=ideas");
+    }
+  } else {
+    result.fallbackReason = "BUFFER_CHANNELS_NOT_CONFIGURED";
+    console.warn("[autopost] buffer queue skipped id=" + saved.id + " reason=BUFFER_CHANNELS_NOT_CONFIGURED fallback=ideas");
+  }
+
+  try {
+    const bufferResult = await createBufferIdea({ title: parsed.title, text: parsed.text });
+    result.sentToBufferIdeas = true;
+    result.bufferIdeaId = bufferResult.id;
+    saved.sentToBuffer = true;
+    saved.sentToBufferIdeas = true;
+    saved.bufferIdeaId = bufferResult.id;
+    saved.status = "sent";
+    if (result.fallbackReason) saved.error = "QUEUE_FALLBACK_IDEA:" + result.fallbackReason;
+    await saved.save();
+    console.log("[autopost] sent to buffer ideas id=" + saved.id + " bufferIdeaId=" + bufferResult.id + (result.fallbackReason ? " fallbackReason=" + result.fallbackReason : ""));
+    return result;
+  } catch (ideaErr) {
+    const reason = bufferErrorCode(ideaErr, "BUFFER_IDEA_FAILED");
+    saved.error = result.fallbackReason ? "QUEUE_FAILED:" + result.fallbackReason + ";IDEA_FAILED:" + reason : reason;
+    saved.status = "buffer_error";
+    await saved.save();
+    console.warn("[autopost] buffer ideas fallback failed id=" + saved.id + " reason=" + reason);
+    return result;
+  }
+}
+
 async function runAutopostCycle() {
   const topic = pickAutopostTopic();
   console.log("[autopost] cycle start topic=" + topic);
@@ -3575,20 +3850,7 @@ async function runAutopostCycle() {
     };
     const saved = await AutoPost.create(record);
     console.log("[autopost] saved id=" + saved.id + " titleChars=" + parsed.title.length + " textChars=" + parsed.text.length);
-    try {
-      const bufferResult = await createBufferIdea({ title: parsed.title, text: parsed.text });
-      saved.sentToBuffer = true;
-      saved.bufferIdeaId = bufferResult.id;
-      saved.status = "sent";
-      await saved.save();
-      console.log("[autopost] sent to buffer id=" + saved.id + " bufferIdeaId=" + bufferResult.id);
-    } catch (bufferErr) {
-      const msg = bufferErr && bufferErr.message ? bufferErr.message : "BUFFER_FAILED";
-      saved.error = msg;
-      saved.status = "buffer_error";
-      await saved.save();
-      console.warn("[autopost] buffer send failed id=" + saved.id + " reason=" + msg);
-    }
+    await sendAutopostToBuffer(saved, parsed, "scheduler");
   } catch (err) {
     const msg = err && err.message ? err.message : "UNKNOWN";
     console.warn("[autopost] generation failed reason=" + msg);
@@ -3682,19 +3944,16 @@ app.post("/api/hysa-ai/generate-now", rateLimit("ai"), async (req, res) => {
     const parsed = await generateValidAutopost(topic);
     const record = { title: parsed.title, text: parsed.text, type: topic, status: "generated", createdAt: new Date().toISOString(), topic };
     const saved = await AutoPost.create(record);
-    try {
-      const bufferResult = await createBufferIdea({ title: parsed.title, text: parsed.text });
-      saved.sentToBuffer = true;
-      saved.bufferIdeaId = bufferResult.id;
-      saved.status = "sent";
-      await saved.save();
-    } catch (bufferErr) {
-      const msg = bufferErr && bufferErr.message ? bufferErr.message : "BUFFER_FAILED";
-      saved.error = msg;
-      saved.status = "buffer_error";
-      await saved.save();
-    }
-    return res.status(200).json({ ok: true, post: saved });
+    const bufferResult = await sendAutopostToBuffer(saved, parsed, "manual");
+    return res.status(200).json({
+      ok: true,
+      post: saved,
+      sentToBufferIdeas: bufferResult.sentToBufferIdeas,
+      sentToBufferQueue: bufferResult.sentToBufferQueue,
+      bufferPostIds: bufferResult.bufferPostIds,
+      bufferIdeaId: bufferResult.bufferIdeaId,
+      fallbackReason: bufferResult.fallbackReason,
+    });
   } catch (err) {
     const msg = err && err.code ? err.code : (err && err.message ? err.message : "GENERATION_FAILED");
     console.warn("[autopost] manual generate-now failed reason=" + msg);
