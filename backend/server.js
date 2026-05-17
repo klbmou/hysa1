@@ -3484,12 +3484,16 @@ async function generateAutopostContent(topic) {
     throw err;
   }
   const topicText = topic || pickAutopostTopic();
-  const systemPrompt = "You are HYSA internal content marketing agent. Generate one social media post idea about HYSA.\n"
+  const systemPrompt = "You are HYSA internal content marketing agent. Generate one social media post idea about HYSA, an Algerian social platform.\n"
+    + "HYSA is a youth-focused social media app for creators, communities, realtime chat, stories, reels, and HYSA AI. It is Arabic/Darija-friendly and Algeria-built.\n"
+    + "HYSA AI helps users with social content: captions, hashtags, replies, community prompts, creative ideas, and profile/post polish.\n"
+    + "Never describe HYSA as a finance, banking, money, payments, investment, trading, savings, wallet, or crypto app. Never mention financial journeys, spending, budgeting, banking questions, or money management.\n"
     + "Requirements:\n"
     + "- First line must start with TITLE: followed by a short catchy title (max 120 chars)\n"
     + "- After the title write the full post body starting with TEXT:\n"
     + "- Post body 80-260 characters, 1-2 complete sentences, never cut off mid-sentence\n"
-    + "- Tone: modern concise premium startup-like Algeria-first\n"
+    + "- Topic must stay within HYSA product updates, social features, HYSA AI for creators, realtime messaging, stories/reels, communities, Algeria-built identity, launch updates, or the development journey\n"
+    + "- Tone: modern, concise, youth-focused, social, Algeria-first\n"
     + "- Can use light emojis (1-2 max)\n"
     + "- Can be bilingual English/Arabic sometimes\n"
     + "- Not cringe not spammy not exaggerated\n"
