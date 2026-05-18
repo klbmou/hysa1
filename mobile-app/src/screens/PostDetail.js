@@ -30,6 +30,7 @@ import { useAuth } from '../context/AuthContext';
 import MediaViewer from '../components/MediaViewer';
 import * as haptics from '../utils/haptics';
 import { sharePost } from '../utils/share';
+import { displayHandle, displayUsername, nameTextStyle } from '../utils/display';
 import theme from '../theme';
 
 const CommentItem = ({ comment, onReply, replyingTo, setReplyingTo }) => {
@@ -39,10 +40,11 @@ const CommentItem = ({ comment, onReply, replyingTo, setReplyingTo }) => {
   const replies = comment.replies || [];
   const isReplying = replyingTo && replyingTo.id === comment.id;
   const hasReplies = replies.length > 0;
+  const commentAuthor = displayUsername(comment.author || comment.authorKey || 'User');
 
   const handleStartReply = () => {
     haptics.light();
-    setReplyingTo({ id: comment.id, author: comment.author });
+    setReplyingTo({ id: comment.id, author: commentAuthor });
   };
 
   const handleReply = async () => {
@@ -78,7 +80,7 @@ const CommentItem = ({ comment, onReply, replyingTo, setReplyingTo }) => {
       <View style={styles.commentContent}>
         <View style={styles.commentHeader}>
           <View style={styles.nameRow}>
-            <Text style={styles.commentAuthor}>{comment.author || comment.authorKey || 'User'}</Text>
+            <Text style={[styles.commentAuthor, nameTextStyle(commentAuthor)]}>{commentAuthor}</Text>
             {comment.authorVerified && <Verified size={12} color="#7C3AED" fill="#7C3AED" />}
             {comment.authorRole === 'owner' && (
               <Text style={styles.ownerBadge}>OP</Text>
@@ -119,7 +121,7 @@ const CommentItem = ({ comment, onReply, replyingTo, setReplyingTo }) => {
             </View>
             <View style={styles.replyContent}>
               <View style={styles.replyHeader}>
-                <Text style={styles.replyAuthor}>{reply.author || 'User'}</Text>
+                <Text style={[styles.replyAuthor, nameTextStyle(reply.author || 'User')]}>{displayUsername(reply.author || 'User')}</Text>
                 <Text style={styles.replyTime}>{formatDate(reply.createdAt)}</Text>
               </View>
               <Text style={styles.replyText}>{reply.text}</Text>
@@ -301,7 +303,7 @@ const PostDetail = ({ navigation, route }) => {
           <Image
             source={{ uri: media.kind === 'video' ? thumbUrl : displayUrl }}
             style={styles.media}
-            resizeMode="cover"
+            resizeMode="contain"
           />
           {media.kind === 'video' && (
             <View style={styles.mediaPlayOverlay}>
@@ -380,10 +382,12 @@ const PostDetail = ({ navigation, route }) => {
           </TouchableOpacity>
           <View style={styles.authorInfo}>
             <View style={styles.nameRow}>
-              <Text style={styles.authorName}>{post.author || post.authorKey || 'Unknown'}</Text>
+              <Text style={[styles.authorName, nameTextStyle(displayUsername(post.author || post.authorKey || 'Unknown'))]}>
+                {displayUsername(post.author || post.authorKey || 'Unknown')}
+              </Text>
               {post.verified && <Verified size={16} color={theme.colors.verified} fill={theme.colors.verified} />}
             </View>
-            <Text style={styles.authorKey}>@{post.authorKey || ''}</Text>
+            <Text style={[styles.authorKey, nameTextStyle(displayHandle(post.authorKey || ''))]}>@{displayHandle(post.authorKey || '')}</Text>
             <Text style={styles.timestamp}>{formatDate(post.createdAt)}</Text>
           </View>
         </View>
@@ -412,7 +416,7 @@ const PostDetail = ({ navigation, route }) => {
           </TouchableOpacity>
           <TouchableOpacity style={styles.action}>
             <Repeat size={20} color={theme.colors.textSecondary} />
-            <Text style={styles.actionText}>{post.repostCount || 0}</Text>
+            <Text style={styles.actionText}>{post.repostCount ?? post.repostsCount ?? post.reposts?.length ?? 0}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.action, { marginLeft: 'auto' }]}>
             <Bookmark size={20} color={theme.colors.textSecondary} />
@@ -497,8 +501,8 @@ const styles = StyleSheet.create({
   authorKey: { fontSize: 13, color: '#8A8A9A', marginTop: 2 },
   timestamp: { fontSize: 13, color: '#8A8A9A', marginTop: 4 },
   postText: { fontSize: 15, lineHeight: 22, color: '#FFFFFF', paddingHorizontal: 16, paddingBottom: 12 },
-  mediaContainer: { marginHorizontal: 16, marginBottom: 12, borderRadius: 16, overflow: 'hidden' },
-  media: { width: '100%', height: 250, borderRadius: 16 },
+  mediaContainer: { marginHorizontal: 16, marginBottom: 12, borderRadius: 16, overflow: 'hidden', backgroundColor: '#05050C', alignItems: 'center', justifyContent: 'center' },
+  media: { width: '100%', height: 300, borderRadius: 16 },
   mediaPlayOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
   quotedPost: { marginHorizontal: 16, marginBottom: 12, padding: 12, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
   quotedAuthor: { fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 },

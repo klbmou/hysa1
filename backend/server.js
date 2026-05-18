@@ -2613,13 +2613,68 @@ async function syncDataJson() {
   });
 }
 
+function normalizeNotificationType(type) {
+  const raw = String(type || "").trim().toLowerCase();
+  if (raw === "new_follower") return "follow";
+  if (raw === "dm") return "message";
+  return raw;
+}
+
+function notificationTargetType(type, postId, commentId) {
+  const normalized = normalizeNotificationType(type);
+  if (postId) return "post";
+  if (normalized === "story_reply" || normalized === "story_reaction") return "story";
+  if (normalized === "message") return "message";
+  if (normalized === "follow" || normalized === "follow_accepted") return "profile";
+  if (commentId) return "comment";
+  return "";
+}
+
+async function toPublicNotification(notification) {
+  const n = notification || {};
+  const actorKey = String(n.actorKey || n.actor_key || "");
+  const userKey = String(n.userKey || n.user_key || "");
+  const postId = String(n.postId || n.post_id || "");
+  const commentId = String(n.commentId || n.comment_id || "");
+  const type = normalizeNotificationType(n.type);
+  const actor = actorKey ? await findUserByKey(actorKey) : null;
+  const targetType = notificationTargetType(type, postId, commentId);
+  return {
+    id: String(n.id || ""),
+    userKey,
+    type,
+    actorKey,
+    actorUsername: String((actor && actor.username) || actorKey || ""),
+    actorDisplayName: String((actor && (actor.displayName || actor.display_name || actor.username)) || actorKey || ""),
+    actorAvatar: publicStoredUrl(actor && (actor.avatarUrl || actor.avatar_url)),
+    postId,
+    commentId,
+    targetType,
+    targetId: postId || commentId || actorKey,
+    read: !!n.read,
+    createdAt: stableCreatedAt(n.createdAt || n.created_at),
+  };
+}
+
+function isDuplicateNotification(candidate, existing, cutoffMs) {
+  const createdAt = Date.parse(existing && (existing.createdAt || existing.created_at) || "");
+  if (!Number.isFinite(createdAt) || createdAt < cutoffMs) return false;
+  return (
+    String(existing && (existing.userKey || existing.user_key || "")) === candidate.userKey &&
+    normalizeNotificationType(existing && existing.type) === candidate.type &&
+    String(existing && (existing.actorKey || existing.actor_key || "")) === candidate.actorKey &&
+    String(existing && (existing.postId || existing.post_id || "")) === candidate.postId &&
+    String(existing && (existing.commentId || existing.comment_id || "")) === candidate.commentId
+  );
+}
+
 async function addNotification({ userKey, type, actorKey, postId = "", commentId = "" }) {
   const target = String(userKey || "");
   if (!target || target === String(actorKey || "")) return;
   const notification = {
     id: crypto.randomBytes(12).toString("base64url"),
     userKey: target,
-    type: String(type || ""),
+    type: normalizeNotificationType(type),
     actorKey: String(actorKey || ""),
     postId: String(postId || ""),
     commentId: String(commentId || ""),
@@ -2627,12 +2682,39 @@ async function addNotification({ userKey, type, actorKey, postId = "", commentId
     createdAt: new Date().toISOString(),
   };
   if (USE_POSTGRES) {
+    const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const existing = await pgPool.query(
+      `SELECT id FROM notifications
+       WHERE user_key = $1
+         AND type = $2
+         AND COALESCE(actor_key, '') = $3
+         AND COALESCE(post_id, '') = $4
+         AND COALESCE(comment_id, '') = $5
+         AND created_at >= $6
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [notification.userKey, notification.type, notification.actorKey, notification.postId, notification.commentId, cutoff]
+    );
+    if (existing.rows[0]) {
+      await pgPool.query(
+        "UPDATE notifications SET read = FALSE, created_at = $1 WHERE id = $2",
+        [notification.createdAt, existing.rows[0].id]
+      );
+      return;
+    }
     await pgCreateNotification(notification);
     return;
   }
   const data = readDataFile();
   data.notifications = asArray(data.notifications);
-  data.notifications.unshift(notification);
+  const cutoffMs = Date.now() - 5 * 60 * 1000;
+  const duplicateIndex = data.notifications.findIndex((existing) => isDuplicateNotification(notification, existing, cutoffMs));
+  if (duplicateIndex >= 0) {
+    const existing = data.notifications.splice(duplicateIndex, 1)[0];
+    data.notifications.unshift({ ...existing, ...notification, id: existing.id || notification.id });
+  } else {
+    data.notifications.unshift(notification);
+  }
   data.notifications = data.notifications.slice(0, 500);
   await writeDataFile(data);
 }
@@ -4914,7 +4996,8 @@ app.get("/api/notifications", async (req, res) => {
   const list = USE_POSTGRES
     ? await pgFindNotificationsByUser(viewerKey)
     : asArray(readDataFile().notifications).filter((n) => String(n && n.userKey) === viewerKey).slice(0, 100);
-  return res.status(200).json({ ok: true, notifications: list });
+  const notifications = await Promise.all(list.map((n) => toPublicNotification(n)));
+  return res.status(200).json({ ok: true, notifications });
 });
 
 app.post("/api/notifications/read", async (req, res) => {

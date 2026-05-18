@@ -31,6 +31,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Audio, InterruptionModeAndroid } from 'expo-av';
 import * as haptics from '../utils/haptics';
+import { displayUsername, nameTextStyle } from '../utils/display';
 import theme from '../theme';
 
 const CHAT_BG_KEY = 'chat_bg_';
@@ -87,6 +88,7 @@ const VOICE_RECORDING_OPTIONS = {
 const Chat = ({ navigation, route }) => {
   const userKey = route.params?.userKey || '';
   const username = route.params?.username || 'User';
+  const displayPeerName = displayUsername(username);
   const avatar = route.params?.avatar || null;
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState([]);
@@ -870,12 +872,12 @@ const Chat = ({ navigation, route }) => {
 
   const handleVoiceCall = () => {
     haptics.light();
-    navigation.navigate('CallScreen', { username, avatar, callType: 'voice' });
+    navigation.navigate('CallScreen', { username: displayPeerName, avatar, callType: 'voice' });
   };
 
   const handleVideoCall = () => {
     haptics.light();
-    navigation.navigate('CallScreen', { username, avatar, callType: 'video' });
+    navigation.navigate('CallScreen', { username: displayPeerName, avatar, callType: 'video' });
   };
 
   const handleViewProfile = () => {
@@ -892,7 +894,7 @@ const Chat = ({ navigation, route }) => {
   const handleBlock = () => {
     closeOptions();
     setTimeout(() => {
-      Alert.alert('Block User', `Are you sure you want to block @${username}? They won't be able to contact you.`, [
+      Alert.alert('Block User', `Are you sure you want to block @${displayPeerName}? They won't be able to contact you.`, [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Block',
@@ -1167,7 +1169,7 @@ const Chat = ({ navigation, route }) => {
               </View>
             )}
             <View style={styles.headerInfo}>
-              <Text style={styles.headerTitle} numberOfLines={1}>{username}</Text>
+              <Text style={[styles.headerTitle, nameTextStyle(displayPeerName)]} numberOfLines={1}>{displayPeerName}</Text>
               <Text style={[styles.headerStatus, (peerTyping || peerActiveNow) && styles.headerStatusLive]}>{headerStatusText}</Text>
             </View>
           </TouchableOpacity>
@@ -1193,7 +1195,7 @@ const Chat = ({ navigation, route }) => {
                 <User size={32} color="#8A8A9A" />
               </View>
             )}
-            <Text style={styles.emptyName}>{username}</Text>
+            <Text style={[styles.emptyName, nameTextStyle(displayPeerName, 'center')]}>{displayPeerName}</Text>
             <Text style={styles.emptyText}>Say hello! Start the conversation.</Text>
           </View>
         ) : (
@@ -1315,7 +1317,7 @@ const Chat = ({ navigation, route }) => {
                   <User size={20} color={theme.colors.textMuted} />
                 </View>
               )}
-              <Text style={styles.optionsName}>{username}</Text>
+              <Text style={[styles.optionsName, nameTextStyle(displayPeerName)]} numberOfLines={1}>{displayPeerName}</Text>
             </View>
 
             <TouchableOpacity style={styles.optionItem} onPress={handleViewProfile} activeOpacity={0.7}>

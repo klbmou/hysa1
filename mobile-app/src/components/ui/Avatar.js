@@ -3,18 +3,19 @@ import { Image, View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { User } from 'lucide-react-native';
 import theme from '../../theme';
+import { avatarInitial, nameTextStyle } from '../../utils/display';
 
 const Avatar = ({ uri, name, size = 40, ring = false, style }) => {
   const radius = size / 2;
   const innerSize = ring ? size - 5 : size;
   const innerRadius = innerSize / 2;
-  const initial = name ? String(name).trim().charAt(0).toUpperCase() : '';
+  const initial = avatarInitial(name);
 
   const avatar = uri ? (
     <Image source={{ uri }} style={{ width: innerSize, height: innerSize, borderRadius: innerRadius }} />
   ) : (
     <View style={[styles.placeholder, { width: innerSize, height: innerSize, borderRadius: innerRadius }]}>
-      {initial ? <Text style={[styles.initial, { fontSize: Math.max(13, size * 0.35) }]}>{initial}</Text> : <User size={Math.max(16, size * 0.42)} color={theme.colors.textMuted} />}
+      {initial ? <Text style={[styles.initial, { fontSize: Math.max(13, size * 0.35) }, nameTextStyle(initial, 'center')]}>{initial}</Text> : <User size={Math.max(16, size * 0.42)} color={theme.colors.textMuted} />}
     </View>
   );
 

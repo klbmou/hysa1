@@ -13,6 +13,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { ArrowLeft, User, Verified, MessageSquare, UserPlus } from 'lucide-react-native';
 import { dmAPI } from '../api/client';
 import * as haptics from '../utils/haptics';
+import { displayUsername, nameTextStyle } from '../utils/display';
 import theme from '../theme';
 
 const DMThreads = ({ navigation }) => {
@@ -50,9 +51,10 @@ const DMThreads = ({ navigation }) => {
   const openThread = (thread) => {
     haptics.light();
     if (thread.type === 'direct') {
+      const username = displayUsername(thread.peerUsername || thread.username || thread.peerKey || 'User');
       navigation.navigate('Chat', {
         userKey: thread.peerKey || thread.userKey,
-        username: thread.peerUsername || thread.username || thread.peerKey,
+        username,
         avatar: thread.peerAvatar || thread.avatarUrl,
       });
     }
@@ -73,7 +75,7 @@ const DMThreads = ({ navigation }) => {
   };
 
   const renderItem = ({ item }) => {
-    const username = item.peerUsername || item.username || item.peerKey || 'Conversation';
+    const username = displayUsername(item.peerUsername || item.username || item.peerKey || 'Conversation');
     const avatar = item.peerAvatar || item.avatarUrl || item.authorAvatar;
     const timestamp = item.lastMessageAt || item.updatedAt || item.createdAt;
 
@@ -93,7 +95,7 @@ const DMThreads = ({ navigation }) => {
         <View style={styles.threadContent}>
           <View style={styles.threadHeader}>
             <View style={styles.nameRow}>
-              <Text style={styles.peerName} numberOfLines={1}>{username}</Text>
+              <Text style={[styles.peerName, nameTextStyle(username)]} numberOfLines={1}>{username}</Text>
               {item.peerVerified && <Verified size={12} color={theme.colors.verified} fill={theme.colors.verified} />}
             </View>
             <Text style={styles.threadTime}>{formatDate(timestamp)}</Text>

@@ -42,6 +42,7 @@ import { Video, ResizeMode, Audio } from 'expo-av';
 import { feedAPI, postAPI, userAPI } from '../api/client';
 import * as haptics from '../utils/haptics';
 import { shareReel, copyLink } from '../utils/share';
+import { displayUsername, nameTextStyle } from '../utils/display';
 import theme from '../theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -56,6 +57,7 @@ const CommentItem = React.memo(({ comment, onReply }) => {
   const [liked, setLiked] = useState(false);
   const replies = comment.replies || [];
   const replyCount = comment.replyCount || replies.length;
+  const commentAuthor = useMemo(() => displayUsername(comment.author || comment.authorKey || 'User'), [comment.author, comment.authorKey]);
 
   const handleToggleReply = useCallback(() => {
     setReplying((prev) => !prev);
@@ -101,7 +103,7 @@ const CommentItem = React.memo(({ comment, onReply }) => {
       <View style={cStyles.commentContent}>
         <View style={cStyles.commentHeaderRow}>
           <View style={cStyles.commentNameRow}>
-            <Text style={cStyles.commentAuthor}>{comment.author || comment.authorKey || 'User'}</Text>
+            <Text style={[cStyles.commentAuthor, nameTextStyle(commentAuthor)]}>{commentAuthor}</Text>
             {comment.authorVerified && <Verified size={10} color={theme.colors.verified} fill={theme.colors.verified} />}
             <Text style={cStyles.commentTime}> · {formattedTime}</Text>
           </View>
@@ -138,7 +140,7 @@ const CommentItem = React.memo(({ comment, onReply }) => {
             </View>
             <View style={cStyles.replyContent}>
               <View style={cStyles.replyHeaderRow}>
-                <Text style={cStyles.replyAuthor}>{reply.author || 'User'}</Text>
+                <Text style={[cStyles.replyAuthor, nameTextStyle(displayUsername(reply.author || 'User'))]}>{displayUsername(reply.author || 'User')}</Text>
                 <Text style={cStyles.replyTime}> · {formatDate(reply.createdAt)}</Text>
               </View>
               <Text style={cStyles.replyText}>{reply.text}</Text>
@@ -203,6 +205,8 @@ function formatDate(dateString) {
 const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOpenComments, onRepost, onOpenShare, onMore, onDoubleTapVideo, onOpenProfile, onRegisterRef, onToggleMute, onToggleRate, onOpenLandscape, insets }) => {
   const videoRef = useRef(null);
   const [videoReady, setVideoReady] = useState(false);
+  const [videoLoading, setVideoLoading] = useState(true);
+  const [videoError, setVideoError] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [showPauseIcon, setShowPauseIcon] = useState(false);
   const heartAnim = useRef(new Animated.Value(0)).current;
@@ -210,11 +214,12 @@ const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOp
 
   const videoUrl = useMemo(() => getVideoUrl(item), [item]);
   const reelId = item.id;
-  const media = item.media && item.media[0];
+  const media = useMemo(() => getVideoMedia(item), [item]);
   const thumbUrl = useMemo(() => media && (media.thumbnailUrl || media.fullUrl || media.url), [media]);
   const likeCount = item.likeCount ?? item.likesCount ?? item.likes?.length ?? item.reactions?.likes ?? 0;
   const commentCount = item.commentCount ?? item.commentsCount ?? item.comments?.length ?? 0;
   const repostCount = item.repostCount ?? item.repostsCount ?? item.reposts?.length ?? 0;
+  const authorName = useMemo(() => displayUsername(item.author || item.authorKey || 'User'), [item.author, item.authorKey]);
   const [naturalAspect, setNaturalAspect] = useState(null);
   const videoAspect = useMemo(() => {
     // Use natural aspect if available, otherwise fallback to metadata
@@ -240,6 +245,13 @@ const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOp
       }
     };
   }, []);
+
+  useEffect(() => {
+    setVideoReady(false);
+    setVideoLoading(!!videoUrl);
+    setVideoError(false);
+    setIsPaused(!isActive);
+  }, [videoUrl, reelId, isActive]);
 
   useEffect(() => {
     if (!isActive || !videoRef.current) return;
@@ -332,6 +344,8 @@ const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOp
           }
           setShowPauseIcon(true);
           setTimeout(() => setShowPauseIcon(false), 400);
+        } else {
+          setVideoError(true);
         }
       }).catch(() => {});
     }, DOUBLE_TAP_MS);
@@ -382,14 +396,14 @@ const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOp
 
   return (
     <View style={styles.reelContainer}>
-      {videoUrl ? (
+      {videoUrl && !videoError ? (
         <View style={styles.reelContent}>
           <View style={styles.videoWrap}>
-            {showBlurredBg && thumbUrl && (
+            {thumbUrl && (
               <Image
                 source={{ uri: thumbUrl }}
-                style={styles.bgThumb}
-                blurRadius={30}
+                style={showBlurredBg ? styles.bgThumb : styles.posterThumb}
+                blurRadius={showBlurredBg ? 30 : 0}
                 resizeMode="cover"
               />
             )}
@@ -405,7 +419,21 @@ const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOp
                 isMuted={muted}
                 isLooping
                 useNativeControls={false}
+                onLoadStart={() => {
+                  setVideoLoading(true);
+                  setVideoError(false);
+                }}
+                onLoad={() => {
+                  setVideoLoading(false);
+                  setVideoReady(true);
+                }}
+                onError={() => {
+                  setVideoLoading(false);
+                  setVideoError(true);
+                  setVideoReady(false);
+                }}
                 onReadyForDisplay={(status) => {
+                  setVideoLoading(false);
                   setVideoReady(true);
                   if (status.naturalSize) {
                     const { width, height } = status.naturalSize;
@@ -416,11 +444,22 @@ const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOp
                 }}
                 onPlaybackStatusUpdate={(status) => {
                   if (status.isLoaded && status.isPlaying !== undefined) {
+                    setVideoLoading(false);
                     setIsPaused(!status.isPlaying);
+                  } else if (status && status.error) {
+                    setVideoLoading(false);
+                    setVideoError(true);
                   }
                 }}
               />
             </View>
+
+            {videoLoading && (
+              <View style={styles.videoStateOverlay} pointerEvents="none">
+                <ActivityIndicator size="large" color={theme.colors.accent} />
+                <Text style={styles.videoStateText}>Loading reel...</Text>
+              </View>
+            )}
 
             {/* Edge press zones for speed control - 18% each side */}
             <TouchableOpacity
@@ -538,8 +577,8 @@ const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOp
                 )}
               </TouchableOpacity>
               <View style={styles.authorNameRow}>
-                <Text style={styles.authorName} numberOfLines={1}>
-                  {item.author || item.authorKey || 'User'}
+                <Text style={[styles.authorName, nameTextStyle(authorName)]} numberOfLines={1}>
+                  {authorName}
                 </Text>
                 {item.verified && (
                   <Verified size={14} color={theme.colors.verified} fill={theme.colors.verified} />
@@ -558,7 +597,11 @@ const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOp
         </View>
       ) : (
         <View style={[styles.videoWrap, styles.emptyReel]}>
-          <Text style={styles.emptyText}>No video available</Text>
+          {thumbUrl ? <Image source={{ uri: thumbUrl }} style={styles.posterThumb} resizeMode="cover" /> : null}
+          <View style={styles.videoStateOverlay}>
+            <Text style={styles.emptyText}>{videoError ? 'This reel could not be played' : 'No video available'}</Text>
+            <Text style={styles.videoStateSubtext}>Pull to refresh or try another reel.</Text>
+          </View>
         </View>
       )}
     </View>
@@ -570,8 +613,17 @@ const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOp
     && prev.playbackRate === next.playbackRate;
 });
 
+function getVideoMedia(reel) {
+  const mediaItems = Array.isArray(reel?.media) ? reel.media : [];
+  return mediaItems.find((media) => {
+    const kind = String(media?.kind || media?.type || media?.resource_type || '').toLowerCase();
+    const mime = String(media?.mime || '').toLowerCase();
+    return kind === 'video' || kind === 'reel' || mime.startsWith('video/');
+  }) || mediaItems[0] || null;
+}
+
 function getVideoUrl(reel) {
-  const media = reel.media && reel.media[0];
+  const media = getVideoMedia(reel);
   return (media && (media.fullUrl || media.url)) || '';
 }
 
@@ -877,16 +929,29 @@ const Reels = ({ navigation }) => {
   const handleRepost = useCallback(async (reelId) => {
     haptics.light();
     try {
-      await postAPI.repostPost(reelId);
+      const response = await postAPI.repostPost(reelId, 'video');
+      const payload = response?.data || {};
       setReels((prev) =>
         prev.map((r) =>
           String(r.id) === String(reelId)
-            ? { ...r, repostCount: (r.repostCount || 0) + 1, repostedByMe: true }
+            ? (() => {
+              const currentRepostCount = r.repostCount ?? r.repostsCount ?? r.reposts?.length ?? 0;
+              const nextReposted = typeof payload.reposted === 'boolean' ? payload.reposted : !r.repostedByMe;
+              return {
+                ...r,
+                repostCount: typeof payload.repostCount === 'number'
+                  ? payload.repostCount
+                  : Math.max(0, currentRepostCount + (nextReposted ? 1 : -1)),
+                repostedByMe: nextReposted,
+              };
+            })()
             : r
         )
       );
+      return payload;
     } catch (err) {
       Alert.alert('Beta feature', 'Reposting is being tested.');
+      throw err;
     }
   }, []);
 
@@ -1186,7 +1251,11 @@ const styles = StyleSheet.create({
   videoFull: { width: '100%', height: '100%' },
   overlayContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   bgThumb: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  posterThumb: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.72 },
   bgDarkOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)' },
+  videoStateOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: 'rgba(7,7,17,0.42)' },
+  videoStateText: { marginTop: 12, color: '#fff', fontSize: 13, fontWeight: '700' },
+  videoStateSubtext: { marginTop: 6, color: theme.colors.textMuted, fontSize: 12, textAlign: 'center' },
   bottomGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 120, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 4, pointerEvents: 'none' },
   tapLayer: { ...StyleSheet.absoluteFillObject, zIndex: 5 },
   heartOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 6, pointerEvents: 'none' },

@@ -1,4 +1,4 @@
-import React, { useState, memo, useCallback } from 'react';
+import React, { useState, memo, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -27,9 +27,10 @@ import MediaViewer from './MediaViewer';
 import { Avatar, GlassCard, MediaFallback } from './ui';
 import * as haptics from '../utils/haptics';
 import { sharePost } from '../utils/share';
+import { displayUsername, nameTextStyle } from '../utils/display';
 import theme from '../theme';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const getCount = (...values) => {
   for (const value of values) {
@@ -44,6 +45,10 @@ const getMediaKind = (media) => {
   const kind = media?.kind || media?.type || media?.resource_type || '';
   return kind === 'video' || kind === 'reel' ? 'video' : 'image';
 };
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+const getRepostCount = (post) => getCount(post?.repostCount, post?.repostsCount, post?.reposts, post?.stats?.reposts);
+const getLikeCount = (post) => getCount(post?.likeCount, post?.likesCount, post?.likes?.length, post?.reactions?.likes, post?.stats?.likes, 0);
 
 const PostCard = memo(({
   post,
@@ -58,16 +63,34 @@ const PostCard = memo(({
   const [liked, setLiked] = useState(post.likedByMe || false);
   const [bookmarked, setBookmarked] = useState(post.bookmarkedByMe || false);
   const [reposted, setReposted] = useState(post.repostedByMe || false);
-  const [likeCount, setLikeCount] = useState(getCount(post.likeCount, post.likesCount, post.likes?.length, post.reactions?.likes, post.stats?.likes, 0));
+  const [likeCount, setLikeCount] = useState(getLikeCount(post));
   const commentCount = getCount(post.commentCount, post.commentsCount, post.comments, post.stats?.comments);
-  const [repostCount, setRepostCount] = useState(getCount(post.repostCount, post.repostsCount, post.reposts, post.stats?.reposts));
+  const [repostCount, setRepostCount] = useState(getRepostCount(post));
   const [actionLoading, setActionLoading] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   const [actionFeedback, setActionFeedback] = useState(null);
   const [viewerMedia, setViewerMedia] = useState(null);
   const [mediaError, setMediaError] = useState(false);
+  const authorName = useMemo(() => displayUsername(post.author || post.authorKey || 'User'), [post.author, post.authorKey]);
+  const repostAuthorName = useMemo(() => displayUsername(
+    post.repostedBy?.username ||
+    post.repostUser?.username ||
+    post.repostAuthor?.username ||
+    post.repostedByName ||
+    post.repostedBy ||
+    ''
+  ), [post.repostedBy, post.repostUser, post.repostAuthor, post.repostedByName]);
 
   const isOwner = currentUser && (post.authorKey === currentUser.key || post.authorId === currentUser.id);
+
+  useEffect(() => {
+    setLiked(!!post.likedByMe);
+    setBookmarked(!!post.bookmarkedByMe);
+    setReposted(!!post.repostedByMe);
+    setLikeCount(getLikeCount(post));
+    setRepostCount(getRepostCount(post));
+    setMediaError(false);
+  }, [post.id, post.likedByMe, post.bookmarkedByMe, post.repostedByMe, post.likeCount, post.likesCount, post.repostCount, post.repostsCount]);
 
   const openMediaViewer = useCallback((media) => {
     const url = getMediaUrl(media);
@@ -120,7 +143,10 @@ const PostCard = memo(({
     setReposted(!reposted);
     setRepostCount(reposted ? repostCount - 1 : repostCount + 1);
     try {
-      await onRepost(post.id);
+      const result = await onRepost(post.id);
+      const payload = result?.data || result || {};
+      if (typeof payload.reposted === 'boolean') setReposted(payload.reposted);
+      if (typeof payload.repostCount === 'number') setRepostCount(payload.repostCount);
       if (onRepostSuccess) onRepostSuccess(post.id);
     } catch (err) {
       setReposted(!reposted);
@@ -201,21 +227,18 @@ const PostCard = memo(({
       if (!displayUrl) return null;
 
       const aspectRatio = media.width && media.height ? media.width / media.height : null;
+      const frameAspect = aspectRatio ? clamp(aspectRatio, 0.72, 1.55) : null;
 
       return (
         <View style={styles.mediaWrap}>
           <TouchableOpacity
-            style={{ flex: 1 }}
+            style={[styles.singleMediaFrame, frameAspect ? { aspectRatio: frameAspect } : { height: Math.min(330, SCREEN_WIDTH * 0.78) }]}
             onPress={() => openMediaViewer(media)}
             activeOpacity={0.8}
           >
             <Image
               source={{ uri: mediaKind === 'video' ? thumbUrl : displayUrl }}
-              style={[
-                styles.media,
-                aspectRatio ? { aspectRatio } : { height: 300 },
-                { resizeMode: 'contain' }
-              ]}
+              style={styles.media}
               resizeMode="contain"
               onError={() => setMediaError(true)}
             />
@@ -236,7 +259,6 @@ const PostCard = memo(({
           const thumbUrl = media.thumbnailUrl || displayUrl;
           const mediaKind = getMediaKind(media);
           if (!displayUrl) return null;
-          const aspectRatio = media.width && media.height ? media.width / media.height : 1;
           return (
             <View key={index} style={[styles.gridItem, mediaItems.length === 1 && styles.gridItemFull]}>
               <TouchableOpacity
@@ -246,7 +268,7 @@ const PostCard = memo(({
               >
                 <Image
                   source={{ uri: mediaKind === 'video' ? thumbUrl : displayUrl }}
-                  style={[styles.gridImage, { aspectRatio, resizeMode: 'contain' }]}
+                  style={styles.gridImage}
                   resizeMode="contain"
                   onError={() => setMediaError(true)}
                 />
@@ -264,19 +286,14 @@ const PostCard = memo(({
   };
 
   const repostUser =
-    post.repostedBy?.username ||
-    post.repostUser?.username ||
-    post.repostAuthor?.username ||
-    post.repostedByName ||
-    post.repostedBy ||
-    null;
+    repostAuthorName || null;
 
   return (
     <GlassCard gradient style={styles.card} contentStyle={styles.cardContent}>
       {repostUser ? (
         <View style={styles.repostRow}>
           <Repeat size={13} color={theme.colors.purple} />
-          <Text style={styles.repostText}>@{repostUser} reposted</Text>
+          <Text style={[styles.repostText, nameTextStyle(repostUser)]}>@{repostUser} reposted</Text>
         </View>
       ) : null}
 
@@ -285,11 +302,11 @@ const PostCard = memo(({
           style={styles.avatarContainer}
           onPress={() => onViewProfile && onViewProfile(post.authorKey)}
         >
-          <Avatar uri={post.authorAvatar} name={post.author} size={38} ring />
+          <Avatar uri={post.authorAvatar} name={authorName} size={38} ring />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <View style={styles.authorNameRow}>
-            <Text style={styles.authorName}>{post.author}</Text>
+            <Text style={[styles.authorName, nameTextStyle(authorName)]} numberOfLines={1}>{authorName}</Text>
             {post.verified && <Verified size={14} color={theme.colors.verified} fill={theme.colors.verified} style={{ marginLeft: 4 }} />}
           </View>
           <Text style={styles.timestamp}>{formatDate(post.createdAt)}</Text>
@@ -427,13 +444,14 @@ const styles = StyleSheet.create({
   authorRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   avatarContainer: { marginRight: 9 },
   authorNameRow: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 },
-  authorName: { color: theme.colors.textPrimary, fontSize: 14, fontWeight: '800' },
+  authorName: { color: theme.colors.textPrimary, fontSize: 14, fontWeight: '700', flexShrink: 1 },
   headerInfo: { flex: 1 },
   timestamp: { color: theme.colors.textMuted, fontSize: 11, marginTop: 1, fontWeight: '600' },
   moreButton: { padding: 8, marginLeft: 4, borderRadius: 16 },
   postText: { color: theme.colors.textPrimary, fontSize: 14, lineHeight: 20, fontWeight: '400' },
   mediaWrap: { marginTop: 10, borderRadius: 16, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.09)' },
-  media: { width: '100%', minHeight: 160, maxHeight: 360, borderRadius: 15 },
+  singleMediaFrame: { width: '100%', minHeight: 180, maxHeight: 420, alignItems: 'center', justifyContent: 'center', backgroundColor: '#05050C' },
+  media: { width: '100%', height: '100%', borderRadius: 15 },
   mediaErrorWrap: { marginTop: 10 },
   mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10, gap: 4 },
   gridItem: { width: '49%', aspectRatio: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },

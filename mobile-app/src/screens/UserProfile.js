@@ -18,11 +18,12 @@ import {
   Share2,
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
-import { userAPI } from '../api/client';
+import { userAPI, postAPI } from '../api/client';
 import PostCard from '../components/PostCard';
 import * as haptics from '../utils/haptics';
 import { shareProfile } from '../utils/share';
 import { sanitizeBio } from '../utils/safety';
+import { displayHandle, displayUsername, nameTextStyle } from '../utils/display';
 import theme from '../theme';
 
 const UserProfile = ({ navigation, route }) => {
@@ -100,6 +101,23 @@ const UserProfile = ({ navigation, route }) => {
     }
   };
 
+  const handleProfileRepost = async (postId) => {
+    const response = await postAPI.repostPost(postId);
+    const payload = response?.data || {};
+    setUserPosts((prev) => prev.map((post) => {
+      if (String(post.id) !== String(postId)) return post;
+      const currentRepostCount = post.repostCount ?? post.repostsCount ?? post.reposts?.length ?? 0;
+      return {
+        ...post,
+        repostedByMe: typeof payload.reposted === 'boolean' ? payload.reposted : !post.repostedByMe,
+        repostCount: typeof payload.repostCount === 'number'
+          ? payload.repostCount
+          : Math.max(0, currentRepostCount + (post.repostedByMe ? -1 : 1)),
+      };
+    }));
+    return payload;
+  };
+
   if (loading) {
     return (
       <View style={[styles.centerContainer, { paddingTop: insets.top + 60 }]}>
@@ -132,7 +150,7 @@ const UserProfile = ({ navigation, route }) => {
       onLike={() => {}}
       onBookmark={() => {}}
       onComment={handlePostPress}
-      onRepost={() => {}}
+      onRepost={handleProfileRepost}
       onViewProfile={handleViewProfile}
     />
   );
@@ -143,7 +161,7 @@ const UserProfile = ({ navigation, route }) => {
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <ArrowLeft size={22} color={theme.colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{profileUser.username}</Text>
+        <Text style={[styles.headerTitle, nameTextStyle(displayUsername(profileUser.username), 'center')]}>{displayUsername(profileUser.username)}</Text>
         <View style={{ width: 22 }} />
       </View>
 
@@ -170,9 +188,9 @@ const UserProfile = ({ navigation, route }) => {
 
           <View style={styles.headerInfo}>
             <View style={styles.nameRow}>
-              <Text style={styles.username} numberOfLines={1}>{profileUser.username}</Text>
+              <Text style={[styles.username, nameTextStyle(displayUsername(profileUser.username))]} numberOfLines={1}>{displayUsername(profileUser.username)}</Text>
             </View>
-            <Text style={styles.displayName}>@{profileUser.key}</Text>
+            <Text style={[styles.displayName, nameTextStyle(displayHandle(profileUser.key || profileUser.username))]} numberOfLines={1}>@{displayHandle(profileUser.key || profileUser.username)}</Text>
 
             <View style={styles.statsRow}>
               <View style={styles.stat}>

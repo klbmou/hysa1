@@ -41,11 +41,12 @@ import {
   LifeBuoy,
 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
-import { userAPI, uploadAPI } from '../api/client';
+import { userAPI, uploadAPI, postAPI } from '../api/client';
 import PostCard from '../components/PostCard';
 import AnimatedPressable from '../components/AnimatedPressable';
 import * as haptics from '../utils/haptics';
 import { shareProfile } from '../utils/share';
+import { displayHandle, displayUsername, nameTextStyle } from '../utils/display';
 import theme from '../theme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -351,6 +352,23 @@ const Profile = ({ navigation, route }) => {
     }
   };
 
+  const handleProfileRepost = async (postId) => {
+    const response = await postAPI.repostPost(postId);
+    const payload = response?.data || {};
+    setUserPosts((prev) => prev.map((post) => {
+      if (String(post.id) !== String(postId)) return post;
+      const currentRepostCount = post.repostCount ?? post.repostsCount ?? post.reposts?.length ?? 0;
+      return {
+        ...post,
+        repostedByMe: typeof payload.reposted === 'boolean' ? payload.reposted : !post.repostedByMe,
+        repostCount: typeof payload.repostCount === 'number'
+          ? payload.repostCount
+          : Math.max(0, currentRepostCount + (post.repostedByMe ? -1 : 1)),
+      };
+    }));
+    return payload;
+  };
+
   if (loading) {
     return (
       <View style={[styles.centerContainer, { paddingTop: insets.top + 60 }]}>
@@ -383,7 +401,7 @@ const Profile = ({ navigation, route }) => {
       onLike={() => {}}
       onBookmark={() => {}}
       onComment={handlePostPress}
-      onRepost={() => {}}
+      onRepost={handleProfileRepost}
       onViewProfile={handleViewProfile}
     />
   );
@@ -410,7 +428,7 @@ const Profile = ({ navigation, route }) => {
           <View style={styles.backButton} />
         )}
         <Text style={styles.headerTitle}>
-          {isViewingOwnProfile ? 'Profile' : profileUser.username}
+          {isViewingOwnProfile ? 'Profile' : displayUsername(profileUser.username)}
         </Text>
         {isViewingOwnProfile && (
           <TouchableOpacity style={styles.headerIconBtn} onPress={openSettingsSheet}>
@@ -434,12 +452,12 @@ const Profile = ({ navigation, route }) => {
 
           <View style={styles.headerInfo}>
             <View style={styles.nameRow}>
-              <Text style={styles.username}>{profileUser.username}</Text>
+              <Text style={[styles.username, nameTextStyle(displayUsername(profileUser.username))]} numberOfLines={1}>{displayUsername(profileUser.username)}</Text>
               {profileUser.verified && ( // Changed size to 14 for consistency
                 <Verified size={14} color={theme.colors.verified} fill={theme.colors.verified} style={{ marginLeft: 4 }} />
               )}
             </View>
-            <Text style={styles.displayName}>@{profileUser.key}</Text>
+            <Text style={[styles.displayName, nameTextStyle(displayHandle(profileUser.key || profileUser.username))]} numberOfLines={1}>@{displayHandle(profileUser.key || profileUser.username)}</Text>
 
             <View style={styles.statsRow}>
               <View style={styles.statCard}> 

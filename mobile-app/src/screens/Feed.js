@@ -25,6 +25,7 @@ import PostCard from '../components/PostCard';
 import { User } from 'lucide-react-native';
 import { X, Send, Image as ImageIcon, Camera, Trash2, Search, Bell, Volume2, VolumeX, PenLine, WifiOff } from 'lucide-react-native';
 import { Avatar, EmptyState, GlassCard, HysaButton, Input, SectionHeader } from '../components/ui';
+import { displayUsername, nameTextStyle } from '../utils/display';
 import theme from '../theme';
 
 const THROTTLE_MS = 800;
@@ -227,7 +228,25 @@ const Feed = ({ navigation, route }) => {
   }, [navigation]);
 
   const handleRepost = useCallback((postId) => throttledAction(`rp-${postId}`, async () => {
-    try { await postAPI.repostPost(postId); } catch (err) { console.error('Repost error:', err); }
+    try {
+      const response = await postAPI.repostPost(postId);
+      const payload = response?.data || {};
+      setPosts((prev) => prev.map((post) => {
+        if (String(post.id) !== String(postId)) return post;
+        const currentRepostCount = post.repostCount ?? post.repostsCount ?? post.reposts?.length ?? 0;
+        return {
+          ...post,
+          repostedByMe: typeof payload.reposted === 'boolean' ? payload.reposted : !post.repostedByMe,
+          repostCount: typeof payload.repostCount === 'number'
+            ? payload.repostCount
+            : Math.max(0, currentRepostCount + (post.repostedByMe ? -1 : 1)),
+        };
+      }));
+      return payload;
+    } catch (err) {
+      console.error('Repost error:', err);
+      throw err;
+    }
   }), [throttledAction]);
 
   const handleViewProfile = useCallback((userKey) => {
@@ -532,6 +551,7 @@ const Feed = ({ navigation, route }) => {
 
         {groupedStories.map((group, groupIdx) => {
           const { username, avatar, stories: userStories } = group;
+          const safeStoryName = displayUsername(username);
           const firstStory = userStories[0];
           const firstMedia = firstStory?.media || {};
           const thumbnail = firstMedia?.thumbnailUrl || firstMedia?.previewUrl || firstMedia?.url || null;
@@ -540,10 +560,10 @@ const Feed = ({ navigation, route }) => {
           return (
           <TouchableOpacity key={group.userKey} style={styles.storyItem} activeOpacity={0.7} onPress={() => openStoryViewer(groupIdx)}>
             <View style={styles.storyRing}>
-              <Avatar uri={avatar || thumbnail} name={username} size={54} ring />
+              <Avatar uri={avatar || thumbnail} name={safeStoryName} size={54} ring />
               {isVideo && <View style={styles.storyVideoDot} />}
             </View>
-            <Text style={styles.storyLabel} numberOfLines={1}>{username}</Text>
+            <Text style={[styles.storyLabel, nameTextStyle(safeStoryName, 'center')]} numberOfLines={1}>{safeStoryName}</Text>
           </TouchableOpacity>
           );
         })}
@@ -854,7 +874,9 @@ const Feed = ({ navigation, route }) => {
                     <User size={16} color="#fff" />
                   </View>
                 )}
-                <Text style={styles.storyViewerUsername}>{currentGroup?.username || 'User'}</Text>
+                <Text style={[styles.storyViewerUsername, nameTextStyle(displayUsername(currentGroup?.username || 'User'))]}>
+                  {displayUsername(currentGroup?.username || 'User')}
+                </Text>
               </TouchableOpacity>
               <Text style={styles.storyViewerTime}>{formatStoryDate(currentStory?.createdAt)}</Text>
               <TouchableOpacity onPress={closeStoryViewer} style={styles.storyViewerCloseBtn}>

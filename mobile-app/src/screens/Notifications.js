@@ -17,8 +17,11 @@ import {
   UserPlus,
   User,
   Bell,
+  AtSign,
+  Mail,
 } from 'lucide-react-native';
 import { notificationsAPI } from '../api/client';
+import { displayUsername, nameTextStyle } from '../utils/display';
 import theme from '../theme';
 
 function extractNotifications(data) {
@@ -35,28 +38,37 @@ function extractNotifications(data) {
 
 function safeActor(notif) {
   const actor = notif.actor || notif.user || notif.actorObj || notif.userObj || null;
+  const key = (
+    notif.actorKey ||
+    notif.actor_key ||
+    actor?.key ||
+    actor?.userKey ||
+    actor?.id ||
+    ''
+  ).toString();
+  const username = displayUsername(
+    notif.actorUsername ||
+    notif.username ||
+    actor?.username ||
+    actor?.key ||
+    notif.actorKey ||
+    'Someone'
+  );
+  const displayName = displayUsername(
+    notif.actorDisplayName ||
+    notif.displayName ||
+    actor?.displayName ||
+    actor?.display_name ||
+    actor?.username ||
+    notif.actorUsername ||
+    notif.actorKey ||
+    'Someone'
+  );
   return {
-    username: (
-      notif.actorUsername ||
-      notif.username ||
-      actor?.username ||
-      actor?.key ||
-      notif.actorKey ||
-      notif.userKey ||
-      ''
-    ).toString() || 'Someone',
+    key,
+    username,
     avatar: notif.actorAvatar || notif.avatarUrl || actor?.avatar || actor?.avatarUrl || actor?.profilePicture || null,
-    displayName: (
-      notif.actorDisplayName ||
-      notif.displayName ||
-      actor?.displayName ||
-      actor?.display_name ||
-      actor?.username ||
-      notif.actorUsername ||
-      notif.actorKey ||
-      notif.userKey ||
-      'Someone'
-    ).toString() || 'Someone',
+    displayName,
   };
 }
 
@@ -73,11 +85,29 @@ function safeCreatedAt(notif) {
 }
 
 function safeType(notif) {
-  return (notif.type || notif.kind || notif.action || '').toString().toLowerCase();
+  const raw = (notif.type || notif.kind || notif.action || '').toString().toLowerCase();
+  if (raw === 'new_follower') return 'follow';
+  if (raw === 'dm') return 'message';
+  if (raw === 'comment_reply') return 'comment';
+  return raw;
 }
 
 function safeId(notif) {
   return String(notif.id || notif._id || Math.random());
+}
+
+function dedupeNotifications(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const actor = safeActor(item);
+    const post = safePost(item);
+    const type = safeType(item);
+    const commentId = item.commentId || item.comment_id || item.targetId || '';
+    const key = [type, actor.key || actor.username, post.id, commentId].join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function getNotificationText(type, actorName) {
@@ -86,13 +116,24 @@ function getNotificationText(type, actorName) {
       return `${actorName} liked your post`;
     case 'comment':
       return `${actorName} commented on your post`;
+    case 'comment_reply':
+      return `${actorName} replied to a comment`;
     case 'repost':
       return `${actorName} reposted your post`;
-    case 'new_follower':
     case 'follow':
       return `${actorName} started following you`;
+    case 'mention':
+      return `${actorName} mentioned you`;
+    case 'message':
+      return `${actorName} sent you a message`;
+    case 'story_reply':
+      return `${actorName} replied to your story`;
+    case 'story_reaction':
+      return `${actorName} reacted to your story`;
+    case 'follow_accepted':
+      return `${actorName} accepted your follow request`;
     default:
-      return 'New notification';
+      return `${actorName} interacted with you`;
   }
 }
 
@@ -104,9 +145,15 @@ function getNotificationIcon(type) {
       return <MessageCircle size={18} color={theme.colors.bookmark} fill={theme.colors.bookmark} />;
     case 'repost':
       return <Repeat size={18} color={theme.colors.success} fill={theme.colors.success} />;
-    case 'new_follower':
     case 'follow':
       return <UserPlus size={18} color={theme.colors.accent} fill={theme.colors.accent} />;
+    case 'mention':
+      return <AtSign size={18} color={theme.colors.purple} />;
+    case 'message':
+      return <Mail size={18} color={theme.colors.bookmark} />;
+    case 'story_reply':
+    case 'story_reaction':
+      return <MessageCircle size={18} color={theme.colors.accent} />;
     default:
       return <Bell size={18} color={theme.colors.textMuted} />;
   }
@@ -145,7 +192,7 @@ const Notifications = ({ navigation }) => {
       const response = await notificationsAPI.getNotifications();
       const data = response.data || {};
       if (data.ok) {
-        setNotifications(extractNotifications(data));
+        setNotifications(dedupeNotifications(extractNotifications(data)));
       } else {
         setNotifications([]);
       }
@@ -166,8 +213,11 @@ const Notifications = ({ navigation }) => {
   const handleNotificationPress = (item) => {
     const actor = safeActor(item);
     const post = safePost(item);
+    const type = safeType(item);
     if (post.id) {
       navigation.navigate('PostDetail', { postId: post.id });
+    } else if (type === 'message' && actor.key) {
+      navigation.navigate('Chat', { userKey: actor.key, username: actor.username, avatar: actor.avatar });
     } else if (actor.key) {
       navigation.navigate('UserProfile', { userKey: actor.key });
     }
@@ -197,7 +247,7 @@ const Notifications = ({ navigation }) => {
                 <User size={14} color={theme.colors.textMuted} />
               </View>
             )}
-            <Text style={styles.actorName} numberOfLines={1}>
+            <Text style={[styles.actorName, nameTextStyle(actor.displayName || actor.username || 'Someone')]} numberOfLines={1}>
               {actor.displayName || actor.username || 'Someone'}
             </Text>
           </View>
@@ -244,8 +294,9 @@ const Notifications = ({ navigation }) => {
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Bell size={48} color={theme.colors.textMuted} />
-            <Text style={styles.emptyText}>No notifications yet</Text>
+            <Bell size={44} color={theme.colors.textMuted} />
+            <Text style={styles.emptyTitle}>No notifications yet</Text>
+            <Text style={styles.emptySubtext}>When someone likes, comments, or follows you, it will show up here.</Text>
           </View>
         }
         showsVerticalScrollIndicator={false}
@@ -347,10 +398,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 60,
   },
-  emptyText: {
-    fontSize: 16,
-    color: theme.colors.textMuted,
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: theme.colors.textPrimary,
     marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: theme.colors.textMuted,
+    marginTop: 6,
+    textAlign: 'center',
+    paddingHorizontal: 40,
+    lineHeight: 20,
   },
 });
 
