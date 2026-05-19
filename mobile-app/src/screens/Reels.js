@@ -202,13 +202,14 @@ function formatDate(dateString) {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOpenComments, onRepost, onOpenShare, onMore, onDoubleTapVideo, onOpenProfile, onRegisterRef, onToggleMute, onToggleRate, onOpenLandscape, insets }) => {
+const ReelItem = React.memo(({ item, isActive, isFocused, muted, playbackRate, onLike, onOpenComments, onRepost, onOpenShare, onMore, onDoubleTapVideo, onOpenProfile, onRegisterRef, onToggleMute, onToggleRate, onOpenLandscape, insets }) => {
   const videoRef = useRef(null);
   const [videoReady, setVideoReady] = useState(false);
   const [videoLoading, setVideoLoading] = useState(true);
   const [videoError, setVideoError] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [showPauseIcon, setShowPauseIcon] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
   const heartAnim = useRef(new Animated.Value(0)).current;
   const tapRef = useRef({ lastTap: 0, timer: null, moved: false });
 
@@ -250,30 +251,27 @@ const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOp
     setVideoReady(false);
     setVideoLoading(!!videoUrl);
     setVideoError(false);
-    setIsPaused(!isActive);
-  }, [videoUrl, reelId, isActive]);
+    setIsPaused(false);
+    setIsBuffering(false);
+  }, [videoUrl, reelId]);
 
   useEffect(() => {
-    if (!isActive || !videoRef.current) return;
+    if (!videoRef.current) return;
+    if (isActive) {
+      videoRef.current.playAsync().catch(() => {});
+    } else {
+      videoRef.current.pauseAsync().catch(() => {});
+    }
+  }, [isActive]);
 
-    const play = async () => {
-      try {
-        if (videoReady) {
-          await videoRef.current.playAsync();
-          setIsPaused(false);
-        }
-      } catch (e) {}
-    };
-
-    play();
-
-    return () => {
-      if (videoRef.current) {
-        videoRef.current.pauseAsync().catch(() => {});
-        videoRef.current.setPositionAsync(0).catch(() => {});
-      }
-    };
-  }, [isActive, videoReady]);
+  useEffect(() => {
+    if (!videoRef.current || !isActive) return;
+    if (isFocused && !isPaused && videoReady) {
+      videoRef.current.playAsync().catch(() => {});
+    } else if (!isFocused) {
+      videoRef.current.pauseAsync().catch(() => {});
+    }
+  }, [isFocused, isActive, isPaused, videoReady]);
 
   useEffect(() => {
     if (videoRef.current && videoReady) {
@@ -415,7 +413,7 @@ const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOp
                 source={{ uri: videoUrl }}
                 style={styles.videoFull}
                 resizeMode={resizeMode}
-                shouldPlay={isActive}
+                shouldPlay={isActive && !videoError && !!videoUrl && isFocused && !isPaused}
                 isMuted={muted}
                 isLooping
                 useNativeControls={false}
@@ -443,21 +441,32 @@ const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOp
                   }
                 }}
                 onPlaybackStatusUpdate={(status) => {
-                  if (status.isLoaded && status.isPlaying !== undefined) {
-                    setVideoLoading(false);
-                    setIsPaused(!status.isPlaying);
+                  if (status.isLoaded) {
+                    if (status.isPlaying) {
+                      setVideoLoading(false);
+                      setVideoReady(true);
+                      setIsPaused(false);
+                    }
+                    setIsBuffering(!!status.isBuffering);
                   } else if (status && status.error) {
                     setVideoLoading(false);
+                    setVideoReady(false);
                     setVideoError(true);
+                    setIsBuffering(false);
                   }
                 }}
               />
             </View>
 
-            {videoLoading && (
+            {videoLoading && !videoReady && (
               <View style={styles.videoStateOverlay} pointerEvents="none">
                 <ActivityIndicator size="large" color={theme.colors.accent} />
                 <Text style={styles.videoStateText}>Loading reel...</Text>
+              </View>
+            )}
+            {isBuffering && videoReady && !videoError && !isPaused && (
+              <View style={styles.bufferingIndicator} pointerEvents="none">
+                <ActivityIndicator size="small" color="rgba(255,255,255,0.6)" />
               </View>
             )}
 
@@ -609,6 +618,7 @@ const ReelItem = React.memo(({ item, isActive, muted, playbackRate, onLike, onOp
 }, (prev, next) => {
   return prev.item === next.item
     && prev.isActive === next.isActive
+    && prev.isFocused === next.isFocused
     && prev.muted === next.muted
     && prev.playbackRate === next.playbackRate;
 });
@@ -700,6 +710,7 @@ const Reels = ({ navigation }) => {
   const videoRefsArr = useRef([]);
   const didInitialFetch = useRef(false);
   const lastFetchAt = useRef(0);
+  const [isFocused, setIsFocused] = useState(true);
 
   useEffect(() => {
     if (didInitialFetch.current) return;
@@ -722,8 +733,12 @@ const Reels = ({ navigation }) => {
 
   useFocusEffect(
     useCallback(() => {
-      return () => stopAllVideos();
-    }, [])
+      setIsFocused(true);
+      return () => {
+        setIsFocused(false);
+        stopAllVideos();
+      };
+    }, [stopAllVideos])
   );
 
   const stopAllVideos = useCallback(() => {
@@ -795,7 +810,7 @@ const Reels = ({ navigation }) => {
     }
   }, []);
 
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 });
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 70 });
 
   const handleDoubleTapVideo = useCallback((reelId) => {
     if (pendingLikes.current.has(String(reelId))) return;
@@ -1004,6 +1019,7 @@ const Reels = ({ navigation }) => {
       <ReelItem
         item={item}
         isActive={isActive}
+        isFocused={isFocused}
         muted={muted}
         playbackRate={playbackRate}
         onLike={handleLike}
@@ -1020,7 +1036,7 @@ const Reels = ({ navigation }) => {
         insets={insets}
       />
     );
-  }, [activeIndex, muted, playbackRate, handleLike, openComments, handleRepost, openShareSheet, openMoreMenu, handleDoubleTapVideo, handleOpenProfile, registerVideoRef, insets]);
+  }, [activeIndex, isFocused, muted, playbackRate, handleLike, openComments, handleRepost, openShareSheet, openMoreMenu, handleDoubleTapVideo, handleOpenProfile, registerVideoRef, insets]);
 
   const keyExtractor = useCallback((item) => `reel-${item.id}`, []);
 
@@ -1256,6 +1272,7 @@ const styles = StyleSheet.create({
   videoStateOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: 'rgba(7,7,17,0.42)' },
   videoStateText: { marginTop: 12, color: '#fff', fontSize: 13, fontWeight: '700' },
   videoStateSubtext: { marginTop: 6, color: theme.colors.textMuted, fontSize: 12, textAlign: 'center' },
+  bufferingIndicator: { position: 'absolute', bottom: 60, alignSelf: 'center', zIndex: 15 },
   bottomGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 120, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 4, pointerEvents: 'none' },
   tapLayer: { ...StyleSheet.absoluteFillObject, zIndex: 5 },
   heartOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 6, pointerEvents: 'none' },
